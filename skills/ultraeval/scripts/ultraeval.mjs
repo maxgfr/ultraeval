@@ -250,7 +250,7 @@ The RED test now passes and no existing test regresses.
 import { join as join3 } from "path";
 
 // src/types.ts
-var VERSION = "0.0.0";
+var VERSION = "1.0.0";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits
