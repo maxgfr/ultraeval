@@ -1,0 +1,29 @@
+{
+  "findings": [
+    {
+      "id": "F1",
+      "dimension": "security",
+      "severity": "P0",
+      "title": "SQL injection in /u via req.query.id",
+      "statement": "req.query.id flows unsanitized into a SELECT string, allowing SQL injection.",
+      "evidence": [
+        { "ref": "app.js:3", "note": "template-literal interpolation into SQL" },
+        { "ref": "run:runs/core.md#L2", "note": "scanner confirmation" }
+      ],
+      "failureScenario": "GET /u?id=1 OR 1=1 returns all users.",
+      "recommendation": "Use a parameterized query / prepared statement for the id.",
+      "status": "confirmed"
+    },
+    {
+      "id": "F2",
+      "dimension": "security",
+      "severity": "P1",
+      "title": "Command injection in /run via req.query.c",
+      "statement": "req.query.c is passed directly to execSync, allowing arbitrary command execution.",
+      "evidence": [{ "ref": "app.js:5", "note": "execSync on tainted input" }],
+      "failureScenario": "GET /run?c=rm+-rf+/ executes on the server.",
+      "recommendation": "Never pass user input to execSync; use an allowlist or execFile with fixed args.",
+      "status": "confirmed"
+    }
+  ]
+}

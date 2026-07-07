@@ -1,0 +1,12 @@
+{
+  "target": "target",
+  "targetAbs": "",
+  "kind": "codebase",
+  "category": "library",
+  "dimensions": [
+    { "id": "security", "name": "Security", "weight": 0.6, "whatPerfectLooksLike": "No exploitable source->sink flows." },
+    { "id": "correctness", "name": "Correctness", "weight": 0.4, "whatPerfectLooksLike": "Behaves correctly on happy and edge paths." }
+  ],
+  "note": "self-contained sample eval run (target lives under the run dir)",
+  "version": "0.0.0"
+}

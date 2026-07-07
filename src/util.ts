@@ -1,0 +1,187 @@
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+
+// ---- fs helpers ----------------------------------------------------------
+export function exists(p: string): boolean {
+  return existsSync(p);
+}
+
+export function ensureDir(p: string): void {
+  mkdirSync(p, { recursive: true });
+}
+
+export function readText(p: string): string {
+  return readFileSync(p, "utf8");
+}
+
+export function writeText(p: string, s: string): void {
+  ensureDir(dirname(p));
+  writeFileSync(p, s);
+}
+
+export function readJson<T = unknown>(p: string): T {
+  return JSON.parse(readFileSync(p, "utf8")) as T;
+}
+
+export function writeJson(p: string, data: unknown): void {
+  writeText(p, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+export function slug(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "item"
+  );
+}
+
+export function listMarkdown(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".md")) out.push(p);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+// The stored absolute target path is used when it still exists (normal run);
+// otherwise (a committed/moved eval run) the target is resolved relative to the
+// run dir, so a self-contained sample run stays portable across machines/CI.
+export function resolveTargetAbs(targetAbs: string, target: string, runDir: string): string {
+  if (targetAbs && existsSync(targetAbs)) return targetAbs;
+  return resolve(runDir, target);
+}
+
+// ---- evidence reference resolution --------------------------------------
+// A finding cites evidence via a `ref` string. This resolves it against the
+// TARGET repo (for code citations) or the eval RUN dir (for produced logs).
+// The core anti-hallucination guarantee: a gradeable ref must point at a real
+// file, and a real line within range — a stale/invented line is a hard failure.
+export type EvidenceKind = "file" | "run" | "url" | "external";
+
+export interface ResolvedEvidence {
+  raw: string;
+  kind: EvidenceKind;
+  gradeable: boolean; // can this ref, in principle, be checked offline?
+  resolved: boolean; // does it actually point at something real?
+  reason?: string; // why unresolved
+  absPath?: string;
+  lineStart?: number;
+  lineEnd?: number;
+}
+
+export interface ResolveOpts {
+  targetAbs: string;
+  runDir: string;
+}
+
+function parseLineSpec(spec: string): { start: number; end: number } | null {
+  const m = spec.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const start = Number(m[1]);
+  const end = m[2] ? Number(m[2]) : start;
+  return { start, end };
+}
+
+function lineCount(absPath: string): number {
+  const raw = readFileSync(absPath, "utf8");
+  if (raw === "") return 0;
+  // A trailing newline does not add a line; "a\nb\n" is 2 lines.
+  const n = raw.split("\n").length;
+  return raw.endsWith("\n") ? n - 1 : n;
+}
+
+export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidence {
+  const raw = String(ref ?? "").trim();
+
+  if (raw.startsWith("url:") || /^https?:\/\//.test(raw)) {
+    return { raw, kind: "url", gradeable: false, resolved: false, reason: "external URL (not resolvable offline)" };
+  }
+
+  // "run:relpath[#Lnn]" — a file the eval run produced (a log/artifact).
+  if (raw.startsWith("run:")) {
+    const body = raw.slice(4);
+    const [rel = "", anchor] = body.split("#");
+    const absPath = resolve(opts.runDir, rel);
+    if (!existsSync(absPath)) return { raw, kind: "run", gradeable: true, resolved: false, reason: `run artifact not found: ${rel}`, absPath };
+    const line = anchor?.match(/^L(\d+)$/);
+    if (line) {
+      const n = Number(line[1]);
+      const total = lineCount(absPath);
+      if (n < 1 || n > total)
+        return { raw, kind: "run", gradeable: true, resolved: false, reason: `line ${n} out of range (1-${total})`, absPath, lineStart: n, lineEnd: n };
+      return { raw, kind: "run", gradeable: true, resolved: true, absPath, lineStart: n, lineEnd: n };
+    }
+    return { raw, kind: "run", gradeable: true, resolved: true, absPath };
+  }
+
+  // "path:line" | "path:start-end" | "path" — a location in the TARGET repo.
+  let path = raw;
+  let lineSpec: { start: number; end: number } | null = null;
+  const lastColon = raw.lastIndexOf(":");
+  if (lastColon > 0) {
+    const maybe = parseLineSpec(raw.slice(lastColon + 1));
+    if (maybe) {
+      path = raw.slice(0, lastColon);
+      lineSpec = maybe;
+    }
+  }
+
+  const absPath = isAbsolute(path) ? path : resolve(opts.targetAbs, path);
+  const rel = relative(opts.targetAbs, absPath);
+  const outsideTarget = rel.startsWith("..") || isAbsolute(rel);
+  if (outsideTarget) {
+    // Never read outside the target (path-traversal guard); record but don't grade.
+    return { raw, kind: "external", gradeable: false, resolved: false, reason: "path is outside the target repo (not graded)", absPath };
+  }
+  if (!existsSync(absPath)) {
+    return {
+      raw,
+      kind: "file",
+      gradeable: true,
+      resolved: false,
+      reason: `file not found: ${path}`,
+      absPath,
+      lineStart: lineSpec?.start,
+      lineEnd: lineSpec?.end,
+    };
+  }
+  if (lineSpec) {
+    const total = lineCount(absPath);
+    if (lineSpec.start < 1 || lineSpec.end < lineSpec.start || lineSpec.end > total) {
+      return {
+        raw,
+        kind: "file",
+        gradeable: true,
+        resolved: false,
+        reason: `line ${lineSpec.start}-${lineSpec.end} out of range (1-${total}) — hallucinated or stale`,
+        absPath,
+        lineStart: lineSpec.start,
+        lineEnd: lineSpec.end,
+      };
+    }
+    return { raw, kind: "file", gradeable: true, resolved: true, absPath, lineStart: lineSpec.start, lineEnd: lineSpec.end };
+  }
+  // File-scoped citation (no line) — accepted if the file exists.
+  return { raw, kind: "file", gradeable: true, resolved: true, absPath };
+}
+
+// Pull a short context window around the cited line(s) for a verify digest.
+export function extractContext(absPath: string, start?: number, end?: number, pad = 2): string {
+  if (!existsSync(absPath)) return "";
+  const lines = readFileSync(absPath, "utf8").split("\n");
+  if (start === undefined) return lines.slice(0, 12).join("\n");
+  const from = Math.max(0, start - 1 - pad);
+  const to = Math.min(lines.length, (end ?? start) + pad);
+  return lines
+    .slice(from, to)
+    .map((l, i) => `${from + i + 1}: ${l}`)
+    .join("\n");
+}

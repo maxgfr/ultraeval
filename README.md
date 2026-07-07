@@ -1,0 +1,86 @@
+# ultraeval
+
+[![CI](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml/badge.svg)](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml)
+
+> Evaluate a **skill or codebase** with a multi-agent workflow, ground every finding in a real `file:line`, and get back **AI-exploitable fix docs** — a prioritized backlog plus per-fix **TDD cards** a model can implement red→green→refactor.
+
+ultraeval is an [Agent Skill](https://www.skills.sh/) (the open agent-skills ecosystem). A tiny zero-dependency engine scaffolds the run, **generates the workflow + subagent contracts**, and enforces a grounding gate; the AI does the research, judgment, and writing. It is the method productized: the same one used to audit a whole family of skills, packaged so you can replay it on any target.
+
+## Install
+
+```bash
+npx skills add maxgfr/ultraeval        # into the current project (committed, team-shared)
+npx skills add -g maxgfr/ultraeval     # globally
+```
+
+No `npm install`, no API keys — the engine is a single committed `.mjs` bundle.
+
+## What it does
+
+```
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → render
+```
+
+- **`plan`** generates `eval.workflow.mjs` — a ready-to-launch multi-agent Workflow parameterized to your target — plus `agents/*.md` dispatch contracts. This is the "generate the workflow and subagents" part.
+- Every finding must resolve to a real `file:line` in the target (or a produced run-log line). **`check` rejects a hallucinated or stale citation**; **`verify`** adversarially confirms the cited content actually supports the claim.
+- **`backlog --tdd`** turns confirmed findings into `BACKLOG.json` (machine-readable, priority-ordered) and one `fixes/FIX-*.md` **TDD card** per finding (RED failing-test-first → GREEN change → VERIFY).
+
+## What it produces
+
+```
+<run>/
+  eval.config.json         # target, kind, category, scored dimensions
+  eval.workflow.mjs        # the generated multi-agent Workflow
+  agents/*.md              # subagent dispatch contracts
+  research/<dim>.md        # cited methodology per dimension
+  TEST-PLAN.md             # every functionality + gate to test
+  runs/core.md, live.md    # deterministic + live evidence (cited by findings)
+  findings.json            # grounded findings (the gate enforces file:line resolution)
+  VERIFY.todo.json/.json   # adversarial claim↔evidence verdicts
+  RESULTS.md / SUMMARY.md  # scored report (claims cite [F#])
+  BACKLOG.json             # priority-ordered fix tasks
+  fixes/FIX-*.md           # per-fix TDD cards
+  REMEDIATION.md           # the human-readable plan
+  index.html / index.md    # dashboard
+```
+
+## Standalone CLI (the engine)
+
+```bash
+ENGINE=node scripts/ultraeval.mjs
+$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill"
+$ENGINE plan --run /tmp/eval                       # generate the workflow + agents
+$ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation)
+$ENGINE verify --run /tmp/eval                      # write the adversarial worklist
+$ENGINE verify --run /tmp/eval --apply verdicts.json
+$ENGINE check --run /tmp/eval --semantic --require-verify   # exit gate
+$ENGINE backlog --run /tmp/eval --tdd               # BACKLOG.json + fixes/FIX-*.md
+$ENGINE render --run /tmp/eval                      # index.html + index.md
+$ENGINE clean --run /tmp/eval                       # remove derived artifacts (keeps deliverables)
+```
+
+Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+
+## Why the gate matters
+
+The failure mode of every "AI evaluates X" tool is confident, ungrounded findings. ultraeval makes that structurally hard: `check` opens each cited `file:line` in the target and fails if it does not exist or is out of range; `verify` then asks a skeptic whether the content actually supports the claim, and `check --semantic --require-verify` is the exit gate. A fix backlog you cannot trace back to real code is worse than none.
+
+## Development
+
+```bash
+pnpm install
+pnpm run build        # tsup -> scripts/ultraeval.mjs, mirrored into skills/ultraeval/scripts/
+pnpm test             # vitest
+pnpm run eval         # RED/GREEN gate probe against the shipped bundle
+pnpm run check:build  # bundle is reproducible + install-bundle shape is valid
+```
+
+The engine source is `src/*.ts`; the shipped bundle is committed so the skill installs with zero dependencies. Keep the two engine copies byte-identical (`check:build` enforces it).
+
+## Security
+
+ultraeval only **reads** the evaluated target and writes under the run dir; it never executes the target's code. The `executor` subagent may run the target's *own* commands (its tests/gates) — sandbox untrusted repos.
+
+## License
+
+MIT © maxgfr

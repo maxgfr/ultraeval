@@ -1,0 +1,7 @@
+{
+  "pairs": [
+    { "claimId": "F1", "evidenceRef": "app.js:3", "verdict": "supported", "note": "line 3 interpolates req.query.id into SQL" },
+    { "claimId": "F1", "evidenceRef": "run:runs/core.md#L2", "verdict": "supported", "note": "scanner log confirms" },
+    { "claimId": "F2", "evidenceRef": "app.js:5", "verdict": "supported", "note": "execSync on req.query.c" }
+  ]
+}

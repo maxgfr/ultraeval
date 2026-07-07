@@ -1,0 +1,52 @@
+{
+  "name": "ultraeval",
+  "version": "0.0.0",
+  "description": "Evaluate a skill or codebase with a multi-agent workflow, then generate grounded, AI-exploitable fix docs and a TDD backlog. A skills.sh agent skill.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "bin": { "ultraeval": "scripts/ultraeval.mjs" },
+  "files": ["skills", "scripts", "assets", "src"],
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "author": "maxgfr",
+  "repository": { "type": "git", "url": "https://github.com/maxgfr/ultraeval" },
+  "keywords": [
+    "skills",
+    "agent-skill",
+    "skills.sh",
+    "evaluation",
+    "eval",
+    "code-review",
+    "tdd",
+    "ai-agent",
+    "workflow",
+    "subagents",
+    "audit",
+    "grounding"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-bundle.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome ci .",
+    "format": "biome format --write .",
+    "verify:bundle": "node scripts/verify-skill-bundle.mjs",
+    "check:build": "tsup && node scripts/copy-bundle.mjs && git diff --exit-code -- scripts/ultraeval.mjs skills/ultraeval/scripts/ultraeval.mjs && node scripts/verify-skill-bundle.mjs",
+    "demo": "node scripts/ultraeval.mjs init --target tests/fixtures/target-lib --out /tmp/ultraeval-demo --kind codebase --category library && node scripts/ultraeval.mjs plan --run /tmp/ultraeval-demo",
+    "eval": "node evals/run.mjs",
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@types/node": "^20.14.0",
+    "semantic-release": "^24.2.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.0"
+  },
+  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+}
