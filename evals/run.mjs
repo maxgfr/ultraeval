@@ -96,9 +96,54 @@ function backlogProbe() {
   }
 }
 
-console.log("ultraeval evals — RED/GREEN gate probe + backlog\n");
+// A malformed findings record must fail the gate on shape, not just grounding.
+function schemaProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-schema-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    const fp = join(dir, "findings.json");
+    const doc = JSON.parse(readFileSync(fp, "utf8"));
+    doc.findings[0].severity = "critical"; // not P0/P1/P2
+    writeFileSync(fp, JSON.stringify(doc));
+    if (run(["check", "--run", dir]).status === 0) return fail("[schema] an invalid severity slipped through check");
+    pass("[schema] check rejects an invalid severity (exit 1)");
+  } catch (e) {
+    fail(`[schema] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// score reduces judges + dimensions to a scorecard; a live P0 caps meets-expectations.
+function scoreProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-score-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    writeFileSync(
+      join(dir, "judges.jsonl"),
+      [
+        JSON.stringify({ lens: "a", dimensionScores: [{ id: "security", score: 4 }, { id: "correctness", score: 5 }], meetsExpectations: false }),
+        JSON.stringify({ lens: "b", dimensionScores: [{ id: "security", score: 3 }, { id: "correctness", score: 5 }], meetsExpectations: false }),
+      ].join("\n"),
+    );
+    if (run(["score", "--run", dir]).status !== 0) return fail("[score] score command failed");
+    if (!existsSync(join(dir, "scorecard.json"))) return fail("[score] no scorecard.json written");
+    const sc = JSON.parse(readFileSync(join(dir, "scorecard.json"), "utf8"));
+    if (typeof sc.overall !== "number") return fail("[score] scorecard has no numeric overall");
+    if (sc.meetsExpectations !== false) return fail("[score] sample-run has a live P0 — meets-expectations must be false");
+    pass(`[score] scorecard overall=${sc.overall}/100, meets-expectations=false (P0 present)`);
+  } catch (e) {
+    fail(`[score] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log("ultraeval evals — RED/GREEN gate probe + backlog + schema + score\n");
 gateProbe();
 backlogProbe();
+schemaProbe();
+scoreProbe();
 if (failures) {
   console.error(`\n${failures} probe(s) failed`);
   process.exit(1);

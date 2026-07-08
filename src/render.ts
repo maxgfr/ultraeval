@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { Backlog, EvalConfig, FindingsDoc, VerifyResult } from "./types.js";
+import type { Backlog, EvalConfig, FindingsDoc, Scorecard, VerifyResult } from "./types.js";
 import { exists, readJson, writeText } from "./util.js";
 
 export interface RenderOpts {
@@ -13,21 +13,22 @@ function load(runDir: string) {
   const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
   const verify = exists(join(runDir, "VERIFY.json")) ? readJson<VerifyResult>(join(runDir, "VERIFY.json")) : null;
   const backlog = exists(join(runDir, "BACKLOG.json")) ? readJson<Backlog>(join(runDir, "BACKLOG.json")) : null;
-  return { cfg, doc, verify, backlog };
+  const scorecard = exists(join(runDir, "scorecard.json")) ? readJson<Scorecard>(join(runDir, "scorecard.json")) : null;
+  return { cfg, doc, verify, backlog, scorecard };
 }
 
 export function render(runDir: string, opts: RenderOpts = {}): string[] {
-  const { cfg, doc, verify, backlog } = load(runDir);
+  const { cfg, doc, verify, backlog, scorecard } = load(runDir);
   const out = opts.out ?? runDir;
   const written: string[] = [];
   if (opts.md !== false) {
     const p = join(out, "index.md");
-    writeText(p, buildMd(cfg, doc, verify, backlog));
+    writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
     const p = join(out, "index.html");
-    writeText(p, buildHtml(cfg, doc, verify, backlog));
+    writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   return written;
@@ -39,7 +40,7 @@ function counts(doc: FindingsDoc) {
   return { total: live.length, p0: by("P0"), p1: by("P1"), p2: by("P2") };
 }
 
-function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null): string {
+function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null, scorecard: Scorecard | null): string {
   const c = counts(doc);
   const rows = doc.findings
     .filter((f) => f.status !== "dismissed")
@@ -50,12 +51,20 @@ function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null,
     ``,
     `> target \`${cfg.targetAbs}\` · ${cfg.kind} · ${cfg.category} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})`,
     ``,
-    `## Findings`,
-    ``,
-    `| id | sev | title | status | evidence |`,
-    `|----|-----|-------|--------|----------|`,
-    rows || `| — | — | none | — | — |`,
   ];
+  if (scorecard) {
+    parts.push(
+      `## Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100`,
+      ``,
+      `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
+      ``,
+      `| dimension | score | weight |`,
+      `|-----------|-------|--------|`,
+      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} |`),
+      ``,
+    );
+  }
+  parts.push(`## Findings`, ``, `| id | sev | title | status | evidence |`, `|----|-----|-------|--------|----------|`, rows || `| — | — | none | — | — |`);
   if (verify)
     parts.push(
       ``,
@@ -78,8 +87,11 @@ h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}t
 .p0{color:#b00}.p1{color:#a60}.p2{color:#555}.meta{color:#666}code{background:#f4f4f4;padding:.05rem .3rem;border-radius:3px}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}th,td{border-color:#333}code{background:#222}.meta{color:#999}}`;
 
-function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null): string {
+function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null, scorecard: Scorecard | null): string {
   const c = counts(doc);
+  const verdict = scorecard
+    ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td></tr>`).join("")}</table>`
+    : "";
   const rows = doc.findings
     .filter((f) => f.status !== "dismissed")
     .map(
@@ -96,6 +108,7 @@ function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | nul
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval — ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation — ${esc(cfg.target)}</h1>
 <p class="meta"><code>${esc(cfg.targetAbs)}</code> · ${cfg.kind} · ${esc(cfg.category)} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})</p>
+${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
 ${vf}${bl}</body></html>
 `;

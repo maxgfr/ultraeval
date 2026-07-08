@@ -21,7 +21,7 @@ Not for: a quick one-file code review (just read it); running the target's own t
 ## The loop
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → render
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → score → render
 ```
 
 Everything is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Fanning out subagents is an optimization the generated workflow encodes — never a requirement.
@@ -70,11 +70,14 @@ node <skill-dir>/scripts/ultraeval.mjs backlog --run <RUN> --tdd
 ```
 Emits `BACKLOG.json` (a machine-readable, priority-ordered task list a downstream agent can execute), `REMEDIATION.md`, and one `fixes/FIX-*.md` **TDD card** per confirmed finding — each with a RED failing-test-first spec, the GREEN change, and a VERIFY command. See `references/tdd-remediation.md`.
 
-**7. Render + present.**
+**7. Score + render + present.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs render --run <RUN>          # index.html + index.md dashboard
+node <skill-dir>/scripts/ultraeval.mjs score --run <RUN>           # judges.jsonl + dimensions -> scorecard.json (0-100 + meets-expectations)
+node <skill-dir>/scripts/ultraeval.mjs render --run <RUN>          # index.html + index.md dashboard (shows the verdict)
 ```
-Present the scorecard, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
+`score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, or a score below the bar) caps meets-expectations at false. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
+
+Exit codes across the CLI: **0** ok / gate passed · **1** gate failed (`check`/`verify`) · **2** usage or runtime error.
 
 **8. (optional) Drive the fixes.** Hand each `fixes/FIX-*.md` to a build agent to implement TDD — the card is written so it can go red→green→refactor without re-deriving the problem.
 

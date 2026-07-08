@@ -120,3 +120,25 @@ export interface CheckResult {
   errors: string[];
   warnings: string[];
 }
+
+// ---- scoring -------------------------------------------------------------
+// One line of judges.jsonl, written by each judge subagent.
+export interface JudgeLine {
+  lens?: string;
+  dimensionScores?: { id: string; score: number; rationale?: string }[];
+  overall?: number;
+  meetsExpectations?: boolean;
+  topFindings?: string[];
+}
+
+export interface Scorecard {
+  overall: number; // 0-100 weighted
+  maxScore: number; // 100
+  meetsExpectations: boolean;
+  dimensions: { id: string; name: string; weight: number; score: number }[]; // 0-5 avg across judges
+  judges: number;
+  reason: string;
+}
+
+// meets-expectations bar: below this weighted score it is false regardless of votes
+export const MEETS_BAR = 80;

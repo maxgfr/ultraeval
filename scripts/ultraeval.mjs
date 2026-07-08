@@ -262,6 +262,8 @@ var CAPS = {
   // --strict raises coverage to this
 };
 var VALID_VERDICTS = ["supported", "partial", "refuted", "unsupported"];
+var VALID_SEVERITIES = ["P0", "P1", "P2"];
+var MEETS_BAR = 80;
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -351,6 +353,18 @@ function checkRun(runDir, opts = {}) {
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
   const ids = new Set(findings.map((f) => f.id));
+  const STATUSES = ["open", "confirmed", "dismissed"];
+  const seenIds = /* @__PURE__ */ new Set();
+  for (const f of findings) {
+    const fid = typeof f.id === "string" ? f.id : "?";
+    if (!/^F\d+$/.test(fid)) errors.push(`finding id "${fid}" must match F<number>`);
+    else if (seenIds.has(fid)) errors.push(`duplicate finding id ${fid}`);
+    seenIds.add(fid);
+    if (!VALID_SEVERITIES.includes(f.severity)) errors.push(`${fid} has invalid severity "${f.severity}" (expected P0|P1|P2)`);
+    if (!STATUSES.includes(f.status)) errors.push(`${fid} has invalid status "${f.status}" (expected open|confirmed|dismissed)`);
+    if (!f.title || !f.statement) errors.push(`${fid} is missing a title or statement`);
+    if (!Array.isArray(f.evidence)) errors.push(`${fid} has no evidence array`);
+  }
   if (opts.minFindings && findings.length < opts.minFindings) {
     errors.push(`only ${findings.length} finding(s) recorded; --min-findings ${opts.minFindings} required`);
   }
@@ -421,6 +435,12 @@ function checkRun(runDir, opts = {}) {
       errors.push("--semantic: VERIFY.json is not valid JSON");
     }
   }
+  for (const f of findings) {
+    if (f.status === "dismissed") continue;
+    if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
+    if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
+  }
+  if (exists(join3(runDir, "RESULTS.md")) && !exists(join3(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
   return { ok: errors.length === 0, errors, warnings };
 }
 function formatCheckReport(r, runDir) {
@@ -471,63 +491,67 @@ function clean(runDir, opts = {}) {
 import { join as join5, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
-function defaultDimensions(kind, _category) {
-  if (kind === "skill") {
-    return [
-      {
-        id: "grounding",
-        name: "Correctness & grounding",
-        weight: 0.3,
-        whatPerfectLooksLike: "Every finding/claim resolves to real source; anti-hallucination gates pass on genuine artifacts AND fail on doctored ones."
-      },
-      {
-        id: "coverage",
-        name: "Functional coverage",
-        weight: 0.25,
-        whatPerfectLooksLike: "Every mode, command, flag and gate works as documented; no half-implemented surface."
-      },
-      {
-        id: "ux",
-        name: "UX & meets-expectations",
-        weight: 0.2,
-        whatPerfectLooksLike: "The real deliverable is production-quality, readable, low-friction; failure modes are graceful."
-      },
-      {
-        id: "safety",
-        name: "Safety & robustness",
-        weight: 0.15,
-        whatPerfectLooksLike: "No destructive defaults, no data loss, graceful degradation when deps/network are absent."
-      },
-      {
-        id: "docs",
-        name: "Docs consistency",
-        weight: 0.1,
-        whatPerfectLooksLike: "SKILL.md, README, --help and actual behavior agree; documented examples run."
-      }
-    ];
-  }
-  return [
-    {
-      id: "correctness",
-      name: "Correctness",
-      weight: 0.3,
-      whatPerfectLooksLike: "Behaves correctly on happy paths AND edge cases; no logic bugs on the evaluated surface."
-    },
-    {
-      id: "tests",
-      name: "Test quality",
-      weight: 0.2,
-      whatPerfectLooksLike: "Meaningful tests cover the behavior and fail when the code is wrong (not just coverage %)."
-    },
-    { id: "security", name: "Security", weight: 0.2, whatPerfectLooksLike: "No exploitable source\u2192sink flows; inputs validated; secrets and authz handled." },
-    {
-      id: "maintainability",
-      name: "Maintainability",
-      weight: 0.2,
-      whatPerfectLooksLike: "Clear module boundaries, low duplication, code a newcomer can follow."
-    },
-    { id: "performance", name: "Performance", weight: 0.1, whatPerfectLooksLike: "No obvious hot-path waste; scales to realistic inputs." }
-  ];
+var SKILL_DIMS = [
+  {
+    id: "grounding",
+    name: "Correctness & grounding",
+    weight: 0.3,
+    whatPerfectLooksLike: "every claim resolves to real source; gates pass on genuine AND fail on doctored artifacts"
+  },
+  { id: "coverage", name: "Functional coverage", weight: 0.25, whatPerfectLooksLike: "every mode/command/flag/gate works as documented" },
+  { id: "ux", name: "UX & meets-expectations", weight: 0.2, whatPerfectLooksLike: "the real deliverable is production-quality, low-friction" },
+  { id: "safety", name: "Safety & robustness", weight: 0.15, whatPerfectLooksLike: "no destructive defaults; graceful degradation without deps/network" },
+  { id: "docs", name: "Docs consistency", weight: 0.1, whatPerfectLooksLike: "SKILL.md, README, --help, and behavior agree; examples run" }
+];
+var CODEBASE_DIMS = [
+  { id: "correctness", name: "Correctness", weight: 0.3, whatPerfectLooksLike: "correct on happy AND edge paths; no logic bugs" },
+  { id: "tests", name: "Test quality", weight: 0.2, whatPerfectLooksLike: "tests fail when the code is wrong (not just coverage %)" },
+  { id: "security", name: "Security", weight: 0.2, whatPerfectLooksLike: "no exploitable source->sink flows; inputs validated" },
+  { id: "maintainability", name: "Maintainability", weight: 0.2, whatPerfectLooksLike: "clear boundaries, low duplication" },
+  { id: "performance", name: "Performance", weight: 0.1, whatPerfectLooksLike: "no hot-path waste; scales to realistic inputs" }
+];
+var SECURITY_DIMS = [
+  { id: "precision", name: "Precision", weight: 0.25, whatPerfectLooksLike: "reported findings are real exploitable issues, not false positives" },
+  { id: "recall", name: "Recall", weight: 0.25, whatPerfectLooksLike: "known vulnerabilities in a labelled corpus are all found" },
+  { id: "false-positive-rate", name: "False-positive rate", weight: 0.2, whatPerfectLooksLike: "sanitized/safe code is never flagged" },
+  { id: "reachability", name: "Reachability", weight: 0.15, whatPerfectLooksLike: "flagged sinks are actually reachable from untrusted input" },
+  { id: "maintainability", name: "Maintainability", weight: 0.15, whatPerfectLooksLike: "clear rules, easy to extend" }
+];
+var REQUIREMENTS_DIMS = [
+  { id: "completeness", name: "Completeness", weight: 0.3, whatPerfectLooksLike: "every needed requirement is present; no gaps (ISO/IEC/IEEE 29148)" },
+  { id: "consistency", name: "Consistency", weight: 0.25, whatPerfectLooksLike: "no contradictions across requirements/sections" },
+  {
+    id: "verifiable-acceptance",
+    name: "Verifiable acceptance",
+    weight: 0.25,
+    whatPerfectLooksLike: "every requirement has testable Given/When/Then acceptance criteria"
+  },
+  { id: "traceability", name: "Traceability", weight: 0.2, whatPerfectLooksLike: "requirements trace to scope/build tasks and back" }
+];
+var RESEARCH_DIMS = [
+  { id: "faithfulness", name: "Faithfulness", weight: 0.35, whatPerfectLooksLike: "every claim is attributable to a fetched source" },
+  { id: "retrieval", name: "Retrieval", weight: 0.25, whatPerfectLooksLike: "high recall@k and MRR for the needed evidence" },
+  { id: "coverage", name: "Coverage", weight: 0.2, whatPerfectLooksLike: "the question is answered completely, not partially" },
+  { id: "hallucination", name: "Hallucination control", weight: 0.2, whatPerfectLooksLike: "no ungrounded or fabricated statements survive the gate" }
+];
+var webFlavored = (base) => [
+  ...base,
+  { id: "accessibility", name: "Accessibility (WCAG 2.2 AA)", weight: 0.15, whatPerfectLooksLike: "no blocking a11y violations" },
+  { id: "auth", name: "AuthN / AuthZ", weight: 0.2, whatPerfectLooksLike: "sessions and authorization are correct; no IDOR" }
+];
+var cliFlavored = (base) => [
+  ...base,
+  { id: "ergonomics", name: "Ergonomics", weight: 0.15, whatPerfectLooksLike: "clear --help, actionable errors, consistent exit codes" }
+];
+function defaultDimensions(kind, category = "") {
+  const cat = category.toLowerCase();
+  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return SECURITY_DIMS;
+  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return REQUIREMENTS_DIMS;
+  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return RESEARCH_DIMS;
+  const base = kind === "skill" ? SKILL_DIMS : CODEBASE_DIMS;
+  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return webFlavored(base);
+  if (/\bcli\b|command.?line|terminal/.test(cat)) return cliFlavored(base);
+  return base;
 }
 
 // src/init.ts
@@ -792,20 +816,21 @@ function load(runDir) {
   const doc = readJson(join7(runDir, "findings.json"));
   const verify = exists(join7(runDir, "VERIFY.json")) ? readJson(join7(runDir, "VERIFY.json")) : null;
   const backlog = exists(join7(runDir, "BACKLOG.json")) ? readJson(join7(runDir, "BACKLOG.json")) : null;
-  return { cfg, doc, verify, backlog };
+  const scorecard = exists(join7(runDir, "scorecard.json")) ? readJson(join7(runDir, "scorecard.json")) : null;
+  return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
-  const { cfg, doc, verify, backlog } = load(runDir);
+  const { cfg, doc, verify, backlog, scorecard } = load(runDir);
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
     const p = join7(out, "index.md");
-    writeText(p, buildMd(cfg, doc, verify, backlog));
+    writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
     const p = join7(out, "index.html");
-    writeText(p, buildHtml(cfg, doc, verify, backlog));
+    writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   return written;
@@ -815,20 +840,28 @@ function counts(doc) {
   const by = (s) => live.filter((f) => f.severity === s).length;
   return { total: live.length, p0: by("P0"), p1: by("P1"), p2: by("P2") };
 }
-function buildMd(cfg, doc, verify, backlog) {
+function buildMd(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
   const rows = doc.findings.filter((f) => f.status !== "dismissed").map((f) => `| ${f.id} | ${f.severity} | ${f.title.replace(/\|/g, "\\|")} | ${f.status} | ${(f.evidence ?? []).map((e) => `\`${e.ref}\``).join(" ")} |`).join("\n");
   const parts = [
     `# Evaluation \u2014 ${cfg.target}`,
     ``,
     `> target \`${cfg.targetAbs}\` \xB7 ${cfg.kind} \xB7 ${cfg.category} \xB7 ${c.total} findings (P0 ${c.p0} \xB7 P1 ${c.p1} \xB7 P2 ${c.p2})`,
-    ``,
-    `## Findings`,
-    ``,
-    `| id | sev | title | status | evidence |`,
-    `|----|-----|-------|--------|----------|`,
-    rows || `| \u2014 | \u2014 | none | \u2014 | \u2014 |`
+    ``
   ];
+  if (scorecard) {
+    parts.push(
+      `## Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100`,
+      ``,
+      `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
+      ``,
+      `| dimension | score | weight |`,
+      `|-----------|-------|--------|`,
+      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} |`),
+      ``
+    );
+  }
+  parts.push(`## Findings`, ``, `| id | sev | title | status | evidence |`, `|----|-----|-------|--------|----------|`, rows || `| \u2014 | \u2014 | none | \u2014 | \u2014 |`);
   if (verify)
     parts.push(
       ``,
@@ -850,8 +883,9 @@ var STYLE = `body{font:15px/1.5 system-ui,sans-serif;max-width:60rem;margin:2rem
 h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #ddd;padding:.4rem .6rem;text-align:left;font-size:14px}
 .p0{color:#b00}.p1{color:#a60}.p2{color:#555}.meta{color:#666}code{background:#f4f4f4;padding:.05rem .3rem;border-radius:3px}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}th,td{border-color:#333}code{background:#222}.meta{color:#999}}`;
-function buildHtml(cfg, doc, verify, backlog) {
+function buildHtml(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
+  const verdict = scorecard ? `<h2>Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td></tr>`).join("")}</table>` : "";
   const rows = doc.findings.filter((f) => f.status !== "dismissed").map(
     (f) => `<tr><td>${f.id}</td><td class="${f.severity.toLowerCase()}">${f.severity}</td><td>${esc(f.title)}</td><td>${f.status}</td><td>${(f.evidence ?? []).map((e) => `<code>${esc(e.ref)}</code>`).join(" ")}</td></tr>`
   ).join("");
@@ -860,6 +894,7 @@ function buildHtml(cfg, doc, verify, backlog) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval \u2014 ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation \u2014 ${esc(cfg.target)}</h1>
 <p class="meta"><code>${esc(cfg.targetAbs)}</code> \xB7 ${cfg.kind} \xB7 ${esc(cfg.category)} \xB7 ${c.total} findings (P0 ${c.p0} \xB7 P1 ${c.p1} \xB7 P2 ${c.p2})</p>
+${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
 ${vf}${bl}</body></html>
 `;
@@ -868,12 +903,53 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// src/score.ts
+import { join as join8 } from "path";
+function readJudges(runDir) {
+  const p = join8(runDir, "judges.jsonl");
+  if (!exists(p)) return [];
+  return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+    try {
+      return JSON.parse(l);
+    } catch {
+      return null;
+    }
+  }).filter((x) => x !== null);
+}
+function computeScore(cfg, judges, doc) {
+  const dims = cfg.dimensions ?? [];
+  const dimensions = dims.map((d) => {
+    const scores = judges.flatMap((j) => (j.dimensionScores ?? []).filter((s) => s.id === d.id).map((s) => s.score)).filter((n) => typeof n === "number");
+    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    return { id: d.id, name: d.name, weight: d.weight, score: Number(avg.toFixed(2)) };
+  });
+  const totalWeight = dimensions.reduce((a, b) => a + b.weight, 0) || 1;
+  const weighted = dimensions.reduce((a, b) => a + b.score / 5 * b.weight, 0) / totalWeight;
+  const overall = Math.round(weighted * 100);
+  const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.severity === "P0");
+  const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
+  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= MEETS_BAR;
+  const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : overall < MEETS_BAR ? `weighted score ${overall} is below the ${MEETS_BAR} bar` : `no P0, judges agree, score ${overall} >= ${MEETS_BAR}`;
+  return { overall, maxScore: 100, meetsExpectations, dimensions, judges: judges.length, reason };
+}
+function scoreRun(runDir) {
+  const cfg = readJson(join8(runDir, "eval.config.json"));
+  const doc = exists(join8(runDir, "findings.json")) ? readJson(join8(runDir, "findings.json")) : { findings: [] };
+  const sc = computeScore(cfg, readJudges(runDir), doc);
+  writeJson(join8(runDir, "scorecard.json"), sc);
+  return sc;
+}
+function formatScore(sc) {
+  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
+  return [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`].join("\n");
+}
+
 // src/verify.ts
-import { isAbsolute as isAbsolute2, join as join8, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join9, resolve as resolve3 } from "path";
 var SEV_ORDER2 = { P0: 0, P1: 1, P2: 2 };
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join8(runDir, "eval.config.json"));
-  const doc = readJson(join8(runDir, "findings.json"));
+  const cfg = readJson(join9(runDir, "eval.config.json"));
+  const doc = readJson(join9(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER2[a.severity] ?? 9) - (SEV_ORDER2[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -894,8 +970,8 @@ function runVerify(runDir, opts = {}) {
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i) => i % opts.shards === opts.shard);
   const out = { run: runDir, pairs };
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
-  writeJson(join8(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join8(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join9(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join9(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function renderWorklistMd(todo) {
@@ -955,9 +1031,9 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join8(runDir, "findings.json"));
+  const doc = readJson(join9(runDir, "findings.json"));
   const result = reduceVerdicts(loadVerdicts(runDir, spec), doc.findings ?? []);
-  writeJson(join8(runDir, "VERIFY.json"), result);
+  writeJson(join9(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -985,12 +1061,16 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
+  score    --run <run>
+             Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
   render   --run <run> [--out <dir>] [--no-html] [--no-md]
-             Self-contained dashboard (index.html + index.md).
+             Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
-  help | --help        version | --version`;
+  help | --help        version | --version
+
+Exit codes: 0 = ok / gate passed \xB7 1 = gate failed (check/verify) \xB7 2 = usage or runtime error.`;
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--target",
   "--out",
@@ -1086,6 +1166,11 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         if (!run) throw new Error("backlog requires --run <run>");
         const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
         console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
+        return;
+      }
+      case "score": {
+        if (!run) throw new Error("score requires --run <run>");
+        console.log(formatScore(scoreRun(run)));
         return;
       }
       case "render": {

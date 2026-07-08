@@ -55,11 +55,12 @@ $ENGINE verify --run /tmp/eval                      # write the adversarial work
 $ENGINE verify --run /tmp/eval --apply verdicts.json
 $ENGINE check --run /tmp/eval --semantic --require-verify   # exit gate
 $ENGINE backlog --run /tmp/eval --tdd               # BACKLOG.json + fixes/FIX-*.md
-$ENGINE render --run /tmp/eval                      # index.html + index.md
+$ENGINE score --run /tmp/eval                       # judges.jsonl + dimensions -> scorecard.json (0-100 + meets-expectations)
+$ENGINE render --run /tmp/eval                      # index.html + index.md (shows the verdict)
 $ENGINE clean --run /tmp/eval                       # remove derived artifacts (keeps deliverables)
 ```
 
-Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `check` also validates the findings record's schema (id/severity/status/evidence), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
 
 ## Why the gate matters
 

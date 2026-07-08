@@ -39,10 +39,13 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
 
 FAILS when:
 - `eval.config.json` or `findings.json` is missing/invalid.
+- **schema**: a finding has a non-`F\d+`/duplicate `id`, a `severity` not in `P0|P1|P2`, a `status` not in `open|confirmed|dismissed`, a missing `title`/`statement`, or no `evidence` array.
 - a non-dismissed finding has **no resolvable evidence**, or cites a **file that does not exist** or a **line out of range** (the "hallucinated or stale" case).
 - `RESULTS.md` has a **dangling `[F#]`** (no such finding), or its citation coverage < `--coverage-min` (default 0.6; `--strict` = 1.0). Flag genuine narrative with `[M]`.
 - `BACKLOG.json` references a missing or dismissed finding.
 - `--min-findings N` and fewer findings exist.
+
+WARNS (never fails the gate): a finding still `open`, a `confirmed` finding with no `recommendation` (its backlog card will be vague), or `RESULTS.md` present without `SUMMARY.md`.
 
 Flags: `--semantic` (fold VERIFY.json), `--require-verify` (fail if no adjudicated VERIFY.json — the deep exit gate), `--strict`, `--coverage-min <0..1>`, `--min-findings <n>`.
 

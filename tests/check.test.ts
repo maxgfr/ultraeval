@@ -119,6 +119,28 @@ describe("check — grounding gate", () => {
     expect(checkRun(scaffold([genuine]), { minFindings: 3 }).ok).toBe(false);
   });
 
+  it("fails on an invalid severity (schema)", () => {
+    const r = checkRun(scaffold([{ ...genuine, severity: "critical" }]));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/invalid severity/);
+  });
+
+  it("fails on a duplicate finding id (schema)", () => {
+    const r = checkRun(scaffold([genuine, { ...genuine, evidence: [{ ref: "app.js:1" }] }]));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/duplicate/);
+  });
+
+  it("fails on an id that is not F<number> (schema)", () => {
+    expect(checkRun(scaffold([{ ...genuine, id: "bug1" }])).ok).toBe(false);
+  });
+
+  it("warns (not fails) on a confirmed finding with no recommendation", () => {
+    const r = checkRun(scaffold([genuine])); // genuine has no recommendation
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/no recommendation/);
+  });
+
   it("errors when eval.config.json is missing", () => {
     const root = mkdtempSync(join(tmpdir(), "ue-check-"));
     tmps.push(root);

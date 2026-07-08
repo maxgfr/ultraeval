@@ -24,6 +24,9 @@
 
 ## Category tweaks
 
+`init --category "<c>"` now auto-selects the right set: a category matching security/SAST → precision/recall/false-positive-rate; web/frontend → base + accessibility + auth; research/RAG/retrieval → faithfulness/retrieval/coverage/hallucination; requirements/PRD/SRD → completeness/consistency/verifiable-acceptance/traceability; CLI → base + ergonomics. Otherwise the kind base applies. The research stage still refines weights/anchors.
+
+
 - **CLI tool** — add `ergonomics` (help, error messages, exit codes); weight `ux` up.
 - **Web app** — add `accessibility` (WCAG 2.2 AA) and `auth` (authz/session); weight `security` up.
 - **Security/analysis tool** — split `correctness` into `precision` and `recall` (measure against a labelled corpus: OWASP Benchmark, Juliet); add `false-positive-rate`.

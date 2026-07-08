@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { extractUnits, findingRefs, isCited } from "./citations.js";
-import { CAPS } from "./types.js";
-import type { CheckResult, EvalConfig, FindingsDoc, VerifyResult } from "./types.js";
+import { CAPS, VALID_SEVERITIES } from "./types.js";
+import type { CheckResult, EvalConfig, FindingsDoc, Severity, VerifyResult } from "./types.js";
 import { exists, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
 
 export interface CheckOpts {
@@ -48,6 +48,20 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
   const ids = new Set(findings.map((f) => f.id));
+
+  // 0. Findings-record schema integrity (shape, not grounding).
+  const STATUSES = ["open", "confirmed", "dismissed"];
+  const seenIds = new Set<string>();
+  for (const f of findings) {
+    const fid = typeof f.id === "string" ? f.id : "?";
+    if (!/^F\d+$/.test(fid)) errors.push(`finding id "${fid}" must match F<number>`);
+    else if (seenIds.has(fid)) errors.push(`duplicate finding id ${fid}`);
+    seenIds.add(fid);
+    if (!VALID_SEVERITIES.includes(f.severity as Severity)) errors.push(`${fid} has invalid severity "${f.severity}" (expected P0|P1|P2)`);
+    if (!STATUSES.includes(f.status as string)) errors.push(`${fid} has invalid status "${f.status}" (expected open|confirmed|dismissed)`);
+    if (!f.title || !f.statement) errors.push(`${fid} is missing a title or statement`);
+    if (!Array.isArray(f.evidence)) errors.push(`${fid} has no evidence array`);
+  }
 
   if (opts.minFindings && findings.length < opts.minFindings) {
     errors.push(`only ${findings.length} finding(s) recorded; --min-findings ${opts.minFindings} required`);
@@ -128,6 +142,14 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       errors.push("--semantic: VERIFY.json is not valid JSON");
     }
   }
+
+  // 5. Soft guidance — never fails the gate.
+  for (const f of findings) {
+    if (f.status === "dismissed") continue;
+    if (f.status === "open") warnings.push(`${f.id} is still "open" — adjudicate it (confirmed/dismissed) before backlog`);
+    if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation — its backlog card will be vague`);
+  }
+  if (exists(join(runDir, "RESULTS.md")) && !exists(join(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
 
   return { ok: errors.length === 0, errors, warnings };
 }

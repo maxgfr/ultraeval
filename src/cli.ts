@@ -5,6 +5,7 @@ import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
 import { render } from "./render.js";
+import { formatScore, scoreRun } from "./score.js";
 import type { Kind } from "./types.js";
 import { VERSION } from "./types.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
@@ -24,12 +25,16 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
+  score    --run <run>
+             Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
   render   --run <run> [--out <dir>] [--no-html] [--no-md]
-             Self-contained dashboard (index.html + index.md).
+             Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
-  help | --help        version | --version`;
+  help | --help        version | --version
+
+Exit codes: 0 = ok / gate passed · 1 = gate failed (check/verify) · 2 = usage or runtime error.`;
 
 interface Args {
   _: string[];
@@ -132,6 +137,11 @@ function main(): void {
         if (!run) throw new Error("backlog requires --run <run>");
         const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
         console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
+        return;
+      }
+      case "score": {
+        if (!run) throw new Error("score requires --run <run>");
+        console.log(formatScore(scoreRun(run)));
         return;
       }
       case "render": {
