@@ -565,7 +565,7 @@ function rankBrainstorm(runDir) {
 import { join as join5 } from "path";
 
 // src/types.ts
-var VERSION = "1.1.1";
+var VERSION = "1.2.0";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits
