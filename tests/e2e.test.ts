@@ -52,6 +52,13 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(existsSync(join(dir, "index.html"))).toBe(true);
   });
 
+  it("--version prints the version, not help", () => {
+    const r = run(["--version"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/^\d+\.\d+\.\d+/);
+    expect(r.out).not.toMatch(/Usage:/);
+  });
+
   it("check fails (exit 1) on a doctored citation", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-bad-"));
     tmps.push(dir);

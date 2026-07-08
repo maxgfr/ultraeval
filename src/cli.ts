@@ -80,12 +80,12 @@ function str(v: string | boolean | string[] | undefined): string | undefined {
 function main(): void {
   const args = parse(process.argv.slice(2));
   const cmd = args._[0];
-  if (args.help || cmd === "help" || !cmd) {
-    console.log(HELP);
-    return;
-  }
   if (args.version || cmd === "version") {
     console.log(VERSION);
+    return;
+  }
+  if (args.help || cmd === "help" || !cmd) {
+    console.log(HELP);
     return;
   }
   const run = str(args.run);
