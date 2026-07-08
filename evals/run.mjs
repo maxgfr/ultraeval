@@ -139,11 +139,52 @@ function scoreProbe() {
   }
 }
 
-console.log("ultraeval evals — RED/GREEN gate probe + backlog + schema + score\n");
+// analyze produces objective repo signal.
+function analyzeProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-an-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    if (run(["analyze", "--run", dir]).status !== 0) return fail("[analyze] command failed");
+    if (!existsSync(join(dir, "analysis.json"))) return fail("[analyze] no analysis.json written");
+    const a = JSON.parse(readFileSync(join(dir, "analysis.json"), "utf8"));
+    if (!(a.files >= 1) || !(a.loc > 0)) return fail("[analyze] empty analysis");
+    pass(`[analyze] analysis.json: ${a.files} files, ${a.loc} LOC, ${a.hotspots.length} hotspots`);
+  } catch (e) {
+    fail(`[analyze] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// a grounded opportunity (impact+effort, real anchor) passes; missing impact fails.
+function opportunityProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-opp-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    const fp = join(dir, "findings.json");
+    const doc = JSON.parse(readFileSync(fp, "utf8"));
+    doc.findings.push({ id: "F9", kind: "opportunity", severity: "P2", impact: "high", effort: "S", title: "characterize the /safe route", statement: "add a spec test for the sanitized route", evidence: [{ ref: "app.js:4" }], recommendation: "add a test", status: "confirmed" });
+    writeFileSync(fp, JSON.stringify(doc));
+    if (run(["check", "--run", dir]).status !== 0) return fail("[opportunity] a grounded opportunity was rejected");
+    pass("[opportunity] grounded opportunity (impact+effort, real anchor) passes check");
+    doc.findings[doc.findings.length - 1].impact = undefined;
+    writeFileSync(fp, JSON.stringify(doc));
+    if (run(["check", "--run", dir]).status === 0) return fail("[opportunity] an opportunity without impact slipped through");
+    pass("[opportunity] opportunity missing impact fails check (exit 1)");
+  } catch (e) {
+    fail(`[opportunity] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity\n");
 gateProbe();
 backlogProbe();
 schemaProbe();
 scoreProbe();
+analyzeProbe();
+opportunityProbe();
 if (failures) {
   console.error(`\n${failures} probe(s) failed`);
   process.exit(1);

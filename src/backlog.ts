@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, VerifyResult } from "./types.js";
-import { exists, readJson, slug, writeJson, writeText } from "./util.js";
+import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, Severity, VerifyResult } from "./types.js";
+import { exists, opportunityPriority, opportunityValue, readJson, slug, writeJson, writeText } from "./util.js";
 
 const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
 
@@ -42,26 +42,45 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
     const v = readJson<VerifyResult>(vpath);
     for (const id of v.failures ?? []) failed.add(id);
   }
+  const prio = (f: Finding): Severity => (f.kind === "opportunity" ? opportunityPriority(f.impact) : f.severity);
   const confirmed = (doc.findings ?? [])
     .filter((f) => f.status !== "dismissed" && !failed.has(f.id))
-    .sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
+    .sort((a, b) => {
+      const pa = SEV_ORDER[prio(a)] ?? 9;
+      const pb = SEV_ORDER[prio(b)] ?? 9;
+      if (pa !== pb) return pa - pb;
+      // within a band, rank opportunities by value (impact/effort); defects keep order
+      const va = a.kind === "opportunity" ? opportunityValue(a.impact, a.effort) : 0;
+      const vb = b.kind === "opportunity" ? opportunityValue(b.impact, b.effort) : 0;
+      return vb - va;
+    });
 
   const tasks: FixTask[] = confirmed.map((f, i) => {
     const targets = targetsOf(f);
+    const isOpp = f.kind === "opportunity";
     return {
       id: `FIX-${String(i + 1).padStart(3, "0")}`,
       findingId: f.id,
-      priority: f.severity,
+      kind: f.kind ?? "defect",
+      priority: prio(f),
       title: f.title,
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
         testFile: guessTestFile(targets, f),
-        description: f.failureScenario
-          ? `Write a failing test that reproduces: ${f.failureScenario}`
-          : `Write a failing test asserting the correct behavior for: ${f.statement}`,
+        description: isOpp
+          ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}`
+          : f.failureScenario
+            ? `Write a failing test that reproduces: ${f.failureScenario}`
+            : `Write a failing test asserting the correct behavior for: ${f.statement}`,
       },
-      green: { change: f.recommendation || "Make the minimal change that turns the RED test green — without weakening any gate." },
+      green: {
+        change:
+          f.recommendation ||
+          (isOpp
+            ? "Implement the improvement so the spec test passes."
+            : "Make the minimal change that turns the RED test green — without weakening any gate."),
+      },
       verify: {
         command:
           cfg.kind === "skill"
@@ -100,9 +119,10 @@ ${section("P0", "P0 — trust / correctness / data-loss")}${section("P1", "P1 �
 
 function renderFixCard(t: FixTask, f?: Finding): string {
   const evidence = (f?.evidence ?? []).map((e) => `\`${e.ref}\``).join(", ") || "—";
-  return `# ${t.id} — ${t.title}  (${t.priority})
+  const tag = t.kind === "opportunity" ? `OPPORTUNITY · impact ${f?.impact ?? "?"} · effort ${f?.effort ?? "?"}` : "DEFECT";
+  return `# ${t.id} — ${t.title}  (${t.priority} · ${tag})
 
-**Finding ${t.findingId}:** ${f?.statement ?? t.rationale}
+**${t.kind === "opportunity" ? "Opportunity" : "Finding"} ${t.findingId}:** ${f?.statement ?? t.rationale}
 **Evidence:** ${evidence}
 **Why it matters:** ${t.rationale}
 

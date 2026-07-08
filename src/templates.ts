@@ -11,12 +11,20 @@ import type { EvalConfig } from "./types.js";
 // ---------------------------------------------------------------------------
 
 export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: string): string {
+  const mode = cfg.mode ?? "audit";
+  const doDefects = mode !== "improve"; // audit + deep hunt defects
+  const doOpps = mode !== "audit"; // improve + deep discover opportunities
   const meta = {
     name: `ultraeval-${cfg.kind}`,
-    description: `Evaluate ${cfg.targetAbs} across ${cfg.dimensions.length} dimensions, ground every finding, then emit a TDD fix backlog`,
+    description: `Evaluate ${cfg.targetAbs} (mode: ${mode}) — ground every finding, then emit a TDD backlog`,
   };
-  return [
-    `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: [{ title: 'Research' }, { title: 'TestPlan' }, { title: 'Execute' }, { title: 'Findings' }, { title: 'Gate' }, { title: 'Judge' }, { title: 'Results' }] }`,
+  const phases: { title: string }[] = [{ title: "Research" }, { title: "TestPlan" }];
+  if (doDefects) phases.push({ title: "Execute" }, { title: "Findings" });
+  if (doOpps) phases.push({ title: "Analyze" }, { title: "Brainstorm" });
+  phases.push({ title: "Gate" }, { title: "Judge" }, { title: "Results" });
+
+  const head = [
+    `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: ${JSON.stringify(phases)} }`,
     ``,
     `// Constants for THIS eval run (injected by \`ultraeval plan\`).`,
     `const TARGET = ${JSON.stringify(cfg.targetAbs)}`,
@@ -27,8 +35,6 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `const KIND = ${JSON.stringify(cfg.kind)}`,
     `const DIMENSIONS = ${JSON.stringify(cfg.dimensions)}`,
     ``,
-    `// Each subagent is handed the absolute path to its dispatch contract plus the`,
-    `// run constants — a subagent has its own cwd and sees none of this file.`,
     `function contract(name, extra) {`,
     `  return 'Read and follow the dispatch contract at ' + AGENTS + '/' + name + '.md VERBATIM.\\n'`,
     `    + 'Constants: TARGET=' + TARGET + '  ENGINE=' + ENGINE + '  RUN=' + RUN + '  KIND=' + KIND + '  CATEGORY=' + CATEGORY + '.\\n'`,
@@ -36,7 +42,7 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `    + (extra ? '\\n' + extra : '')`,
     `}`,
     ``,
-    `log('ultraeval: research -> test-plan -> execute+gates -> judge -> findings -> backlog for ' + TARGET)`,
+    `log(${JSON.stringify(`ultraeval ${mode} eval for `)} + TARGET)`,
     ``,
     `phase('Research')`,
     `await parallel(DIMENSIONS.map((d) => () => agent(contract('researcher', 'DIMENSION=' + d.id + ' (' + d.name + '). Write ' + RUN + '/research/' + d.id + '.md (cited).'), { label: 'research:' + d.id, phase: 'Research', agentType: 'general-purpose' })))`,
@@ -44,6 +50,8 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `phase('TestPlan')`,
     `await agent(contract('testplan'), { label: 'testplan', phase: 'TestPlan', agentType: 'general-purpose' })`,
     ``,
+  ];
+  const defectStage = [
     `phase('Execute')`,
     `await parallel([`,
     `  () => agent(contract('executor', 'MODE=core — deterministic engine + gate exercises on genuine AND doctored artifacts.'), { label: 'run-core', phase: 'Execute', agentType: 'general-purpose' }),`,
@@ -53,6 +61,16 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `phase('Findings')`,
     `await agent(contract('findings'), { label: 'findings', phase: 'Findings', agentType: 'general-purpose' })`,
     ``,
+  ];
+  const oppStage = [
+    `phase('Analyze')`,
+    `await agent(contract('analyzer'), { label: 'analyze', phase: 'Analyze', agentType: 'general-purpose' })`,
+    ``,
+    `phase('Brainstorm')`,
+    `await agent(contract('brainstormer'), { label: 'brainstorm', phase: 'Brainstorm', agentType: 'general-purpose' })`,
+    ``,
+  ];
+  const tail = [
     `phase('Gate')`,
     `await agent(contract('gate'), { label: 'gate', phase: 'Gate', agentType: 'general-purpose' })`,
     ``,
@@ -65,7 +83,8 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     ``,
     `return { target: TARGET, run: RUN }`,
     ``,
-  ].join("\n");
+  ];
+  return [...head, ...(doDefects ? defectStage : []), ...(doOpps ? oppStage : []), ...tail].join("\n");
 }
 
 const GATE_CHEATSHEET = (engineAbs: string, run: string) =>
@@ -106,7 +125,12 @@ You produce the raw evidence an eval stands on. Two MODES; do the one named in y
 
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
 
-**MODE=live (realistic).** Act as a real user of the target. Follow its own instructions faithfully and produce a real deliverable into \`${runDirAbs}/runs/live-*\`. Use live network/Docker where the target needs it; timebox heavy steps (Bash timeout up to 600000 ms) and degrade gracefully. Write a narrative to \`${runDirAbs}/runs/live.md\` covering what was produced, grounding quality, any hallucination, and each gate's outcome.
+**MODE=live (realistic).** Act as a real user of the target. Follow its own instructions faithfully and produce a real deliverable into \`${runDirAbs}/runs/live-*\`. Write a narrative to \`${runDirAbs}/runs/live.md\` covering what was produced, grounding quality, any hallucination, and each gate's outcome.
+
+HARD LIMITS (never block the pipeline):
+- **Every Bash step is timeboxed** — set an explicit \`timeout\` (≤ 600000 ms). If a step exceeds it, kill it and record "timed out", then continue.
+- **Do NOT launch another live/network tool that itself fans out** — no nested web-research / "deep" / long-crawl runs of the target against a THIRD project. Exercise the target on a small, local, offline input. (A prior run hung ~4h doing exactly this.)
+- If a live step is genuinely blocked (missing Docker, no network, rate-limit), degrade to the offline path, record what completed, and move on. Partial evidence is fine; a hang is not.
 
 Record exact command lines and exit codes verbatim — later stages cite \`run:runs/core.md#Lnn\` as evidence, so line numbers matter.
 `,
@@ -145,11 +169,26 @@ Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens
 Finalize the eval and generate the AI-exploitable fix docs.
 
 1. Ensure \`${runDirAbs}/RESULTS.md\` and \`SUMMARY.md\` are complete and cite \`[F#]\`; fold in the judges' scores from \`judges.jsonl\` (average the overalls).
-2. Emit the TDD backlog: \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` → writes \`BACKLOG.json\`, \`REMEDIATION.md\`, and one \`fixes/FIX-*.md\` card per confirmed finding (RED failing-test-first → GREEN change → VERIFY).
-3. Render the dashboard: \`node ${engineAbs} render --run ${runDirAbs}\` → \`index.md\` + \`index.html\`.
-4. Re-run \`node ${engineAbs} check --run ${runDirAbs} --semantic\` and confirm exit 0 (backlog integrity is part of the gate).
+2. Score: \`node ${engineAbs} score --run ${runDirAbs}\` → \`scorecard.json\` (weighted 0-100 + meets-expectations, from judges.jsonl).
+3. Emit the TDD backlog: \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` → \`BACKLOG.json\`, \`REMEDIATION.md\`, and one \`fixes/FIX-*.md\` card per confirmed finding/opportunity (RED failing/spec test → GREEN change → VERIFY).
+4. Render the dashboard: \`node ${engineAbs} render --run ${runDirAbs}\` → \`index.md\` + \`index.html\` (shows the verdict + opportunities matrix).
+5. Re-run \`node ${engineAbs} check --run ${runDirAbs} --semantic\` and confirm exit 0 (backlog integrity is part of the gate).
 
-Report the scorecard, the P0/P1 backlog headline, and the paths a downstream fix agent should consume.
+Report the verdict, the P0/P1 backlog headline, the top opportunities (impact×effort), and the paths a downstream fix agent should consume.
+`,
+    analyzer: `# Contract: analyzer
+
+Produce deterministic signal for the brainstorm stage.
+
+Run \`node ${engineAbs} analyze --run ${runDirAbs}\` → writes \`analysis.json\` + \`ANALYSIS.md\` (size/complexity hotspots, import graph + cycles, git churn, test/doc gaps). Then read \`ANALYSIS.md\` and note the 5-8 highest-signal hotspots the brainstorm should anchor on. This stage is deterministic — do not invent metrics; report what the tool found.
+`,
+    brainstormer: `# Contract: brainstormer
+
+Discover grounded improvement leads (both internal health AND product/capability) — be divergent, then keep the grounded ones.
+
+1. \`node ${engineAbs} brainstorm --run ${runDirAbs}\` → emits \`BRAINSTORM.todo.md\` (lenses + hotspots).
+2. Work every lens against the hotspots in \`ANALYSIS.md\` and the code. Generate MANY candidates, then write \`${runDirAbs}/opportunities.json\`: each \`{ dimension?, impact: high|med|low, effort: S|M|L, title, statement, recommendation, evidence:[{ref}] }\`. Every opportunity MUST anchor to a real \`file:line\` in the target or \`analysis:<file>\` — no ungrounded "rewrite everything". Rate impact/effort honestly (quick wins = high/S).
+3. \`node ${engineAbs} brainstorm --run ${runDirAbs} --rank\` → folds ranked opportunities into \`findings.json\` as kind:opportunity. The Gate stage then \`check\`s them; drop any that do not resolve.
 `,
   };
 }

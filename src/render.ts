@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { Backlog, EvalConfig, FindingsDoc, Scorecard, VerifyResult } from "./types.js";
-import { exists, readJson, writeText } from "./util.js";
+import { exists, opportunityValue, readJson, writeText } from "./util.js";
 
 export interface RenderOpts {
   out?: string;
@@ -36,20 +36,28 @@ export function render(runDir: string, opts: RenderOpts = {}): string[] {
 
 function counts(doc: FindingsDoc) {
   const live = doc.findings.filter((f) => f.status !== "dismissed");
-  const by = (s: string) => live.filter((f) => f.severity === s).length;
-  return { total: live.length, p0: by("P0"), p1: by("P1"), p2: by("P2") };
+  const defects = live.filter((f) => f.kind !== "opportunity");
+  const opps = live.filter((f) => f.kind === "opportunity");
+  const by = (s: string) => defects.filter((f) => f.severity === s).length;
+  return { total: defects.length, p0: by("P0"), p1: by("P1"), p2: by("P2"), opps: opps.length };
+}
+
+function opportunities(doc: FindingsDoc) {
+  return doc.findings
+    .filter((f) => f.status !== "dismissed" && f.kind === "opportunity")
+    .sort((a, b) => opportunityValue(b.impact, b.effort) - opportunityValue(a.impact, a.effort));
 }
 
 function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null, scorecard: Scorecard | null): string {
   const c = counts(doc);
   const rows = doc.findings
-    .filter((f) => f.status !== "dismissed")
+    .filter((f) => f.status !== "dismissed" && f.kind !== "opportunity")
     .map((f) => `| ${f.id} | ${f.severity} | ${f.title.replace(/\|/g, "\\|")} | ${f.status} | ${(f.evidence ?? []).map((e) => `\`${e.ref}\``).join(" ")} |`)
     .join("\n");
   const parts = [
     `# Evaluation — ${cfg.target}`,
     ``,
-    `> target \`${cfg.targetAbs}\` · ${cfg.kind} · ${cfg.category} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})`,
+    `> target \`${cfg.targetAbs}\` · ${cfg.kind} · ${cfg.category} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})${c.opps ? ` · ${c.opps} opportunities` : ""}`,
     ``,
   ];
   if (scorecard) {
@@ -65,6 +73,25 @@ function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null,
     );
   }
   parts.push(`## Findings`, ``, `| id | sev | title | status | evidence |`, `|----|-----|-------|--------|----------|`, rows || `| — | — | none | — | — |`);
+  const opps = opportunities(doc);
+  if (opps.length)
+    parts.push(
+      ``,
+      `## Opportunities (${opps.length}) — impact × effort`,
+      ``,
+      `| id | impact | effort | value | title |`,
+      `|----|--------|--------|-------|-------|`,
+      ...opps.map(
+        (f) => `| ${f.id} | ${f.impact ?? "?"} | ${f.effort ?? "?"} | ${opportunityValue(f.impact, f.effort).toFixed(2)} | ${f.title.replace(/\|/g, "\\|")} |`,
+      ),
+      ``,
+      `Quick wins (value ≥ 2): ${
+        opps
+          .filter((f) => opportunityValue(f.impact, f.effort) >= 2)
+          .map((f) => f.id)
+          .join(", ") || "—"
+      }`,
+    );
   if (verify)
     parts.push(
       ``,
@@ -93,12 +120,16 @@ function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | nul
     ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td></tr>`).join("")}</table>`
     : "";
   const rows = doc.findings
-    .filter((f) => f.status !== "dismissed")
+    .filter((f) => f.status !== "dismissed" && f.kind !== "opportunity")
     .map(
       (f) =>
         `<tr><td>${f.id}</td><td class="${f.severity.toLowerCase()}">${f.severity}</td><td>${esc(f.title)}</td><td>${f.status}</td><td>${(f.evidence ?? []).map((e) => `<code>${esc(e.ref)}</code>`).join(" ")}</td></tr>`,
     )
     .join("");
+  const opps = opportunities(doc);
+  const oppsHtml = opps.length
+    ? `<h2>Opportunities (${opps.length}) — impact × effort</h2><table><tr><th>id</th><th>impact</th><th>effort</th><th>value</th><th>title</th></tr>${opps.map((f) => `<tr><td>${f.id}</td><td>${f.impact ?? "?"}</td><td>${f.effort ?? "?"}</td><td>${opportunityValue(f.impact, f.effort).toFixed(2)}</td><td>${esc(f.title)}</td></tr>`).join("")}</table>`
+    : "";
   const bl = backlog
     ? `<h2>Fix backlog (${backlog.tasks.length})</h2><ul>${backlog.tasks.map((t) => `<li><b>${t.id}</b> (${t.priority}) ${esc(t.title)} → <code>${esc(t.red.testFile)}</code></li>`).join("")}</ul>`
     : "";
@@ -107,9 +138,10 @@ function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | nul
     : "";
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval — ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation — ${esc(cfg.target)}</h1>
-<p class="meta"><code>${esc(cfg.targetAbs)}</code> · ${cfg.kind} · ${esc(cfg.category)} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})</p>
+<p class="meta"><code>${esc(cfg.targetAbs)}</code> · ${cfg.kind} · ${esc(cfg.category)} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})${c.opps ? ` · ${c.opps} opportunities` : ""}</p>
 ${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
+${oppsHtml}
 ${vf}${bl}</body></html>
 `;
 }

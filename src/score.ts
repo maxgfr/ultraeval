@@ -31,7 +31,7 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
   const weighted = dimensions.reduce((a, b) => a + (b.score / 5) * b.weight, 0) / totalWeight;
   const overall = Math.round(weighted * 100);
 
-  const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.severity === "P0");
+  const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
   const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= MEETS_BAR;
   const reason = liveP0

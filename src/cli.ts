@@ -1,13 +1,17 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runAnalyze } from "./analyze.js";
 import { buildBacklog } from "./backlog.js";
+import { rankBrainstorm, runBrainstorm } from "./brainstorm.js";
 import { checkRun, formatCheckReport } from "./check.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
 import { render } from "./render.js";
 import { formatScore, scoreRun } from "./score.js";
-import type { Kind } from "./types.js";
+import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
+import { readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
 
 const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then generate grounded, AI-exploitable TDD fix docs.
@@ -15,10 +19,14 @@ const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then gener
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
-  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>]
+  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
+  analyze  --run <run>   (or --target <dir> --out <dir>)
+             Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
+  brainstorm --run <run> [--rank]
+             Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (ranked, grounded).
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
@@ -47,6 +55,7 @@ const VALUE_FLAGS = new Set([
   "--run",
   "--kind",
   "--category",
+  "--mode",
   "--apply",
   "--min-findings",
   "--coverage-min",
@@ -95,8 +104,14 @@ function main(): void {
         const target = str(args.target);
         const out = str(args.out);
         if (!target || !out) throw new Error("init requires --target <path> and --out <run>");
-        const { cfg, runDir } = initRun({ target, out, kind: str(args.kind) as Kind | undefined, category: str(args.category) });
-        console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
+        const { cfg, runDir } = initRun({
+          target,
+          out,
+          kind: str(args.kind) as Kind | undefined,
+          category: str(args.category),
+          mode: str(args.mode) as Mode | undefined,
+        });
+        console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
       }
       case "plan": {
@@ -105,6 +120,33 @@ function main(): void {
         const written = planRun(run, engine);
         console.log(`ultraeval plan: generated\n${written.map((w) => `  ${w}`).join("\n")}`);
         console.log(`\nLaunch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  — or run the stages by hand via agents/*.md`);
+        return;
+      }
+      case "analyze": {
+        if (run) {
+          const cfg = readJson<EvalConfig>(join(run, "eval.config.json"));
+          const a = runAnalyze(resolveTargetAbs(cfg.targetAbs, cfg.target, run), run);
+          console.log(
+            `ultraeval analyze: ${a.files} files · ${a.loc} LOC · ${a.hotspots.length} hotspots · ${a.deps.edges} edges · tests ${a.tests.ratio} -> ${run}/analysis.json`,
+          );
+        } else {
+          const target = str(args.target);
+          const out = str(args.out);
+          if (!target || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
+          const a = runAnalyze(target, out);
+          console.log(`ultraeval analyze: ${a.files} files · ${a.loc} LOC -> ${out}/analysis.json`);
+        }
+        return;
+      }
+      case "brainstorm": {
+        if (!run) throw new Error("brainstorm requires --run <run>");
+        if (args.rank) {
+          const r = rankBrainstorm(run);
+          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total) — run \`check\` to gate them`);
+        } else {
+          const r = runBrainstorm(run);
+          console.log(`ultraeval brainstorm: ${r.lenses} lenses -> ${run}/BRAINSTORM.todo.md (fill opportunities.json, then --rank)`);
+        }
         return;
       }
       case "check": {

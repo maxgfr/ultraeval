@@ -56,4 +56,22 @@ describe("backlog — TDD fix cards", () => {
     expect(bl.tasks[0]?.red.testFile).toMatch(/test/);
     expect(bl.tasks[0]?.green.change).toBe("fix it");
   });
+
+  it("labels an opportunity task and bands it by impact (high -> P1)", () => {
+    const opp = {
+      id: "F1",
+      kind: "opportunity",
+      severity: "P2",
+      impact: "high",
+      effort: "S",
+      title: "quick win",
+      statement: "s",
+      evidence: [{ ref: "app.js:2" }],
+      status: "confirmed",
+      recommendation: "do X",
+    };
+    const bl = buildBacklog(scaffold([opp]), { tdd: true });
+    expect(bl.tasks[0]?.kind).toBe("opportunity");
+    expect(bl.tasks[0]?.priority).toBe("P1");
+  });
 });

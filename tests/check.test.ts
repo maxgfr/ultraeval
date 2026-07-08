@@ -141,6 +141,37 @@ describe("check — grounding gate", () => {
     expect(r.warnings.join(" ")).toMatch(/no recommendation/);
   });
 
+  it("passes a grounded opportunity carrying impact + effort", () => {
+    const opp = {
+      id: "F2",
+      kind: "opportunity",
+      severity: "P2",
+      impact: "high",
+      effort: "S",
+      title: "Split the god file",
+      statement: "app.js is large and would benefit from a split",
+      evidence: [{ ref: "app.js:1" }],
+      status: "confirmed",
+      recommendation: "split it",
+    };
+    expect(checkRun(scaffold([opp])).ok).toBe(true);
+  });
+
+  it("fails an opportunity missing impact/effort", () => {
+    const opp = {
+      id: "F2",
+      kind: "opportunity",
+      severity: "P2",
+      title: "x",
+      statement: "y is worth improving",
+      evidence: [{ ref: "app.js:1" }],
+      status: "confirmed",
+    };
+    const r = checkRun(scaffold([opp]));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/impact/);
+  });
+
   it("errors when eval.config.json is missing", () => {
     const root = mkdtempSync(join(tmpdir(), "ue-check-"));
     tmps.push(root);

@@ -48,8 +48,11 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 
 ```bash
 ENGINE=node scripts/ultraeval.mjs
-$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill"
-$ENGINE plan --run /tmp/eval                       # generate the workflow + agents
+$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep
+$ENGINE plan --run /tmp/eval                       # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
+$ENGINE analyze --run /tmp/eval                     # deterministic hotspots/deps/churn/test-gaps -> analysis.json
+$ENGINE brainstorm --run /tmp/eval                  # divergent lenses -> BRAINSTORM.todo.md
+$ENGINE brainstorm --run /tmp/eval --rank           # fold ranked, grounded opportunities into findings.json
 $ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation)
 $ENGINE verify --run /tmp/eval                      # write the adversarial worklist
 $ENGINE verify --run /tmp/eval --apply verdicts.json
@@ -60,7 +63,9 @@ $ENGINE render --run /tmp/eval                      # index.html + index.md (sho
 $ENGINE clean --run /tmp/eval                       # remove derived artifacts (keeps deliverables)
 ```
 
-`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `check` also validates the findings record's schema (id/severity/status/evidence), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+**Modes.** `--mode audit` (defects, default) · `improve` (grounded improvement **opportunities** — internal health *and* product/capability, rated impact × effort) · `deep` (both). Opportunities are discovered by `analyze` → `brainstorm` and held to the *same* grounding gate, so a lead always anchors to real code or a real metric — never vague "rewrite everything". `render` shows an impact × effort matrix and flags quick wins.
+
+`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `check` also validates the findings record's schema (id/severity/status/evidence/kind), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
 
 ## Why the gate matters
 

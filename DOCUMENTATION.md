@@ -48,6 +48,25 @@ verdict banner + dimension table.
 +accessibility/auth; research/RAG → faithfulness/retrieval; requirements → ISO/IEC/IEEE 29148. Weights
 need not sum to 1 — `score` normalizes.
 
+## Analysis & opportunities (improve / deep modes)
+
+Beyond defects, ultraeval discovers grounded improvement **opportunities**:
+
+- **`analyze`** (`src/analyze.ts`) is deterministic, zero-dep, offline. It walks the target and emits
+  `analysis.json` + `ANALYSIS.md`: size/complexity hotspots, a local import graph with cycles, git churn
+  (`git log`, skipped for non-repos), test-to-source ratio + untested files, docs presence, TODO density.
+- **`brainstorm`** (`src/brainstorm.ts`) is divergent → convergent. `brainstorm --run` emits a lens-based
+  worklist (`BRAINSTORM.todo.md`) anchored on the hotspots; the AI fills `opportunities.json`; `brainstorm
+  --rank` dedups, ranks by **value = impact / effort**, and folds them into `findings.json` as
+  `kind:"opportunity"`.
+- Opportunities are the same `Finding` type with `kind:"opportunity"` + `impact`/`effort`. `check` grounds
+  and schema-validates them exactly like defects; they do **not** cap meets-expectations; `backlog` emits a
+  spec/characterization-test card; `render` shows an impact × effort matrix and flags quick wins.
+
+`--mode audit|improve|deep` selects which stages `plan` bakes into the generated workflow. The generated
+executor contract is hardened against the failure that once hung a self-run for hours: strict Bash
+timeboxes and a ban on launching another live/fan-out tool inside the executor.
+
 ## Why the bundle is committed
 
 `scripts/ultraeval.mjs` is a single zero-dependency ESM bundle built by tsup from `src/*.ts` and mirrored

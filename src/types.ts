@@ -18,6 +18,17 @@ export type Verdict = "supported" | "partial" | "refuted" | "unsupported";
 export const VALID_VERDICTS: readonly Verdict[] = ["supported", "partial", "refuted", "unsupported"];
 export const VALID_SEVERITIES: readonly Severity[] = ["P0", "P1", "P2"];
 
+// A finding is a DEFECT (something wrong) or an OPPORTUNITY (a grounded improvement lead).
+export type FindingKind = "defect" | "opportunity";
+export type Impact = "high" | "med" | "low";
+export type Effort = "S" | "M" | "L";
+export const VALID_IMPACT: readonly Impact[] = ["high", "med", "low"];
+export const VALID_EFFORT: readonly Effort[] = ["S", "M", "L"];
+
+// audit = defects only (default) · improve = opportunities · deep = both
+export type Mode = "audit" | "improve" | "deep";
+export const VALID_MODES: readonly Mode[] = ["audit", "improve", "deep"];
+
 // A scored evaluation axis. The engine ships starter dimensions per category;
 // the research stage refines them.
 export interface Dimension {
@@ -32,6 +43,7 @@ export interface EvalConfig {
   targetAbs: string; // resolved absolute path to the evaluated repo/dir
   kind: Kind;
   category: string;
+  mode?: Mode; // audit (default) | improve | deep
   dimensions: Dimension[];
   note?: string;
   version: string;
@@ -47,9 +59,12 @@ export interface Evidence {
 }
 
 export interface Finding {
-  id: string; // F1, F2, ...
+  id: string; // F1, F2, ... (opportunities too — one id space)
+  kind?: FindingKind; // "defect" (default) or "opportunity"
   dimension?: string;
   severity: Severity;
+  impact?: Impact; // opportunities: value axis (required for kind=opportunity)
+  effort?: Effort; // opportunities: cost axis (required for kind=opportunity)
   title: string;
   statement: string;
   evidence: Evidence[];
@@ -60,6 +75,37 @@ export interface Finding {
 
 export interface FindingsDoc {
   findings: Finding[];
+}
+
+// An improvement lead authored by the brainstorm stage (before `--rank` turns it
+// into a kind:"opportunity" Finding with an id).
+export interface Opportunity {
+  dimension?: string;
+  impact: Impact;
+  effort: Effort;
+  title: string;
+  statement: string;
+  evidence: Evidence[];
+  recommendation?: string;
+}
+
+// ---- deterministic analysis (the `analyze` command) ----------------------
+export interface Hotspot {
+  path: string;
+  loc: number;
+  churn?: number; // commits touching this file (git churn)
+  reason: string;
+}
+export interface Analysis {
+  target: string;
+  files: number;
+  loc: number;
+  languages: Record<string, number>; // ext -> file count
+  hotspots: Hotspot[];
+  deps: { edges: number; cycles: string[][] };
+  tests: { sourceFiles: number; testFiles: number; ratio: number; untested: string[] };
+  todos: number; // TODO/FIXME/HACK/XXX markers
+  docs: string[]; // README/DOCUMENTATION/… present at root
 }
 
 // ---- verify worklist -----------------------------------------------------
@@ -100,6 +146,7 @@ export interface VerifyResult {
 export interface FixTask {
   id: string; // FIX-001
   findingId: string;
+  kind: FindingKind; // defect | opportunity
   priority: Severity;
   title: string;
   rationale: string;

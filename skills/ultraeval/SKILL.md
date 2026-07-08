@@ -31,6 +31,15 @@ Everything is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Fanni
 - **Target** — a path to the skill/repo to evaluate (or a git URL the user has already cloned locally).
 - **Kind** — `skill` or `codebase` (auto-detected: a SKILL.md ⇒ skill). Override with `--kind`.
 - **Category** — e.g. "agent skill", "CLI", "library", "web app", "security tool". Steers the starter rubric.
+- **Mode** — `audit` (defects, default) · `improve` (grounded improvement opportunities) · `deep` (both). Set with `--mode`.
+
+## Modes & improvement discovery
+
+ultraeval finds two things, both grounded and gated:
+- **Defects** (`audit`, `deep`) — something is wrong; each cites a real `file:line`.
+- **Opportunities** (`improve`, `deep`) — a grounded improvement lead (internal health *and* product/capability), rated **impact × effort**. Discovered by `analyze` (deterministic hotspots/deps/churn/test-gaps) → `brainstorm` (divergent lenses) → `brainstorm --rank` (folds ranked opportunities into `findings.json` as `kind:"opportunity"`). The same gate applies — an opportunity must anchor to real code/metrics, so it never becomes vague "rewrite everything". See `references/analysis-playbook.md`.
+
+For `improve`/`deep`, `plan` adds **Analyze** and **Brainstorm** stages to the generated workflow.
 
 ## Procedure
 
@@ -92,6 +101,7 @@ A finding is only trustworthy if its evidence resolves. `check` opens each `path
 - `references/gate-contract.md` — `findings.json` schema, evidence-ref grammar, and exactly what makes `check`/`verify` pass or fail.
 - `references/tdd-remediation.md` — the `BACKLOG.json` shape and the `fixes/FIX-*.md` TDD-card format.
 - `references/rubric-library.md` — starter dimensions per target category.
+- `references/analysis-playbook.md` — the `analyze` signals, the brainstorm lenses, and how opportunities stay grounded.
 
 ## Safety
 

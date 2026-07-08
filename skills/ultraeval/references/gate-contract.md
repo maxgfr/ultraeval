@@ -32,6 +32,7 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
 | `path:line` or `path:start-end` | the **target** repo | file exists AND line(s) in range |
 | `path` (no line) | the target repo | file exists (file-scoped citation) |
 | `run:relpath` or `run:relpath#Lnn` | the **eval run** dir | file exists (and line in range) |
+| `analysis:<path>` | the **target** repo | provenance-tagged (from `analyze`); resolves like a target path |
 | `url:https://…` | — | recorded, **not** graded offline (cannot alone ground a finding) |
 | absolute / outside-target path | — | never read (traversal guard); not graded |
 
@@ -39,7 +40,7 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
 
 FAILS when:
 - `eval.config.json` or `findings.json` is missing/invalid.
-- **schema**: a finding has a non-`F\d+`/duplicate `id`, a `severity` not in `P0|P1|P2`, a `status` not in `open|confirmed|dismissed`, a missing `title`/`statement`, or no `evidence` array.
+- **schema**: a finding has a non-`F\d+`/duplicate `id`, a `severity` not in `P0|P1|P2`, a `status` not in `open|confirmed|dismissed`, a missing `title`/`statement`, no `evidence` array, an invalid `kind`, or (for `kind:"opportunity"`) a missing/invalid `impact` (high|med|low) or `effort` (S|M|L).
 - a non-dismissed finding has **no resolvable evidence**, or cites a **file that does not exist** or a **line out of range** (the "hallucinated or stale" case).
 - `RESULTS.md` has a **dangling `[F#]`** (no such finding), or its citation coverage < `--coverage-min` (default 0.6; `--strict` = 1.0). Flag genuine narrative with `[M]`.
 - `BACKLOG.json` references a missing or dismissed finding.

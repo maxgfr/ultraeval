@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { defaultDimensions } from "./rubrics.js";
-import type { EvalConfig, Kind } from "./types.js";
+import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
 import { ensureDir, exists, listMarkdown, writeJson } from "./util.js";
 
@@ -9,6 +9,7 @@ export interface InitOpts {
   out: string;
   kind?: Kind;
   category?: string;
+  mode?: Mode;
 }
 
 // A target is a "skill" if it exposes a SKILL.md (at root or under skills/<x>/).
@@ -31,6 +32,7 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
     targetAbs,
     kind,
     category,
+    mode: opts.mode ?? "audit",
     dimensions: defaultDimensions(kind, category),
     note: "starter dimensions — the research stage refines them",
     version: VERSION,

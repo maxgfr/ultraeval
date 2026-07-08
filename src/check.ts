@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { extractUnits, findingRefs, isCited } from "./citations.js";
-import { CAPS, VALID_SEVERITIES } from "./types.js";
-import type { CheckResult, EvalConfig, FindingsDoc, Severity, VerifyResult } from "./types.js";
+import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
+import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, VerifyResult } from "./types.js";
 import { exists, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
 
 export interface CheckOpts {
@@ -61,6 +61,12 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
     if (!STATUSES.includes(f.status as string)) errors.push(`${fid} has invalid status "${f.status}" (expected open|confirmed|dismissed)`);
     if (!f.title || !f.statement) errors.push(`${fid} is missing a title or statement`);
     if (!Array.isArray(f.evidence)) errors.push(`${fid} has no evidence array`);
+    if (f.kind !== undefined && f.kind !== "defect" && f.kind !== "opportunity")
+      errors.push(`${fid} has invalid kind "${f.kind}" (expected defect|opportunity)`);
+    if (f.kind === "opportunity") {
+      if (!VALID_IMPACT.includes(f.impact as Impact)) errors.push(`${fid} (opportunity) needs impact high|med|low`);
+      if (!VALID_EFFORT.includes(f.effort as Effort)) errors.push(`${fid} (opportunity) needs effort S|M|L`);
+    }
   }
 
   if (opts.minFindings && findings.length < opts.minFindings) {

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import type { Effort, Impact } from "./types.js";
 
 // ---- fs helpers ----------------------------------------------------------
 export function exists(p: string): boolean {
@@ -99,7 +100,11 @@ function lineCount(absPath: string): number {
 }
 
 export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidence {
-  const raw = String(ref ?? "").trim();
+  let raw = String(ref ?? "").trim();
+
+  // `analysis:<targetpath[:line]>` is a provenance-tagged citation to a metric's
+  // subject file — resolve it like an ordinary target path.
+  if (raw.startsWith("analysis:")) raw = raw.slice("analysis:".length);
 
   if (raw.startsWith("url:") || /^https?:\/\//.test(raw)) {
     return { raw, kind: "url", gradeable: false, resolved: false, reason: "external URL (not resolvable offline)" };
@@ -184,4 +189,17 @@ export function extractContext(absPath: string, start?: number, end?: number, pa
     .slice(from, to)
     .map((l, i) => `${from + i + 1}: ${l}`)
     .join("\n");
+}
+
+// ---- opportunity ranking -------------------------------------------------
+// value = impact / effort — a "quick win" (high/S) tops a "big bet" (high/L).
+export function opportunityValue(impact?: Impact, effort?: Effort): number {
+  const i = impact === "high" ? 3 : impact === "med" ? 2 : 1;
+  const e = effort === "S" ? 1 : effort === "M" ? 2 : 3;
+  return i / e;
+}
+
+// backlog priority band for an opportunity (never P0 — opportunities aren't defects)
+export function opportunityPriority(impact?: Impact): "P1" | "P2" {
+  return impact === "high" ? "P1" : "P2";
 }
