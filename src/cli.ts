@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runAnalyze } from "./analyze.js";
+import { changedFiles, runAnalyze } from "./analyze.js";
 import { buildBacklog } from "./backlog.js";
 import { rankBrainstorm, runBrainstorm } from "./brainstorm.js";
 import { checkRun, formatCheckReport } from "./check.js";
+import { runCompare } from "./compare.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
@@ -23,17 +24,19 @@ Commands:
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
-  analyze  --run <run>   (or --target <dir> --out <dir>)
+  analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
-  brainstorm --run <run> [--rank]
-             Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (ranked, grounded).
+  brainstorm --run <run> [--rank [--check]]
+             Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (--check gates them).
+  compare  --run <new> --base <old>
+             Diff two eval runs -> COMPARE.md (score delta, resolved findings, newly introduced).
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
-  score    --run <run>
+  score    --run <run> [--json]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
   render   --run <run> [--out <dir>] [--no-html] [--no-md]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
@@ -56,6 +59,8 @@ const VALUE_FLAGS = new Set([
   "--kind",
   "--category",
   "--mode",
+  "--since",
+  "--base",
   "--apply",
   "--min-findings",
   "--coverage-min",
@@ -123,30 +128,53 @@ function main(): void {
         return;
       }
       case "analyze": {
+        const since = str(args.since);
+        let targetAbs: string | undefined;
+        let out: string | undefined;
         if (run) {
           const cfg = readJson<EvalConfig>(join(run, "eval.config.json"));
-          const a = runAnalyze(resolveTargetAbs(cfg.targetAbs, cfg.target, run), run);
-          console.log(
-            `ultraeval analyze: ${a.files} files · ${a.loc} LOC · ${a.hotspots.length} hotspots · ${a.deps.edges} edges · tests ${a.tests.ratio} -> ${run}/analysis.json`,
-          );
+          targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
+          out = run;
         } else {
-          const target = str(args.target);
-          const out = str(args.out);
-          if (!target || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
-          const a = runAnalyze(target, out);
-          console.log(`ultraeval analyze: ${a.files} files · ${a.loc} LOC -> ${out}/analysis.json`);
+          targetAbs = str(args.target);
+          out = str(args.out);
         }
+        if (!targetAbs || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
+        const onlyFiles = since ? changedFiles(targetAbs, since) : undefined;
+        const a = runAnalyze(targetAbs, out, { onlyFiles });
+        if (args.json) console.log(JSON.stringify(a, null, 2));
+        else
+          console.log(
+            `ultraeval analyze: ${a.files} files · ${a.loc} LOC · ${a.hotspots.length} hotspots · ${a.deps.edges} edges · tests ${a.tests.ratio}${since ? ` · since ${since}` : ""} -> ${out}/analysis.json`,
+          );
         return;
       }
       case "brainstorm": {
         if (!run) throw new Error("brainstorm requires --run <run>");
         if (args.rank) {
           const r = rankBrainstorm(run);
-          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total) — run \`check\` to gate them`);
+          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
+          if (args.check) {
+            const c = checkRun(run);
+            console.log(formatCheckReport(c, run));
+            process.exitCode = c.ok ? 0 : 1;
+          } else {
+            console.log("  next: `check --run <run>` to gate them.");
+          }
         } else {
           const r = runBrainstorm(run);
           console.log(`ultraeval brainstorm: ${r.lenses} lenses -> ${run}/BRAINSTORM.todo.md (fill opportunities.json, then --rank)`);
         }
+        return;
+      }
+      case "compare": {
+        if (!run) throw new Error("compare requires --run <new-run> and --base <old-run>");
+        const base = str(args.base);
+        if (!base) throw new Error("compare requires --base <old-run>");
+        const r = runCompare(base, run, run);
+        console.log(
+          `ultraeval compare: score Δ ${r.scoreDelta ?? "n/a"} · ${r.resolved.length} resolved · ${r.introduced.length} introduced -> ${run}/COMPARE.md`,
+        );
         return;
       }
       case "check": {
@@ -183,7 +211,8 @@ function main(): void {
       }
       case "score": {
         if (!run) throw new Error("score requires --run <run>");
-        console.log(formatScore(scoreRun(run)));
+        const sc = scoreRun(run);
+        console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         return;
       }
       case "render": {

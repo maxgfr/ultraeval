@@ -50,9 +50,10 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 ENGINE=node scripts/ultraeval.mjs
 $ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep
 $ENGINE plan --run /tmp/eval                       # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
-$ENGINE analyze --run /tmp/eval                     # deterministic hotspots/deps/churn/test-gaps -> analysis.json
+$ENGINE analyze --run /tmp/eval [--since <ref>] [--json]   # deterministic hotspots/deps/churn/test-gaps -> analysis.json
 $ENGINE brainstorm --run /tmp/eval                  # divergent lenses -> BRAINSTORM.todo.md
-$ENGINE brainstorm --run /tmp/eval --rank           # fold ranked, grounded opportunities into findings.json
+$ENGINE brainstorm --run /tmp/eval --rank [--check] # fold ranked, grounded opportunities into findings.json (and gate them)
+$ENGINE compare --run /tmp/eval-new --base /tmp/eval-old   # diff two runs -> COMPARE.md (score Δ, resolved, introduced)
 $ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation)
 $ENGINE verify --run /tmp/eval                      # write the adversarial worklist
 $ENGINE verify --run /tmp/eval --apply verdicts.json

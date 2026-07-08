@@ -13,7 +13,11 @@ How ultraeval turns a codebase into *grounded improvement leads* (not vague sugg
 - **Churn** — commits touching each file (`git log`, skipped if the target is not a git repo).
 - **Docs / TODOs** — README/DOCUMENTATION presence, TODO/FIXME density.
 
-This is objective substrate: every opportunity can cite a metric's subject file via `analysis:<file>` or a plain `file:line`.
+This is objective substrate: every opportunity can cite a metric's subject file via `analysis:<file>` or a plain `file:line`. Generated bundles (a large JS file with zero local imports) are excluded so hotspots surface real source. `--since <ref>` scopes analysis to git-changed files; `--json` prints the raw `analysis.json`.
+
+## `compare` — track trend across runs
+
+`compare --run <new> --base <old>` → `COMPARE.md`: the score delta, which findings/opportunities were **resolved** since the base, and which were **introduced**. Findings are matched by kind+title (ids differ between runs). Use it to prove a fix pass actually moved the needle.
 
 ## `brainstorm` — divergent → convergent
 

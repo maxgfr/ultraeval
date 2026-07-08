@@ -44,4 +44,31 @@ describe("analyze — deterministic repo signal", () => {
     const a = analyzeRepo(repo({ "src/lonely.ts": "export const z = 1;\n" }));
     expect(a.tests.untested).toContain("src/lonely.ts");
   });
+
+  it("detects an import cycle", () => {
+    const a = analyzeRepo(
+      repo({
+        "src/a.ts": "import { b } from './b.js';\nexport const a = () => b;\n",
+        "src/b.ts": "import { a } from './a.js';\nexport const b = () => a;\n",
+      }),
+    );
+    expect(a.deps.cycles.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reports no churn on a non-git target (does not throw)", () => {
+    const a = analyzeRepo(repo({ "src/x.ts": "export const x = 1;\n" }));
+    expect(a.hotspots[0]?.churn).toBeUndefined();
+  });
+
+  it("excludes a generated bundle (large JS, no local imports) from analysis", () => {
+    const bundle = `#!/usr/bin/env node\nimport { readFileSync } from "node:fs";\n${Array.from({ length: 450 }, (_, i) => `const g${i} = ${i};`).join("\n")}\n`;
+    const a = analyzeRepo(
+      repo({
+        "scripts/bundle.mjs": bundle,
+        "src/real.ts": "import { readFileSync } from 'node:fs';\nexport const r = readFileSync;\n",
+      }),
+    );
+    expect(a.hotspots.some((h) => h.path === "scripts/bundle.mjs")).toBe(false);
+    expect(a.files).toBe(1);
+  });
 });

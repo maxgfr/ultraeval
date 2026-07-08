@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join12 } from "path";
+import { join as join13 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -277,8 +277,31 @@ function hasTest(f, files) {
   if (!base) return false;
   return files.some((t) => t.isTest && t.rel.includes(base));
 }
-function analyzeRepo(targetAbs) {
-  const files = walkFiles(targetAbs);
+function isGenerated(f, relSet) {
+  if (!/\.(js|mjs|cjs)$/.test(f.rel) || f.loc < 400) return false;
+  return f.imports.every((imp) => resolveImport(imp, f.rel, relSet) === null);
+}
+function changedFiles(targetAbs, since) {
+  const set = /* @__PURE__ */ new Set();
+  const gitList = (args) => {
+    try {
+      return execFileSync("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      return "";
+    }
+  };
+  for (const line of `${gitList(["diff", "--name-only", since, "--"])}
+${gitList(["ls-files", "--others", "--exclude-standard"])}`.split("\n")) {
+    const f = line.trim();
+    if (f) set.add(f);
+  }
+  return set;
+}
+function analyzeRepo(targetAbs, opts = {}) {
+  const all = walkFiles(targetAbs);
+  const fullSet = new Set(all.map((f) => f.rel));
+  let files = all.filter((f) => !isGenerated(f, fullSet));
+  if (opts.onlyFiles) files = files.filter((f) => opts.onlyFiles?.has(f.rel));
   const relSet = new Set(files.map((f) => f.rel));
   const churn = gitChurn(targetAbs);
   let edges = 0;
@@ -322,8 +345,8 @@ function analyzeRepo(targetAbs) {
     docs
   };
 }
-function runAnalyze(targetDir, outDir) {
-  const a = analyzeRepo(targetDir);
+function runAnalyze(targetDir, outDir, opts = {}) {
+  const a = analyzeRepo(targetDir, opts);
   writeJson(join2(outDir, "analysis.json"), a);
   writeText(join2(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
   return a;
@@ -534,13 +557,13 @@ function rankBrainstorm(runDir) {
     const m = /^F(\d+)$/.exec(f.id);
     if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
   }
-  const key = (o) => o.title.toLowerCase().trim();
-  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => key(f)));
+  const key2 = (o) => o.title.toLowerCase().trim();
+  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => key2(f)));
   const ranked = [...opps].sort((x, y) => opportunityValue(y.impact, y.effort) - opportunityValue(x.impact, x.effort));
   let added = 0;
   for (const o of ranked) {
-    if (!o?.title || seen.has(key(o))) continue;
-    seen.add(key(o));
+    if (!o?.title || seen.has(key2(o))) continue;
+    seen.add(key2(o));
     maxN++;
     doc.findings.push({
       id: `F${maxN}`,
@@ -774,9 +797,49 @@ function formatCheckReport(r, runDir) {
   return lines.join("\n");
 }
 
+// src/compare.ts
+import { join as join6 } from "path";
+function load(dir) {
+  const findings = exists(join6(dir, "findings.json")) ? readJson(join6(dir, "findings.json")).findings ?? [] : [];
+  const score = exists(join6(dir, "scorecard.json")) ? readJson(join6(dir, "scorecard.json")) : null;
+  return { findings, score };
+}
+var key = (f) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+function compareRuns(baseDir, newDir) {
+  const base = load(baseDir);
+  const cur = load(newDir);
+  const liveBase = base.findings.filter((f) => f.status !== "dismissed");
+  const liveCur = cur.findings.filter((f) => f.status !== "dismissed");
+  const baseKeys = new Set(liveBase.map(key));
+  const curKeys = new Set(liveCur.map(key));
+  const resolved = liveBase.filter((f) => !curKeys.has(key(f)));
+  const introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
+  const line = (f) => `- ${f.kind === "opportunity" ? "opp" : f.severity} \xB7 ${f.title}`;
+  const scoreLine = base.score && cur.score ? `Score: ${base.score.overall} \u2192 ${cur.score.overall} (${(scoreDelta ?? 0) >= 0 ? "+" : ""}${scoreDelta}) \xB7 meets-expectations ${base.score.meetsExpectations} \u2192 ${cur.score.meetsExpectations}` : "Score: (one or both runs have no scorecard.json)";
+  const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
+
+${scoreLine}
+
+## Resolved since base (${resolved.length})
+
+${resolved.map(line).join("\n") || "- none"}
+
+## Introduced in current (${introduced.length})
+
+${introduced.map(line).join("\n") || "- none"}
+`;
+  return { scoreDelta, resolved, introduced, md };
+}
+function runCompare(baseDir, newDir, outDir) {
+  const r = compareRuns(baseDir, newDir);
+  writeText(join6(outDir, "COMPARE.md"), r.md);
+  return r;
+}
+
 // src/clean.ts
 import { readdirSync as readdirSync3, rmSync } from "fs";
-import { join as join6 } from "path";
+import { join as join7 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md"];
 function clean(runDir, opts = {}) {
   const removed = [];
@@ -788,7 +851,7 @@ function clean(runDir, opts = {}) {
     return removed;
   }
   for (const name of DERIVED) {
-    const p = join6(runDir, name);
+    const p = join7(runDir, name);
     if (exists(p)) {
       rmSync(p, { force: true });
       removed.push(p);
@@ -797,12 +860,12 @@ function clean(runDir, opts = {}) {
   if (exists(runDir)) {
     for (const e of readdirSync3(runDir)) {
       if (/^VERIFY\.(todo\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync(join6(runDir, e), { force: true });
-        removed.push(join6(runDir, e));
+        rmSync(join7(runDir, e), { force: true });
+        removed.push(join7(runDir, e));
       }
     }
   }
-  const fixes = join6(runDir, "fixes");
+  const fixes = join7(runDir, "fixes");
   if (exists(fixes)) {
     rmSync(fixes, { recursive: true, force: true });
     removed.push(fixes);
@@ -811,7 +874,7 @@ function clean(runDir, opts = {}) {
 }
 
 // src/init.ts
-import { join as join7, resolve as resolve2 } from "path";
+import { join as join8, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
 var SKILL_DIMS = [
@@ -879,8 +942,8 @@ function defaultDimensions(kind, category = "") {
 
 // src/init.ts
 function detectKind(targetAbs) {
-  if (exists(join7(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join7(targetAbs, "skills");
+  if (exists(join8(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join8(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
@@ -902,14 +965,14 @@ function initRun(opts) {
     version: VERSION
   };
   const runDir = resolve2(process.cwd(), opts.out);
-  ensureDir(join7(runDir, "runs"));
-  ensureDir(join7(runDir, "research"));
-  writeJson(join7(runDir, "eval.config.json"), cfg);
+  ensureDir(join8(runDir, "runs"));
+  ensureDir(join8(runDir, "research"));
+  writeJson(join8(runDir, "eval.config.json"), cfg);
   return { cfg, runDir };
 }
 
 // src/plan.ts
-import { join as join8 } from "path";
+import { join as join9 } from "path";
 
 // src/templates.ts
 function workflowScript(cfg, runDirAbs, engineAbs) {
@@ -1154,10 +1217,10 @@ function findingsSchema() {
 
 // src/plan.ts
 function planRun(runDir, engineAbs) {
-  const cfg = readJson(join8(runDir, "eval.config.json"));
+  const cfg = readJson(join9(runDir, "eval.config.json"));
   const written = [];
   const w = (rel, content) => {
-    const p = join8(runDir, rel);
+    const p = join9(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
@@ -1172,26 +1235,26 @@ function planRun(runDir, engineAbs) {
 }
 
 // src/render.ts
-import { join as join9 } from "path";
-function load(runDir) {
-  const cfg = readJson(join9(runDir, "eval.config.json"));
-  const doc = readJson(join9(runDir, "findings.json"));
-  const verify = exists(join9(runDir, "VERIFY.json")) ? readJson(join9(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join9(runDir, "BACKLOG.json")) ? readJson(join9(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join9(runDir, "scorecard.json")) ? readJson(join9(runDir, "scorecard.json")) : null;
+import { join as join10 } from "path";
+function load2(runDir) {
+  const cfg = readJson(join10(runDir, "eval.config.json"));
+  const doc = readJson(join10(runDir, "findings.json"));
+  const verify = exists(join10(runDir, "VERIFY.json")) ? readJson(join10(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join10(runDir, "BACKLOG.json")) ? readJson(join10(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join10(runDir, "scorecard.json")) ? readJson(join10(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
-  const { cfg, doc, verify, backlog, scorecard } = load(runDir);
+  const { cfg, doc, verify, backlog, scorecard } = load2(runDir);
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join9(out, "index.md");
+    const p = join10(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join9(out, "index.html");
+    const p = join10(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -1288,9 +1351,9 @@ function esc(s) {
 }
 
 // src/score.ts
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 function readJudges(runDir) {
-  const p = join10(runDir, "judges.jsonl");
+  const p = join11(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -1317,10 +1380,10 @@ function computeScore(cfg, judges, doc) {
   return { overall, maxScore: 100, meetsExpectations, dimensions, judges: judges.length, reason };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join10(runDir, "eval.config.json"));
-  const doc = exists(join10(runDir, "findings.json")) ? readJson(join10(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join11(runDir, "eval.config.json"));
+  const doc = exists(join11(runDir, "findings.json")) ? readJson(join11(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
-  writeJson(join10(runDir, "scorecard.json"), sc);
+  writeJson(join11(runDir, "scorecard.json"), sc);
   return sc;
 }
 function formatScore(sc) {
@@ -1329,11 +1392,11 @@ function formatScore(sc) {
 }
 
 // src/verify.ts
-import { isAbsolute as isAbsolute2, join as join11, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join12, resolve as resolve3 } from "path";
 var SEV_ORDER2 = { P0: 0, P1: 1, P2: 2 };
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join11(runDir, "eval.config.json"));
-  const doc = readJson(join11(runDir, "findings.json"));
+  const cfg = readJson(join12(runDir, "eval.config.json"));
+  const doc = readJson(join12(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER2[a.severity] ?? 9) - (SEV_ORDER2[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -1354,8 +1417,8 @@ function runVerify(runDir, opts = {}) {
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i) => i % opts.shards === opts.shard);
   const out = { run: runDir, pairs };
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
-  writeJson(join11(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join11(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join12(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join12(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function renderWorklistMd(todo) {
@@ -1415,9 +1478,9 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join11(runDir, "findings.json"));
+  const doc = readJson(join12(runDir, "findings.json"));
   const result = reduceVerdicts(loadVerdicts(runDir, spec), doc.findings ?? []);
-  writeJson(join11(runDir, "VERIFY.json"), result);
+  writeJson(join12(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -1439,17 +1502,19 @@ Commands:
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
-  analyze  --run <run>   (or --target <dir> --out <dir>)
+  analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
-  brainstorm --run <run> [--rank]
-             Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (ranked, grounded).
+  brainstorm --run <run> [--rank [--check]]
+             Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (--check gates them).
+  compare  --run <new> --base <old>
+             Diff two eval runs -> COMPARE.md (score delta, resolved findings, newly introduced).
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
-  score    --run <run>
+  score    --run <run> [--json]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
   render   --run <run> [--out <dir>] [--no-html] [--no-md]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
@@ -1466,6 +1531,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--kind",
   "--category",
   "--mode",
+  "--since",
+  "--base",
   "--apply",
   "--min-findings",
   "--coverage-min",
@@ -1532,30 +1599,53 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         return;
       }
       case "analyze": {
+        const since = str(args.since);
+        let targetAbs;
+        let out;
         if (run) {
-          const cfg = readJson(join12(run, "eval.config.json"));
-          const a = runAnalyze(resolveTargetAbs(cfg.targetAbs, cfg.target, run), run);
-          console.log(
-            `ultraeval analyze: ${a.files} files \xB7 ${a.loc} LOC \xB7 ${a.hotspots.length} hotspots \xB7 ${a.deps.edges} edges \xB7 tests ${a.tests.ratio} -> ${run}/analysis.json`
-          );
+          const cfg = readJson(join13(run, "eval.config.json"));
+          targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
+          out = run;
         } else {
-          const target = str(args.target);
-          const out = str(args.out);
-          if (!target || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
-          const a = runAnalyze(target, out);
-          console.log(`ultraeval analyze: ${a.files} files \xB7 ${a.loc} LOC -> ${out}/analysis.json`);
+          targetAbs = str(args.target);
+          out = str(args.out);
         }
+        if (!targetAbs || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
+        const onlyFiles = since ? changedFiles(targetAbs, since) : void 0;
+        const a = runAnalyze(targetAbs, out, { onlyFiles });
+        if (args.json) console.log(JSON.stringify(a, null, 2));
+        else
+          console.log(
+            `ultraeval analyze: ${a.files} files \xB7 ${a.loc} LOC \xB7 ${a.hotspots.length} hotspots \xB7 ${a.deps.edges} edges \xB7 tests ${a.tests.ratio}${since ? ` \xB7 since ${since}` : ""} -> ${out}/analysis.json`
+          );
         return;
       }
       case "brainstorm": {
         if (!run) throw new Error("brainstorm requires --run <run>");
         if (args.rank) {
           const r = rankBrainstorm(run);
-          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total) \u2014 run \`check\` to gate them`);
+          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
+          if (args.check) {
+            const c = checkRun(run);
+            console.log(formatCheckReport(c, run));
+            process.exitCode = c.ok ? 0 : 1;
+          } else {
+            console.log("  next: `check --run <run>` to gate them.");
+          }
         } else {
           const r = runBrainstorm(run);
           console.log(`ultraeval brainstorm: ${r.lenses} lenses -> ${run}/BRAINSTORM.todo.md (fill opportunities.json, then --rank)`);
         }
+        return;
+      }
+      case "compare": {
+        if (!run) throw new Error("compare requires --run <new-run> and --base <old-run>");
+        const base = str(args.base);
+        if (!base) throw new Error("compare requires --base <old-run>");
+        const r = runCompare(base, run, run);
+        console.log(
+          `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced -> ${run}/COMPARE.md`
+        );
         return;
       }
       case "check": {
@@ -1592,7 +1682,8 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
       }
       case "score": {
         if (!run) throw new Error("score requires --run <run>");
-        console.log(formatScore(scoreRun(run)));
+        const sc = scoreRun(run);
+        console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         return;
       }
       case "render": {

@@ -155,8 +155,40 @@ function hasTest(f: FileInfo, files: FileInfo[]): boolean {
   return files.some((t) => t.isTest && t.rel.includes(base));
 }
 
-export function analyzeRepo(targetAbs: string): Analysis {
-  const files = walkFiles(targetAbs);
+// A generated bundle is a large JS file with zero resolvable local imports — a
+// bundler inlines every sibling, so it imports only builtins. Ranking it (and its
+// byte-identical mirror) as a hotspot would point improvement leads at build output.
+function isGenerated(f: FileInfo, relSet: Set<string>): boolean {
+  if (!/\.(js|mjs|cjs)$/.test(f.rel) || f.loc < 400) return false;
+  return f.imports.every((imp) => resolveImport(imp, f.rel, relSet) === null);
+}
+
+// Files changed since a git ref (+ untracked) — for `analyze --since <ref>`.
+export function changedFiles(targetAbs: string, since: string): Set<string> {
+  const set = new Set<string>();
+  const gitList = (args: string[]) => {
+    try {
+      return execFileSync("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      return "";
+    }
+  };
+  for (const line of `${gitList(["diff", "--name-only", since, "--"])}\n${gitList(["ls-files", "--others", "--exclude-standard"])}`.split("\n")) {
+    const f = line.trim();
+    if (f) set.add(f);
+  }
+  return set;
+}
+
+export interface AnalyzeOpts {
+  onlyFiles?: Set<string>;
+}
+
+export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis {
+  const all = walkFiles(targetAbs);
+  const fullSet = new Set(all.map((f) => f.rel));
+  let files = all.filter((f) => !isGenerated(f, fullSet));
+  if (opts.onlyFiles) files = files.filter((f) => opts.onlyFiles?.has(f.rel));
   const relSet = new Set(files.map((f) => f.rel));
   const churn = gitChurn(targetAbs);
 
@@ -211,8 +243,8 @@ export function analyzeRepo(targetAbs: string): Analysis {
   };
 }
 
-export function runAnalyze(targetDir: string, outDir: string): Analysis {
-  const a = analyzeRepo(targetDir);
+export function runAnalyze(targetDir: string, outDir: string, opts: AnalyzeOpts = {}): Analysis {
+  const a = analyzeRepo(targetDir, opts);
   writeJson(join(outDir, "analysis.json"), a);
   writeText(join(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
   return a;
