@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { emitFixAgents, verifyFix } from "../src/fix.js";
 
 const tmps: string[] = [];
@@ -134,5 +134,19 @@ describe("verify-fix — close the red-green loop", () => {
   it("throws on an unknown task id", () => {
     const { run } = scaffold();
     expect(() => verifyFix(run, "FIX-999")).toThrow(/FIX-999/);
+  });
+
+  it("echoes the exact verify command and its cwd BEFORE replaying it (transcript trace)", () => {
+    const { run, target } = scaffold({ verifyCommand: "echo replay-marker" });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let logged = "";
+    try {
+      verifyFix(run, "FIX-001");
+      logged = spy.mock.calls.map((c) => c.join(" ")).join("\n"); // read BEFORE restore (mockRestore clears calls)
+    } finally {
+      spy.mockRestore();
+    }
+    expect(logged).toContain("echo replay-marker"); // the exact shell command
+    expect(logged).toContain(target); // its cwd (the target repo the command runs in)
   });
 });

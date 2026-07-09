@@ -1875,7 +1875,8 @@ Touch only: ${absTargets.map((x) => `\`${x}\``).join(", ") || "the relevant modu
 \`${t.verify.command}\`
 The RED test now passes and nothing regresses. Then close the loop:
 \`node ${engineAbs} verify-fix --run ${runDir} --task ${t.id}\`
-(replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json \u2014 exit 1 otherwise).
+(echoes the exact command + cwd, then replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json \u2014 exit 1 otherwise).
+Note: \`verify.command\` in BACKLOG.json is executable configuration \u2014 it runs verbatim through a shell in the target with your privileges; treat a run directory from an untrusted source like code.
 
 ## Invariants (non-negotiable)
 - TDD: no implementation before the RED test is seen failing.
@@ -1934,6 +1935,7 @@ function verifyFix(runDir, taskId, opts = {}) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const redFile = isAbsolute2(task.red.testFile) ? task.red.testFile : resolve3(targetAbs, task.red.testFile);
   const redTestExists = exists(redFile);
+  console.error(`verify-fix ${taskId}: replaying \`${task.verify.command}\` in ${targetAbs}`);
   const proc = spawnSync(task.verify.command, { shell: true, cwd: targetAbs, encoding: "utf8", timeout: opts.timeoutMs ?? 6e5 });
   const exitCode = proc.status;
   const ok = exitCode === 0 && redTestExists;

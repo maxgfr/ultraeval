@@ -64,7 +64,8 @@ Touch only: ${absTargets.map((x) => `\`${x}\``).join(", ") || "the relevant modu
 \`${t.verify.command}\`
 The RED test now passes and nothing regresses. Then close the loop:
 \`node ${engineAbs} verify-fix --run ${runDir} --task ${t.id}\`
-(replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json — exit 1 otherwise).
+(echoes the exact command + cwd, then replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json — exit 1 otherwise).
+Note: \`verify.command\` in BACKLOG.json is executable configuration — it runs verbatim through a shell in the target with your privileges; treat a run directory from an untrusted source like code.
 
 ## Invariants (non-negotiable)
 - TDD: no implementation before the RED test is seen failing.
@@ -138,6 +139,10 @@ export function verifyFix(runDir: string, taskId: string, opts: { timeoutMs?: nu
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const redFile = isAbsolute(task.red.testFile) ? task.red.testFile : resolve(targetAbs, task.red.testFile);
   const redTestExists = exists(redFile);
+  // Echo the exact command + cwd BEFORE spawning: BACKLOG.json's verify.command
+  // is executable configuration replayed verbatim through a shell with the
+  // caller's privileges, so the transcript must show what ran (even on a hang).
+  console.error(`verify-fix ${taskId}: replaying \`${task.verify.command}\` in ${targetAbs}`);
   // Replay the task's own verify command in the target, timeboxed — a hang is a failure.
   const proc = spawnSync(task.verify.command, { shell: true, cwd: targetAbs, encoding: "utf8", timeout: opts.timeoutMs ?? 600_000 });
   const exitCode = proc.status;
