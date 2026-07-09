@@ -345,10 +345,19 @@ export function runbookMd(cfg: EvalConfig, runDirAbs: string, engineAbs: string)
   const doDefects = mode !== "improve";
   const doOpps = mode !== "audit";
   const stages: { title: string; contract: string; note: string }[] = [];
-  for (const d of cfg.dimensions) stages.push({ title: `Research — ${d.id}`, contract: "researcher", note: `DIMENSION=${d.id} (${d.name}); write ${runDirAbs}/research/${d.id}.md (cited).` });
+  for (const d of cfg.dimensions)
+    stages.push({
+      title: `Research — ${d.id}`,
+      contract: "researcher",
+      note: `DIMENSION=${d.id} (${d.name}); write ${runDirAbs}/research/${d.id}.md (cited).`,
+    });
   stages.push({ title: "TestPlan", contract: "testplan", note: `write ${runDirAbs}/TEST-PLAN.md.` });
   if (doDefects) {
-    stages.push({ title: "Execute — core", contract: "executor", note: "MODE=core — deterministic engine + gate exercises on genuine AND doctored artifacts." });
+    stages.push({
+      title: "Execute — core",
+      contract: "executor",
+      note: "MODE=core — deterministic engine + gate exercises on genuine AND doctored artifacts.",
+    });
     stages.push({ title: "Execute — live", contract: "executor", note: "MODE=live — realistic end-to-end run of the target." });
     stages.push({ title: "Findings", contract: "findings", note: `consolidate into ${runDirAbs}/findings.json (+ RESULTS.md, SUMMARY.md).` });
   }
