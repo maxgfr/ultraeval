@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.7.0](https://github.com/maxgfr/ultraeval/compare/v1.6.0...v1.7.0) (2026-07-09)
+
+
+### Features
+
+* **plan:** orchestrate alias + --eco sequential runbook (family alignment) ([#6](https://github.com/maxgfr/ultraeval/issues/6)) ([55780ff](https://github.com/maxgfr/ultraeval/commit/55780ffd3e857d2e539d8db2c8c0c3e5b702e295))
+
 # [1.6.0](https://github.com/maxgfr/ultraeval/compare/v1.5.0...v1.6.0) (2026-07-09)
 
 
