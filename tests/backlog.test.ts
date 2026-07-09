@@ -1,8 +1,23 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildBacklog } from "../src/backlog.js";
+
+// Count real directory walks so we can assert the target test-tree is scanned
+// once per backlog, not once per finding (FIX-004). We wrap the real
+// readdirSync (all other fs behaviour is preserved verbatim).
+const walkCounter = vi.hoisted(() => ({ readdir: 0 }));
+vi.mock("node:fs", async (importActual) => {
+  const actual = await importActual<typeof import("node:fs")>();
+  return {
+    ...actual,
+    readdirSync: ((...args: Parameters<typeof actual.readdirSync>) => {
+      walkCounter.readdir++;
+      return actual.readdirSync(...args);
+    }) as typeof actual.readdirSync,
+  };
+});
 
 const tmps: string[] = [];
 
@@ -116,6 +131,18 @@ describe("backlog — TDD fix cards", () => {
     // detectVerifyCommand must read the resolved target (which exists), not the stale cfg.targetAbs.
     expect(bl.tasks[0]?.verify.command).toBe("npm test");
     expect(bl.tasks[0]?.verify.command).not.toMatch(/run the new test/);
+  });
+
+  it("walks the target test tree ONCE, not once per finding (FIX-004)", () => {
+    // Three confirmed findings all cite the same (flat) target file, so
+    // detectTestConvention/detectVerifyCommand yield identical results for all
+    // three. scanTestFiles walks the flat target root with exactly one
+    // readdirSync per detectTestConvention call — before the hoist that was 3×.
+    const run = scaffold([mk("F1", "P0", "confirmed"), mk("F2", "P1", "confirmed"), mk("F3", "P2", "confirmed")]);
+    walkCounter.readdir = 0;
+    buildBacklog(run);
+    // One walk for the whole backlog, not one per task (was 3 before the hoist).
+    expect(walkCounter.readdir).toBe(1);
   });
 
   it("skill tasks get the DETECTED runner (npm/yarn/pnpm per lockfile), not a hardcoded pnpm string", () => {

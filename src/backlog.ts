@@ -69,7 +69,9 @@ function detectTestConvention(targetAbs: string): TestConvention {
   return { layout, suffix };
 }
 
-function guessTestFile(targets: string[], f: Finding, targetAbs: string): string {
+// `conv` is the target's test convention, detected ONCE per run (it depends only
+// on the target, not the finding) and threaded in — see buildBacklog.
+function guessTestFile(targets: string[], f: Finding, conv: TestConvention): string {
   const src = targets.find((t) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rb|java|php|rs)$/.test(t));
   if (!src) return `tests/${slug(f.title)}.test.ts`;
   const dot = src.lastIndexOf(".");
@@ -79,7 +81,6 @@ function guessTestFile(targets: string[], f: Finding, targetAbs: string): string
   const name = stem.split("/").pop() ?? "target";
   // Go's test convention is fixed: colocated <name>_test.go regardless of layout.
   if (ext === ".go") return `${stem}_test.go`;
-  const conv = detectTestConvention(targetAbs);
   const inDir = (base: string) => (dir ? `${dir}/${base}` : base);
   if (ext === ".py") {
     if (conv.layout === "colocated") return inDir(`test_${name}.py`);
@@ -122,6 +123,11 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
     for (const id of v.failures ?? []) failed.add(id);
   }
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  // Detect the target's test convention + runnable verify command ONCE — both
+  // depend only on the target, so recomputing them per finding walked the test
+  // tree and re-read the manifest O(findings) times for identical results.
+  const conv = detectTestConvention(targetAbs);
+  const verifyCommand = detectVerifyCommand(targetAbs);
   const prio = (f: Finding): Severity => (f.kind === "opportunity" ? opportunityPriority(f.impact) : f.severity);
   const confirmed = (doc.findings ?? [])
     .filter((f) => f.status !== "dismissed" && !failed.has(f.id))
@@ -147,7 +153,7 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f, targetAbs),
+        testFile: guessTestFile(targets, f, conv),
         description: isOpp
           ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}`
           : f.failureScenario
@@ -166,7 +172,7 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
         // verify-fix replays this verbatim through a shell, so a hardcoded pnpm
         // string misleads an npm/yarn/bun target. Prose is only a last resort.
         command:
-          detectVerifyCommand(targetAbs) ??
+          verifyCommand ??
           (cfg.kind === "skill"
             ? "pnpm test  # then re-run the target's own check/verify gate"
             : "run the new test (must pass) + the full suite (nothing regresses)"),

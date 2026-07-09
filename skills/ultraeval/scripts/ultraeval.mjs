@@ -523,7 +523,7 @@ function detectTestConvention(targetAbs) {
   const layout = has(/(^|\/)__tests__\//) ? "__tests__" : has(/^tests\//) ? "tests" : has(/^test\//) ? "test" : "colocated";
   return { layout, suffix };
 }
-function guessTestFile(targets, f, targetAbs) {
+function guessTestFile(targets, f, conv) {
   const src = targets.find((t) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rb|java|php|rs)$/.test(t));
   if (!src) return `tests/${slug(f.title)}.test.ts`;
   const dot = src.lastIndexOf(".");
@@ -532,7 +532,6 @@ function guessTestFile(targets, f, targetAbs) {
   const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
   const name = stem.split("/").pop() ?? "target";
   if (ext === ".go") return `${stem}_test.go`;
-  const conv = detectTestConvention(targetAbs);
   const inDir = (base2) => dir ? `${dir}/${base2}` : base2;
   if (ext === ".py") {
     if (conv.layout === "colocated") return inDir(`test_${name}.py`);
@@ -571,6 +570,8 @@ function buildBacklog(runDir, opts = {}) {
     for (const id of v.failures ?? []) failed.add(id);
   }
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const conv = detectTestConvention(targetAbs);
+  const verifyCommand = detectVerifyCommand(targetAbs);
   const prio = (f) => f.kind === "opportunity" ? opportunityPriority(f.impact) : f.severity;
   const confirmed = (doc.findings ?? []).filter((f) => f.status !== "dismissed" && !failed.has(f.id)).sort((a, b) => {
     const pa = SEV_ORDER[prio(a)] ?? 9;
@@ -592,7 +593,7 @@ function buildBacklog(runDir, opts = {}) {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f, targetAbs),
+        testFile: guessTestFile(targets, f, conv),
         description: isOpp ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}` : f.failureScenario ? `Write a failing test that reproduces: ${f.failureScenario}` : `Write a failing test asserting the correct behavior for: ${f.statement}`
       },
       green: {
@@ -602,7 +603,7 @@ function buildBacklog(runDir, opts = {}) {
         // Prefer the runner detected from the target's own manifest/lockfile —
         // verify-fix replays this verbatim through a shell, so a hardcoded pnpm
         // string misleads an npm/yarn/bun target. Prose is only a last resort.
-        command: detectVerifyCommand(targetAbs) ?? (cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : "run the new test (must pass) + the full suite (nothing regresses)")
+        command: verifyCommand ?? (cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : "run the new test (must pass) + the full suite (nothing regresses)")
       },
       dependsOn: []
     };
