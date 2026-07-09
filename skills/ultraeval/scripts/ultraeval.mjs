@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join15 } from "path";
+import { join as join16 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -948,12 +948,16 @@ function compareRuns(baseDir, newDir) {
   const warningBlock = warnings.length ? `
 ${warnings.map((w) => `> **\u26A0 ${w}**`).join("\n")}
 ` : "";
+  const baseCommit = base.cfg?.provenance?.targetGit?.commit;
+  const curCommit = cur.cfg?.provenance?.targetGit?.commit;
+  const stabilityLine = base.score && cur.score && baseCommit && curCommit && baseCommit === curCommit ? `
+Stability (same target commit ${baseCommit.slice(0, 7)}): |\u0394overall| = ${Math.abs(scoreDelta ?? 0)} \xB7 agreement ${base.score.agreement ?? "\u2014"} \u2192 ${cur.score.agreement ?? "\u2014"}` : "";
   const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
 
 - base: ${provLine(base.cfg?.provenance)}
 - current: ${provLine(cur.cfg?.provenance)}
 
-${scoreLine}
+${scoreLine}${stabilityLine}
 ${warningBlock}
 ## Resolved since base (${resolved.length})
 
@@ -1665,19 +1669,80 @@ function planRun(runDir, engineAbs) {
   return written;
 }
 
-// src/render.ts
+// src/rejudge.ts
+import { cpSync, mkdirSync as mkdirSync2 } from "fs";
 import { join as join12 } from "path";
+var COPY_FILES = ["eval.config.json", "dimensions.json", "findings.json", "RESULTS.md", "SUMMARY.md", "TEST-PLAN.md", "VERIFY.json"];
+var COPY_DIRS = ["research", "runs"];
+function rejudgeRun(runDir, outDir, engineAbs) {
+  if (!exists(join12(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
+  const cfg = readJson(join12(runDir, "eval.config.json"));
+  mkdirSync2(outDir, { recursive: true });
+  const copied = [];
+  for (const f of COPY_FILES) {
+    if (!exists(join12(runDir, f))) continue;
+    cpSync(join12(runDir, f), join12(outDir, f));
+    copied.push(f);
+  }
+  for (const d of COPY_DIRS) {
+    if (!exists(join12(runDir, d))) continue;
+    cpSync(join12(runDir, d), join12(outDir, d), { recursive: true });
+    copied.push(`${d}/`);
+  }
+  writeText(join12(outDir, "judges.jsonl"), "");
+  writeText(join12(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
+  writeText(join12(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
+  return copied;
+}
+function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
+  const meta = {
+    name: "ultraeval-rejudge",
+    description: `Re-judge ${cfg.targetAbs} from reused artifacts (test-retest verdict stability)`,
+    phases: [{ title: "Judge" }, { title: "Score" }]
+  };
+  return [
+    `export const meta = ${JSON.stringify(meta)}`,
+    ``,
+    `// Constants for THIS rejudge (injected by \`ultraeval rejudge\`).`,
+    `const ENGINE = ${JSON.stringify(engineAbs)}`,
+    `const RUN = ${JSON.stringify(outAbs)}`,
+    `const BASE = ${JSON.stringify(baseAbs)}`,
+    `const AGENTS = RUN + '/agents'`,
+    ``,
+    `function contract(name, extra) {`,
+    `  return 'Read and follow the dispatch contract at ' + AGENTS + '/' + name + '.md VERBATIM.\\n'`,
+    `    + 'Constants: ENGINE=' + ENGINE + '  RUN=' + RUN + '.\\n'`,
+    `    + 'Invoke the engine only by its ABSOLUTE path: node ' + ENGINE + ' <cmd>. Write every artifact under RUN. Do not stop early.'`,
+    `    + (extra ? '\\n' + extra : '')`,
+    `}`,
+    ``,
+    `log('ultraeval rejudge (test-retest) for ' + RUN)`,
+    ``,
+    `phase('Judge')`,
+    `const LENSES = ['correctness+grounding', 'completeness+coverage', 'ux+meets-expectations']`,
+    `await parallel(LENSES.map((lens, i) => () => agent(contract('judge', 'LENS=' + lens), { label: 'judge' + (i + 1), phase: 'Judge', agentType: 'general-purpose' })))`,
+    ``,
+    `phase('Score')`,
+    `await agent('Run \`node ' + ENGINE + ' score --run ' + RUN + '\` then \`node ' + ENGINE + ' compare --run ' + RUN + ' --base ' + BASE + '\`. Report the verdict, |\u0394overall| vs the base run and both agreement values (COMPARE.md prints a stability line at constant target commit).', { label: 'score', phase: 'Score', agentType: 'general-purpose' })`,
+    ``,
+    `log('rejudge complete \u2014 see ' + RUN + '/COMPARE.md')`,
+    ``
+  ].join("\n");
+}
+
+// src/render.ts
+import { join as join13 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
-  const cfg = readJson(join12(runDir, "eval.config.json"));
-  const doc = readJson(join12(runDir, "findings.json"));
-  const verify = exists(join12(runDir, "VERIFY.json")) ? readJson(join12(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join12(runDir, "BACKLOG.json")) ? readJson(join12(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join12(runDir, "scorecard.json")) ? readJson(join12(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join13(runDir, "eval.config.json"));
+  const doc = readJson(join13(runDir, "findings.json"));
+  const verify = exists(join13(runDir, "VERIFY.json")) ? readJson(join13(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join13(runDir, "BACKLOG.json")) ? readJson(join13(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join13(runDir, "scorecard.json")) ? readJson(join13(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -1685,12 +1750,12 @@ function render(runDir, opts = {}) {
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join12(out, "index.md");
+    const p = join13(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join12(out, "index.html");
+    const p = join13(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -1794,10 +1859,10 @@ function esc(s) {
 }
 
 // src/score.ts
-import { appendFileSync, mkdirSync as mkdirSync2 } from "fs";
-import { dirname as dirname3, join as join13 } from "path";
+import { appendFileSync, mkdirSync as mkdirSync3 } from "fs";
+import { dirname as dirname3, join as join14 } from "path";
 function readJudges(runDir) {
-  const p = join13(runDir, "judges.jsonl");
+  const p = join14(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -1850,19 +1915,19 @@ function computeScore(cfg, judges, doc) {
   };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join13(runDir, "eval.config.json"));
-  const doc = exists(join13(runDir, "findings.json")) ? readJson(join13(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join14(runDir, "eval.config.json"));
+  const doc = exists(join14(runDir, "findings.json")) ? readJson(join14(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join13(runDir, "scorecard.json"), sc);
+  writeJson(join14(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join13(runDir, "scorecard.json");
+  const scPath = join14(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join13(runDir, "findings.json")) ? readJson(join13(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join14(runDir, "findings.json")) ? readJson(join14(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const entry = {
@@ -1879,7 +1944,7 @@ function appendHistory(runDir, file) {
       opps: live.filter((f) => f.kind === "opportunity").length
     }
   };
-  mkdirSync2(dirname3(file), { recursive: true });
+  mkdirSync3(dirname3(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}
 `);
   return entry;
@@ -1902,7 +1967,7 @@ function formatScore(sc) {
 
 // src/verify.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { isAbsolute as isAbsolute2, join as join14, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join15, resolve as resolve3 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -1913,8 +1978,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join14(runDir, "eval.config.json"));
-  const doc = readJson(join14(runDir, "findings.json"));
+  const cfg = readJson(join15(runDir, "eval.config.json"));
+  const doc = readJson(join15(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -1936,14 +2001,14 @@ function runVerify(runDir, opts = {}) {
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
   if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
   const out = { run: runDir, pairs };
-  writeJson(join14(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join14(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join15(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join15(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return pairs;
-  const cfg = readJson(join14(runDir, "eval.config.json"));
-  const doc = readJson(join14(runDir, "findings.json"));
+  const cfg = readJson(join15(runDir, "eval.config.json"));
+  const doc = readJson(join15(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -1966,7 +2031,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   const mixed = [...pairs];
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-  writeJson(join14(runDir, truthName), {
+  writeJson(join15(runDir, truthName), {
     note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
     claimIds: traps.map((t) => t.claimId)
   });
@@ -1974,9 +2039,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join14(runDir, "VERIFY.honeypots.json")];
+  const files = [join15(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join14(runDir, e));
+    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join15(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -2041,7 +2106,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join14(runDir, "findings.json"));
+  const doc = readJson(join15(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -2056,7 +2121,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
     if (failed.length) result.ok = false;
   }
-  writeJson(join14(runDir, "VERIFY.json"), result);
+  writeJson(join15(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -2099,6 +2164,9 @@ Commands:
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
+  rejudge  --run <run> --out <run2>
+             Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
+             Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
@@ -2194,7 +2262,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         let targetAbs;
         let out;
         if (run) {
-          const cfg = readJson(join15(run, "eval.config.json"));
+          const cfg = readJson(join16(run, "eval.config.json"));
           targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
           out = run;
         } else {
@@ -2293,10 +2361,19 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join15(process.cwd(), "evals", "history.jsonl");
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join16(process.cwd(), "evals", "history.jsonl");
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "rejudge": {
+        const out = str(args.out);
+        if (!run || !out) throw new Error("rejudge requires --run <run> and --out <run2>");
+        const engine = fileURLToPath(import.meta.url);
+        const copied = rejudgeRun(run, out, engine);
+        console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
+        console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
         return;
       }
       case "render": {

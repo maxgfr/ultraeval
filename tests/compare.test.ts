@@ -69,6 +69,20 @@ describe("compare — two eval runs", () => {
   it("score delta is null when a scorecard is missing", () => {
     expect(compareRuns(runDir([]), runDir([], 90)).scoreDelta).toBeNull();
   });
+
+  it("prints a stability line when both runs share the same target commit (test-retest)", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov());
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov());
+    const r = compareRuns(base, cur);
+    expect(r.md).toMatch(/stability/i);
+    expect(r.md).toMatch(/\|Δoverall\| = 4/);
+  });
+
+  it("prints no stability line when the target commits differ", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov());
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov({ targetGit: { commit: "b".repeat(40), dirty: false } }));
+    expect(compareRuns(base, cur).md).not.toMatch(/stability/i);
+  });
 });
 
 describe("compare — evidence fingerprint matching", () => {

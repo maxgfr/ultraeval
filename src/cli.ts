@@ -9,6 +9,7 @@ import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
+import { rejudgeRun } from "./rejudge.js";
 import { render } from "./render.js";
 import { appendHistory, formatScore, scoreRun } from "./score.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
@@ -44,6 +45,9 @@ Commands:
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
+  rejudge  --run <run> --out <run2>
+             Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
+             Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
@@ -252,6 +256,15 @@ function main(): void {
           // keep --json stdout pure JSON — the ledger notice goes to stderr there
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "rejudge": {
+        const out = str(args.out);
+        if (!run || !out) throw new Error("rejudge requires --run <run> and --out <run2>");
+        const engine = fileURLToPath(import.meta.url);
+        const copied = rejudgeRun(run, out, engine);
+        console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
+        console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
         return;
       }
       case "render": {
