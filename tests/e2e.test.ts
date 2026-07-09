@@ -98,6 +98,13 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(run(["check"]).status).toBe(2);
   });
 
+  it("--help documents the sharded-verdict merge (--apply a,b,c)", () => {
+    const help = run(["--help"]);
+    expect(help.status).toBe(0);
+    expect(help.out).toMatch(/--apply .*merges sharded verdict/i);
+    expect(help.out).toMatch(/later files win per claim\+evidence pair/i);
+  });
+
   it("judge contract requires calibration against the shipped golden fixture", () => {
     const out = mkdtempSync(join(tmpdir(), "ue-e2e-cal-"));
     tmps.push(out);

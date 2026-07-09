@@ -29,6 +29,11 @@ describe("SKILL.md packaging", () => {
     }
   });
 
+  it("documents how sharded skeptic verdicts are reassembled (comma-joined --apply)", () => {
+    expect(raw).toMatch(/--apply .*verdicts\.0\.json,verdicts\.1\.json/);
+    expect(raw).toMatch(/later files win per claim\+evidence pair/i);
+  });
+
   it("ships the normative protocol reference and SKILL.md links it", () => {
     expect(existsSync(join(SKILL_DIR, "references", "protocol.md"))).toBe(true);
     expect(raw).toContain("references/protocol.md");

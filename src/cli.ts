@@ -40,8 +40,9 @@ Commands:
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
              --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
-  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i] [--honeypots n]
+  verify   --run <run> [--apply <verdicts[,v2,…]>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
+             --apply <f1,f2,…> merges sharded verdict files (later files win per claim+evidence pair) — reassembles --shards runs.
              --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json — never show it to skeptics);
              a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]

@@ -69,8 +69,10 @@ Fix `findings.json` until it exits 0 — **repair or delete ungrounded findings;
 node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --honeypots 3   # writes VERIFY.todo.json incl. 3 trap pairs
 # fill each verdict: supported | partial | refuted | unsupported (use skeptic subagents; --shards N --shard i to parallelize)
 node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --apply <verdicts.json>
+node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --apply verdicts.0.json,verdicts.1.json   # reassemble sharded skeptics (later files win per claim+evidence pair)
 node <skill-dir>/scripts/ultraeval.mjs check --run <RUN> --semantic --require-verify   # exit gate — never present before this passes
 ```
+When you shard with `--shards N --shard i`, each skeptic fills its own `VERIFY.todo.<i>.json`; merge the filled shards back with a comma-joined `--apply verdicts.0.json,verdicts.1.json,…` (later files win per claim+evidence pair).
 `--honeypots n` guards the guard: it plants n trap pairs (one finding's claim glued to another finding's evidence; ground truth in `VERIFY.honeypots.json` — **never paste that file into a skeptic prompt**). A trap graded `supported` means the skeptic rubber-stamped: `--apply` exits 1 and the exit gate stays red until a fresh skeptic re-verifies. A `refuted` finding must be set `dismissed`. A `supported`/`partial` one survives.
 
 **6. Remediate — the deliverable.**
