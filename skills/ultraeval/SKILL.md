@@ -51,12 +51,12 @@ Writes `eval.config.json` with starter dimensions (see `references/rubric-librar
 
 **2. Generate the workflow + subagent contracts.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs plan --run <RUN>
+node <skill-dir>/scripts/ultraeval.mjs plan --run <RUN>          # alias: orchestrate (the family verb)
 ```
-Emits `<RUN>/eval.workflow.mjs` (a ready-to-launch multi-agent Workflow, with the absolute engine + target paths baked in), `<RUN>/agents/*.md` (the dispatch contracts), `TEST-PLAN.template.md`, `dimensions.json`, `findings.schema.json`.
+Emits `<RUN>/eval.workflow.mjs` (a ready-to-launch multi-agent Workflow, with the absolute engine + target paths baked in), `<RUN>/agents/*.md` (the dispatch contracts), `TEST-PLAN.template.md`, `dimensions.json`, `findings.schema.json`. **Eco mode** (`plan --run <RUN> --eco` — when the user asks for the low-token path, or no subagents exist): swaps the workflow for `<RUN>/RUNBOOK.md`, the same stages played sequentially against the same contracts — correctness-identical, only wall-clock differs.
 
 **3. Run the eval.** Launch the generated workflow with your harness's Workflow tool:
-`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`. It pipelines **Research → TestPlan → Execute → Findings → Gate → Judge → Results** and self-invokes the engine gates. If you have no workflow harness, run the stages by hand: read each `agents/<stage>.md` and dispatch a subagent per the contract. See `references/orchestration.md`. **Every subagent gets the ABSOLUTE `<skill-dir>/scripts/ultraeval.mjs` path** — it has its own cwd and cannot resolve a relative one (`plan` already bakes the absolute path into the workflow).
+`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`. It pipelines **Research → TestPlan → Execute → Findings → Gate → Judge → Results** and self-invokes the engine gates. If you have no workflow harness, run the stages by hand: read each `agents/<stage>.md` and dispatch a subagent per the contract (or, eco / no subagents at all: follow `<RUN>/RUNBOOK.md` sequentially). See `references/orchestration.md`. **Every subagent gets the ABSOLUTE `<skill-dir>/scripts/ultraeval.mjs` path** — it has its own cwd and cannot resolve a relative one (`plan` already bakes the absolute path into the workflow).
 
 **4. Ground every finding.** Consolidate results into `<RUN>/findings.json` (schema: `references/gate-contract.md`). Each finding cites `evidence[].ref` as `path:line` in the target or `run:relpath#Lnn` in a produced log. Then:
 ```
