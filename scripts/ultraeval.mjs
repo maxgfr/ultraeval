@@ -2485,8 +2485,9 @@ Commands:
   compare  --run <new> --base <old> [--json] [--gate]
              Diff two eval runs -> COMPARE.md (score delta, resolved/introduced/retitled findings).
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
-  check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
+  check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
+             --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
              --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json \u2014 never show it to skeptics);
@@ -2542,7 +2543,7 @@ var COMMAND_FLAGS = {
   analyze: ["run", "since", "json", "target", "out"],
   brainstorm: ["run", "rank", "check"],
   compare: ["run", "base", "json", "gate"],
-  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min"],
+  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min", "json"],
   verify: ["run", "apply", "max-verify", "shards", "shard", "honeypots"],
   backlog: ["run", "tdd", "out"],
   fix: ["run", "task", "workflow"],
@@ -2711,7 +2712,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
           minFindings: num(args["min-findings"]),
           coverageMin: num(args["coverage-min"])
         });
-        console.log(formatCheckReport(r, run));
+        console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
         process.exitCode = r.ok ? 0 : 1;
         return;
       }

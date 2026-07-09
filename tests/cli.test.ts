@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,30 @@ describe("cli — unknown flags are rejected, never silently ignored", () => {
     const dir = sampleRun();
     expect(run(["check", "--run", dir, "--semantic", "--strict", "--min-findings", "1"]).status).not.toBe(2);
     expect(run(["verify", "--run", dir, "--max-verify", "10", "--honeypots", "1"]).status).toBe(0);
+  });
+});
+
+describe("cli — check --json emits the machine-readable CheckResult for CI", () => {
+  it("prints parseable JSON on a passing check and keeps exit 0", () => {
+    const r = run(["check", "--run", sampleRun(), "--json"]);
+    expect(r.status).toBe(0);
+    const c = JSON.parse(r.out);
+    expect(c.ok).toBe(true);
+    expect(Array.isArray(c.errors)).toBe(true);
+    expect(Array.isArray(c.warnings)).toBe(true);
+  });
+
+  it("prints parseable JSON on a failing check and keeps exit 1", () => {
+    const dir = sampleRun();
+    const fp = join(dir, "findings.json");
+    const doc = JSON.parse(readFileSync(fp, "utf8"));
+    doc.findings[0].evidence[0].ref = "app.js:99999";
+    writeFileSync(fp, JSON.stringify(doc));
+    const r = run(["check", "--run", dir, "--json"]);
+    expect(r.status).toBe(1);
+    const c = JSON.parse(r.out);
+    expect(c.ok).toBe(false);
+    expect(c.errors.length).toBeGreaterThan(0);
   });
 });
 
