@@ -1437,10 +1437,11 @@ import { join as join8, relative as relative4, sep } from "path";
 var LEVEL = { P0: "error", P1: "warning", P2: "note" };
 function buildSarif(cfg, doc, runDir) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const lineCache = /* @__PURE__ */ new Map();
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const ruleOf = (f) => `ultraeval/${f.dimension ?? f.kind ?? "defect"}`;
   const results = live.map((f) => {
-    const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
+    const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir, lineCache })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
       physicalLocation: {
         artifactLocation: {
           uri: relative4(targetAbs, r.absPath).split(sep).join("/")

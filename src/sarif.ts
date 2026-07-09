@@ -1,6 +1,6 @@
 import { join, relative, sep } from "node:path";
 import type { EvalConfig, FindingsDoc, Severity } from "./types.js";
-import { readJson, resolveEvidence, resolveTargetAbs, writeJson } from "./util.js";
+import { type LineCache, readJson, resolveEvidence, resolveTargetAbs, writeJson } from "./util.js";
 
 // SARIF 2.1.0 (OASIS) export — lets GitHub code scanning and other standard
 // tooling ingest an eval run directly. Levels map from the codified severities
@@ -34,11 +34,14 @@ export interface SarifLog {
 
 export function buildSarif(cfg: EvalConfig, doc: FindingsDoc, runDir: string): SarifLog {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  // One run-scoped read cache shared across every evidence resolution, so a file
+  // cited by K findings is read+split once — matching check.ts / verify.ts.
+  const lineCache: LineCache = new Map();
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const ruleOf = (f: (typeof live)[number]) => `ultraeval/${f.dimension ?? f.kind ?? "defect"}`;
   const results: SarifResult[] = live.map((f) => {
     const locations: SarifLocation[] = (f.evidence ?? [])
-      .map((e) => resolveEvidence(e.ref, { targetAbs, runDir }))
+      .map((e) => resolveEvidence(e.ref, { targetAbs, runDir, lineCache }))
       .filter((r) => r.resolved && r.kind === "file" && r.absPath)
       .map((r) => ({
         physicalLocation: {
