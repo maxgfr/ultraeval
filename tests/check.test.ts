@@ -232,6 +232,44 @@ describe("check — grounding gate", () => {
     expect(r.warnings.join(" ")).not.toMatch(/F1[^0-9].*unchanged|F1[^0-9].*diff scope/); // app.js changed — in scope
   });
 
+  it("diff scope: --strict-scope promotes the out-of-scope citation to a hard failure (FIX-009)", () => {
+    const run = scaffold([genuine, { ...genuine, id: "F2", evidence: [{ ref: "lib.js:1" }] }]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    const target = cfg.targetAbs;
+    writeFileSync(join(target, "lib.js"), "libline1\n");
+    const git = (args: string[]) => execFileSync("git", ["-C", target, "-c", "user.email=t@t", "-c", "user.name=t", ...args], { stdio: "ignore" });
+    git(["init", "-q"]);
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "base"]);
+    writeFileSync(join(target, "app.js"), "line1\nline2\nline3 changed\nline4\nline5\n");
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "change app.js"]);
+    cfg.provenance = {
+      engineVersion: "1.5.0",
+      protocolVersion: "2",
+      rubricVersion: "1",
+      createdAt: "2026-07-09T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: "abc123def456",
+      sinceRef: "HEAD~1",
+    };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const r = checkRun(run, { strictScope: true });
+    expect(r.ok).toBe(false); // opt-in: out-of-scope citation now fails the gate
+    expect(r.errors.join(" ")).toMatch(/F2.*unchanged since|outside the diff scope/i);
+    // In-scope finding must not be flagged, and it is an ERROR now, not a warning.
+    expect(r.errors.join(" ")).not.toMatch(/F1[^0-9].*unchanged|F1[^0-9].*diff scope/);
+    expect(r.warnings.join(" ")).not.toMatch(/F2.*outside the diff scope/i);
+  });
+
+  it("diff scope: --strict-scope on a non-diff run (no sinceRef) changes nothing (default behavior preserved)", () => {
+    const r = checkRun(scaffold([genuine]), { strictScope: true });
+    expect(r.ok).toBe(true);
+  });
+
   it("warns when a BACKLOG task is done but its finding is still open", () => {
     const run = scaffold([{ ...genuine, status: "open" }], {
       "BACKLOG.json": JSON.stringify({

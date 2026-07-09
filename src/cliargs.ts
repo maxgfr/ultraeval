@@ -24,6 +24,7 @@ export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
     semantic: "boolean",
     "require-verify": "boolean",
     strict: "boolean",
+    "strict-scope": "boolean",
     "min-findings": "value",
     "coverage-min": "value",
     json: "boolean",

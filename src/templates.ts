@@ -98,7 +98,7 @@ function liveScenarioFor(cfg: EvalConfig): LiveScenario {
 // findings work ONLY on the changed set — PR gating, not a full re-audit.
 const diffScopeBlock = (cfg: EvalConfig): string =>
   cfg.provenance?.sinceRef
-    ? `\n**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings — \`check\` warns on out-of-scope citations). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.\n`
+    ? `\n**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings — \`check\` warns on out-of-scope citations, and \`check --strict-scope\` hard-fails them). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.\n`
     : "";
 
 const liveScenarioBlock = (cfg: EvalConfig): string =>

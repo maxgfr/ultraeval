@@ -12,6 +12,10 @@ export interface CheckOpts {
   minFindings?: number;
   strict?: boolean;
   coverageMin?: number;
+  // Diff-scoped (init --since) runs only WARN on out-of-scope citations by
+  // default; --strict-scope promotes that to a gate failure so a PR eval that
+  // cites only unchanged files goes red. Opt-in — default behavior is unchanged.
+  strictScope?: boolean;
 }
 
 // RESULTS.md is hard-checked (every substantive claim must cite); SUMMARY.md is
@@ -194,8 +198,11 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
           .map((e) => parseEvidenceRef(e.ref))
           .filter((p) => p.isTargetRef) // only target-repo paths — run:/url: refs are out of diff scope
           .map((p) => p.path);
-        if (files.length && !files.some((x) => changed.has(x)))
-          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) — outside the diff scope of this run`);
+        if (files.length && !files.some((x) => changed.has(x))) {
+          const msg = `${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) — outside the diff scope of this run`;
+          // --strict-scope hard-fails a PR gate on an out-of-scope finding.
+          (opts.strictScope ? errors : warnings).push(msg);
+        }
       }
     }
   }

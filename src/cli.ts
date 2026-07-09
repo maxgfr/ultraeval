@@ -38,8 +38,9 @@ Commands:
   compare  --run <new> --base <old> [--json] [--gate]
              Diff two eval runs -> COMPARE.md (score delta, resolved/introduced/retitled findings).
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
-  check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f] [--json]
+  check    --run <run> [--semantic] [--require-verify] [--strict] [--strict-scope] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
+             --strict-scope hard-fails a diff-scoped (init --since) run whose findings cite only unchanged files.
              --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
   verify   --run <run> [--apply <verdicts[,v2,…]>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
@@ -214,6 +215,7 @@ function main(): void {
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],
           strict: !!args.strict,
+          strictScope: !!args["strict-scope"],
           minFindings: num(args["min-findings"]),
           coverageMin: num(args["coverage-min"]),
         });

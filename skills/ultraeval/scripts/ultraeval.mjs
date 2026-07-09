@@ -1298,8 +1298,10 @@ function checkRun(runDir, opts = {}) {
       for (const f of findings) {
         if (f.status === "dismissed") continue;
         const files = (f.evidence ?? []).map((e) => parseEvidenceRef(e.ref)).filter((p) => p.isTargetRef).map((p) => p.path);
-        if (files.length && !files.some((x) => changed.has(x)))
-          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`);
+        if (files.length && !files.some((x) => changed.has(x))) {
+          const msg = `${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`;
+          (opts.strictScope ? errors : warnings).push(msg);
+        }
       }
     }
   }
@@ -1599,7 +1601,7 @@ function liveScenarioFor(cfg) {
   return cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library;
 }
 var diffScopeBlock = (cfg) => cfg.provenance?.sinceRef ? `
-**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings \u2014 \`check\` warns on out-of-scope citations). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.
+**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings \u2014 \`check\` warns on out-of-scope citations, and \`check --strict-scope\` hard-fails them). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.
 ` : "";
 var liveScenarioBlock = (cfg) => [
   `**Normed live scenario for this category** (full library: \`references/live-scenarios.md\` next to the engine):`,
@@ -2475,6 +2477,7 @@ var FLAG_SPEC = {
     semantic: "boolean",
     "require-verify": "boolean",
     strict: "boolean",
+    "strict-scope": "boolean",
     "min-findings": "value",
     "coverage-min": "value",
     json: "boolean"
@@ -2721,8 +2724,9 @@ Commands:
   compare  --run <new> --base <old> [--json] [--gate]
              Diff two eval runs -> COMPARE.md (score delta, resolved/introduced/retitled findings).
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
-  check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f] [--json]
+  check    --run <run> [--semantic] [--require-verify] [--strict] [--strict-scope] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
+             --strict-scope hard-fails a diff-scoped (init --since) run whose findings cite only unchanged files.
              --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
   verify   --run <run> [--apply <verdicts[,v2,\u2026]>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
@@ -2890,6 +2894,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],
           strict: !!args.strict,
+          strictScope: !!args["strict-scope"],
           minFindings: num(args["min-findings"]),
           coverageMin: num(args["coverage-min"])
         });
