@@ -28,8 +28,10 @@ Commands:
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
              --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
              --since <git-ref> diff-scopes the eval (PR gating): contracts target the changed set; check warns on out-of-scope findings.
-  plan     --run <run>
+  plan     --run <run> [--eco]        (alias: orchestrate — the family verb)
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
+             --eco skips the workflow and writes RUNBOOK.md instead — the sequential low-token
+             path: same stages, same contracts (played as self-pass checklists), same gates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
   brainstorm --run <run> [--rank [--check]]
@@ -101,7 +103,8 @@ const OPTIONAL_VALUE_FLAGS = new Set(["--history"]);
 // `check --require-verfy` weakening the exit gate is exactly the failure mode.
 const COMMAND_FLAGS: Record<string, string[]> = {
   init: ["target", "out", "kind", "category", "mode", "bar", "since"],
-  plan: ["run"],
+  plan: ["run", "eco"],
+  orchestrate: ["run", "eco"],
   analyze: ["run", "since", "json", "target", "out"],
   brainstorm: ["run", "rank", "check"],
   compare: ["run", "base", "json", "gate"],
@@ -198,12 +201,17 @@ function main(): void {
         console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
       }
+      // `orchestrate` is the family-wide verb (every sibling skill's engine has it);
+      // `plan` remains the historical ultraeval name. Same command.
+      case "orchestrate":
       case "plan": {
-        if (!run) throw new Error("plan requires --run <run>");
+        if (!run) throw new Error(`${cmd} requires --run <run>`);
         const engine = fileURLToPath(import.meta.url);
-        const written = planRun(run, engine);
-        console.log(`ultraeval plan: generated\n${written.map((w) => `  ${w}`).join("\n")}`);
-        console.log(`\nLaunch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  — or run the stages by hand via agents/*.md`);
+        const eco = args.eco === true;
+        const written = planRun(run, engine, { eco });
+        console.log(`ultraeval ${cmd}: generated\n${written.map((w) => `  ${w}`).join("\n")}`);
+        if (eco) console.log(`\nSequential eco path: follow ${run}/RUNBOOK.md, playing each agents/*.md contract yourself.`);
+        else console.log(`\nLaunch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  — or run the stages by hand via agents/*.md`);
         return;
       }
       case "analyze": {
