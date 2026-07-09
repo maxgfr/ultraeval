@@ -1,4 +1,5 @@
 import type { Dimension, DimensionAnchor, Kind } from "./types.js";
+import { categoryKey } from "./util.js";
 
 // Starter evaluation dimensions. `defaultDimensions` picks a set from the target
 // KIND, then specializes by CATEGORY using the tweaks documented in
@@ -224,12 +225,12 @@ const cliFlavored = (base: Dimension[]): Dimension[] => [
 ];
 
 export function defaultDimensions(kind: Kind, category = ""): Dimension[] {
-  const cat = category.toLowerCase();
-  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return SECURITY_DIMS;
-  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return REQUIREMENTS_DIMS;
-  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return RESEARCH_DIMS;
+  const key = categoryKey(category);
+  if (key === "security") return SECURITY_DIMS;
+  if (key === "requirements") return REQUIREMENTS_DIMS;
+  if (key === "research") return RESEARCH_DIMS;
   const base = kind === "skill" ? SKILL_DIMS : CODEBASE_DIMS;
-  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return webFlavored(base);
-  if (/\bcli\b|command.?line|terminal/.test(cat)) return cliFlavored(base);
+  if (key === "web") return webFlavored(base);
+  if (key === "cli") return cliFlavored(base);
   return base;
 }

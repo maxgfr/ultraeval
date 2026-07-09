@@ -164,6 +164,15 @@ var titleKey = (title) => title.toLowerCase().trim();
 function provLine(p, emptyText = "") {
   return p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : emptyText;
 }
+function categoryKey(category) {
+  const cat = (category ?? "").toLowerCase();
+  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return "security";
+  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return "requirements";
+  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return "research";
+  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return "web";
+  if (/\bcli\b|command.?line|terminal/.test(cat)) return "cli";
+  return null;
+}
 function opportunityValue(impact, effort) {
   const i = impact === "high" ? 3 : impact === "med" ? 2 : 1;
   const e = effort === "S" ? 1 : effort === "M" ? 2 : 3;
@@ -977,13 +986,13 @@ var cliFlavored = (base) => [
   }
 ];
 function defaultDimensions(kind, category = "") {
-  const cat = category.toLowerCase();
-  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return SECURITY_DIMS;
-  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return REQUIREMENTS_DIMS;
-  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return RESEARCH_DIMS;
+  const key2 = categoryKey(category);
+  if (key2 === "security") return SECURITY_DIMS;
+  if (key2 === "requirements") return REQUIREMENTS_DIMS;
+  if (key2 === "research") return RESEARCH_DIMS;
   const base = kind === "skill" ? SKILL_DIMS : CODEBASE_DIMS;
-  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return webFlavored(base);
-  if (/\bcli\b|command.?line|terminal/.test(cat)) return cliFlavored(base);
+  if (key2 === "web") return webFlavored(base);
+  if (key2 === "cli") return cliFlavored(base);
   return base;
 }
 
@@ -1515,12 +1524,12 @@ var LIVE_SCENARIOS = {
   }
 };
 function liveScenarioFor(cfg) {
-  const cat = (cfg.category ?? "").toLowerCase();
-  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return LIVE_SCENARIOS.security;
-  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return LIVE_SCENARIOS.requirements;
-  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return LIVE_SCENARIOS.research;
-  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return LIVE_SCENARIOS["web app"];
-  if (/\bcli\b|command.?line|terminal/.test(cat)) return LIVE_SCENARIOS.cli;
+  const key2 = categoryKey(cfg.category ?? "");
+  if (key2 === "security") return LIVE_SCENARIOS.security;
+  if (key2 === "requirements") return LIVE_SCENARIOS.requirements;
+  if (key2 === "research") return LIVE_SCENARIOS.research;
+  if (key2 === "web") return LIVE_SCENARIOS["web app"];
+  if (key2 === "cli") return LIVE_SCENARIOS.cli;
   return cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library;
 }
 var diffScopeBlock = (cfg) => cfg.provenance?.sinceRef ? `

@@ -248,6 +248,24 @@ export function provLine(p?: Provenance, emptyText = ""): string {
     : emptyText;
 }
 
+// ---- category detection ---------------------------------------------------
+// The single category-matching ladder shared by the rubric picker
+// (rubrics.defaultDimensions) and the live-scenario picker
+// (templates.liveScenarioFor). Both used to carry a byte-identical 5-regex copy
+// that had to be kept in sync by hand; this is the one source. Returns null for
+// a category that matches no specialization — each caller supplies its own
+// kind-based fallback (skill vs codebase). Order is significant and preserved.
+export type CategoryKey = "security" | "requirements" | "research" | "web" | "cli";
+export function categoryKey(category: string): CategoryKey | null {
+  const cat = (category ?? "").toLowerCase();
+  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return "security";
+  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return "requirements";
+  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return "research";
+  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return "web";
+  if (/\bcli\b|command.?line|terminal/.test(cat)) return "cli";
+  return null;
+}
+
 // ---- opportunity ranking -------------------------------------------------
 // value = impact / effort — a "quick win" (high/S) tops a "big bet" (high/L).
 export function opportunityValue(impact?: Impact, effort?: Effort): number {

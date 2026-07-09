@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import type { Dimension, EvalConfig } from "./types.js";
 import { SEVERITY_DEFS, VALID_SEVERITIES } from "./types.js";
-import { exists } from "./util.js";
+import { categoryKey, exists } from "./util.js";
 
 // The golden judge-calibration fixture ships with the skill (references/), next
 // to the engine bundle; fall back to the repo-dev layout when planning from a
@@ -81,14 +81,16 @@ const LIVE_SCENARIOS: Record<string, LiveScenario> = {
   },
 };
 
-// Category → scenario key, mirroring defaultDimensions()'s matching.
+// Category → scenario, via the shared categoryKey() ladder (single source, no
+// longer a hand-mirrored copy of defaultDimensions()'s regexes). null (no
+// specialization) falls back to the kind-based scenario.
 function liveScenarioFor(cfg: EvalConfig): LiveScenario {
-  const cat = (cfg.category ?? "").toLowerCase();
-  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return LIVE_SCENARIOS.security as LiveScenario;
-  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return LIVE_SCENARIOS.requirements as LiveScenario;
-  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return LIVE_SCENARIOS.research as LiveScenario;
-  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return LIVE_SCENARIOS["web app"] as LiveScenario;
-  if (/\bcli\b|command.?line|terminal/.test(cat)) return LIVE_SCENARIOS.cli as LiveScenario;
+  const key = categoryKey(cfg.category ?? "");
+  if (key === "security") return LIVE_SCENARIOS.security as LiveScenario;
+  if (key === "requirements") return LIVE_SCENARIOS.requirements as LiveScenario;
+  if (key === "research") return LIVE_SCENARIOS.research as LiveScenario;
+  if (key === "web") return LIVE_SCENARIOS["web app"] as LiveScenario;
+  if (key === "cli") return LIVE_SCENARIOS.cli as LiveScenario;
   return (cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library) as LiveScenario;
 }
 
