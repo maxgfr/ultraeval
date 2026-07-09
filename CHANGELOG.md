@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.8.0](https://github.com/maxgfr/ultraeval/compare/v1.7.1...v1.8.0) (2026-07-09)
+
+
+### Bug Fixes
+
+* **analyze:** credit test coverage via the import graph, not just base name (FIX-007) ([56e93aa](https://github.com/maxgfr/ultraeval/commit/56e93aa4f83364a0a4a2f1d61fd1f0f311e85cba))
+* **backlog:** detect runner from resolved targetAbs on moved runs (FIX-003) ([dd9d614](https://github.com/maxgfr/ultraeval/commit/dd9d6144064a70d6b350603c21e021b3cee61a7b))
+* **backlog:** guessTestFile follows the target repo's real test layout (FIX-020) ([fb92e0f](https://github.com/maxgfr/ultraeval/commit/fb92e0fb922fcfaee10190ef94e80a96bdf4a187))
+* **backlog:** skill verify.command uses the detected runner, not a hardcoded pnpm string (FIX-016) ([e4c265a](https://github.com/maxgfr/ultraeval/commit/e4c265a710a7c5b15484642e00c17e8d86460df6))
+* **check:** classify a malformed core artifact as a usage error (exit 2) (FIX-013) ([36ba321](https://github.com/maxgfr/ultraeval/commit/36ba321b3d1c2cf5f00feef0c98e3ed7e3a1a2f6))
+* **clean:** preserve remediation deliverables unless --all (FIX-001) ([0f9e52a](https://github.com/maxgfr/ultraeval/commit/0f9e52a036c4fa0ec7dffc788d277adf98f78930))
+* **cli:** bare no-command invocation exits 2 with help on stderr (FIX-012) ([112b239](https://github.com/maxgfr/ultraeval/commit/112b239c92f7acd39aa5f172179de1630bef899f))
+* **compare:** fail --gate on a P0 severity escalation across a retitle (FIX-011) ([124e9e2](https://github.com/maxgfr/ultraeval/commit/124e9e223dd2d04bc13a91f3ecd246d1bc7e83bd))
+* **fix,rejudge:** parse-safe guard on generated workflows (FIX-002) ([6e28ce3](https://github.com/maxgfr/ultraeval/commit/6e28ce3c3021e4e9af653922a3e7c51e07e9ede4))
+* **fix:** echo the exact verify command + cwd before verify-fix replays it (FIX-010) ([479ef94](https://github.com/maxgfr/ultraeval/commit/479ef947de5b1679c5d6c50e55054c81e40eaa48))
+* **score:** anchor the --history default ledger to the target repo, not the cwd (FIX-015) ([fbc4b01](https://github.com/maxgfr/ultraeval/commit/fbc4b01bb370354898c66e95d2e062431e1efae8))
+* **score:** report agreement as NA for a single-judge panel (FIX-005) ([6cd9692](https://github.com/maxgfr/ultraeval/commit/6cd96920384011e8666dfd908f5ec984fff0f177))
+* **templates:** generated workflow exits 2 with guidance under plain node (FIX-025) ([1753c05](https://github.com/maxgfr/ultraeval/commit/1753c05848448a3db2aca3deb272f704dd1ab11c))
+* **util:** make writeText atomic (temp file + rename) so a crash cannot truncate output ([cd87188](https://github.com/maxgfr/ultraeval/commit/cd87188f199fa00dc7d79e939984cee7d2c74f87))
+* **util:** readJson names the offending file on a parse error (FIX-014) ([3f57465](https://github.com/maxgfr/ultraeval/commit/3f5746542dd48b312971c9ed49a99552d2b1ad74))
+* **verify,cli:** report the actually-planted honeypot count, not the requested one (FIX-008) ([2500807](https://github.com/maxgfr/ultraeval/commit/25008077eff115f947d3a1465f6d6e9fd7be2292))
+
+
+### Features
+
+* **check:** --strict-scope hard-fails out-of-scope findings on a diff run (FIX-009) ([d2939f4](https://github.com/maxgfr/ultraeval/commit/d2939f485b99b45d9ed4313e19baeae0978d445b))
+* **check:** re-validate provenance dimensionsHash and warn on post-init rubric drift (FIX-009) ([bbdd1e1](https://github.com/maxgfr/ultraeval/commit/bbdd1e116ee269e71b8ba3919737fd6410632328))
+* **cli:** check --json emits the machine-readable CheckResult for CI (FIX-017) ([3cb2fe7](https://github.com/maxgfr/ultraeval/commit/3cb2fe75f0c5d10cebaf74e58d0fc209a1f6762e))
+* **cli:** read-only `history` subcommand renders the score-trend ledger (FIX-022) ([73f2417](https://github.com/maxgfr/ultraeval/commit/73f24175575062547ea1b4111fb5490f057e406f))
+
+
+### Performance Improvements
+
+* **backlog:** detect test convention + runner once, not per finding (FIX-004) ([cfa0d32](https://github.com/maxgfr/ultraeval/commit/cfa0d32ecdf0434f9cdccfd4713a204720e31682))
+* **sarif:** thread a run-scoped lineCache through buildSarif (FIX-008) ([022eec0](https://github.com/maxgfr/ultraeval/commit/022eec06b89043336773eabae987098bc9be2eeb))
+* **util:** memoize per-invocation file reads in resolveEvidence/extractContext (FIX-024) ([1a4a87b](https://github.com/maxgfr/ultraeval/commit/1a4a87b7ec3bccad66e6e4783046992cf6626e42))
+
 ## [1.7.1](https://github.com/maxgfr/ultraeval/compare/v1.7.0...v1.7.1) (2026-07-09)
 
 
