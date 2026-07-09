@@ -403,6 +403,54 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     expect(sc.dimensions.find((d) => d.id === "correctness")?.spread).toBe(0);
     expect(sc.agreement).toBeCloseTo(0.6, 2); // 1 - avgSpread/5 = 1 - 2/5
   });
+
+  it("reports agreement as NA (undefined), not a false 1.0, for a single-judge panel (FIX-005)", () => {
+    // Agreement is inter-judge — undefined for n=1. A lone judge has spread 0 on
+    // every dimension, so the old formula reported 1.0 (reads as full consensus).
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: { passed: true },
+      },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.judges).toBe(1);
+    expect(sc.agreement).toBeUndefined(); // NOT 1.0 — no consensus is possible with one judge
+  });
+
+  it("still reports a real agreement number for a genuine multi-judge panel (formula unchanged)", () => {
+    const line = (sec: number) => ({
+      dimensionScores: [
+        { id: "security", score: sec },
+        { id: "correctness", score: 5 },
+      ],
+      meetsExpectations: true,
+    });
+    const sc = scoreRun(scaffold([line(5), line(5)]));
+    expect(sc.judges).toBe(2);
+    expect(sc.agreement).toBe(1); // two agreeing judges DO have full consensus
+  });
+
+  it("formatHistory prints '—' for an absent agreement so a lone-judge run cannot masquerade as full consensus (FIX-005)", () => {
+    const out = formatHistory(
+      [
+        {
+          scoredAt: "2026-01-01T00:00:00.000Z",
+          commit: "a".repeat(40),
+          overall: 70,
+          meetsExpectations: false,
+          bar: 80,
+          counts: { p0: 0, p1: 0, p2: 0, opps: 0 },
+        },
+      ],
+      "/tmp/ledger.jsonl",
+    );
+    expect(out).toMatch(/agr —/);
+  });
 });
 
 describe("history — reading and formatting the score-trend ledger (FIX-022)", () => {

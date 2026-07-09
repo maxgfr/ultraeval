@@ -36,7 +36,11 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
   const overall = Math.round(weighted * 100);
   const bar = cfg.meetsBar ?? MEETS_BAR;
   const avgSpread = dimensions.length ? dimensions.reduce((a, b) => a + (b.spread ?? 0), 0) / dimensions.length : 0;
-  const agreement = Number((1 - avgSpread / 5).toFixed(2));
+  // Agreement is inter-judge dispersion — undefined for a lone panel (a single
+  // judge has spread 0 everywhere, which the formula would read as full 1.0
+  // consensus). Guard on the panel size, mirroring `judgesIndependent` below;
+  // the multi-judge formula is unchanged.
+  const agreement = judges.length > 1 ? Number((1 - avgSpread / 5).toFixed(2)) : undefined;
 
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
@@ -77,7 +81,7 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
     bar,
     dimensions,
     judges: judges.length,
-    agreement,
+    ...(agreement !== undefined ? { agreement } : {}),
     reason,
     sensitivity,
     ...(judgesCalibrated ? { judgesCalibrated } : {}),
@@ -193,7 +197,9 @@ export function formatHistory(entries: HistoryEntry[], file: string): string {
     const verdict = e.meetsExpectations ? "MEETS" : "below";
     const delta = prev === undefined ? "" : ` (${e.overall - prev >= 0 ? "+" : ""}${e.overall - prev})`;
     const c = e.counts ?? { p0: 0, p1: 0, p2: 0, opps: 0 };
-    const agr = e.agreement !== undefined ? ` · agr ${e.agreement}` : "";
+    // A lone-judge (or agreement-less) run prints "agr —" rather than nothing, so
+    // an absent inter-judge agreement is never mistaken for full consensus.
+    const agr = ` · agr ${e.agreement !== undefined ? e.agreement : "—"}`;
     lines.push(`  ${when}  ${sha}  ${String(e.overall).padStart(3)}/${e.bar} ${verdict}${delta}  P0/P1/P2 ${c.p0}/${c.p1}/${c.p2} · opp ${c.opps}${agr}`);
     prev = e.overall;
   }

@@ -2269,7 +2269,7 @@ function computeScore(cfg, judges, doc) {
   const overall = Math.round(weighted * 100);
   const bar = cfg.meetsBar ?? MEETS_BAR;
   const avgSpread = dimensions.length ? dimensions.reduce((a, b) => a + (b.spread ?? 0), 0) / dimensions.length : 0;
-  const agreement = Number((1 - avgSpread / 5).toFixed(2));
+  const agreement = judges.length > 1 ? Number((1 - avgSpread / 5).toFixed(2)) : void 0;
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
   const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
@@ -2294,7 +2294,7 @@ function computeScore(cfg, judges, doc) {
     bar,
     dimensions,
     judges: judges.length,
-    agreement,
+    ...agreement !== void 0 ? { agreement } : {},
     reason,
     sensitivity,
     ...judgesCalibrated ? { judgesCalibrated } : {},
@@ -2374,7 +2374,7 @@ function formatHistory(entries, file) {
     const verdict = e.meetsExpectations ? "MEETS" : "below";
     const delta = prev === void 0 ? "" : ` (${e.overall - prev >= 0 ? "+" : ""}${e.overall - prev})`;
     const c = e.counts ?? { p0: 0, p1: 0, p2: 0, opps: 0 };
-    const agr = e.agreement !== void 0 ? ` \xB7 agr ${e.agreement}` : "";
+    const agr = ` \xB7 agr ${e.agreement !== void 0 ? e.agreement : "\u2014"}`;
     lines.push(`  ${when}  ${sha}  ${String(e.overall).padStart(3)}/${e.bar} ${verdict}${delta}  P0/P1/P2 ${c.p0}/${c.p1}/${c.p2} \xB7 opp ${c.opps}${agr}`);
     prev = e.overall;
   }
