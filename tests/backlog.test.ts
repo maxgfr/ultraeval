@@ -63,6 +63,27 @@ describe("backlog — TDD fix cards", () => {
     expect(bl.tasks[0]?.verify.command).toMatch(/run the new test/);
   });
 
+  it("skill tasks get the DETECTED runner (npm/yarn/pnpm per lockfile), not a hardcoded pnpm string", () => {
+    const run = scaffold([mk("F1", "P1", "confirmed")]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.kind = "skill";
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    writeFileSync(join(cfg.targetAbs, "package.json"), JSON.stringify({ name: "t", scripts: { test: "vitest run" } })); // no lockfile -> npm
+    const bl = buildBacklog(run);
+    expect(bl.tasks[0]?.verify.command).toBe("npm test"); // NOT "pnpm test  # ..."
+  });
+
+  it("skill tasks keep the pnpm prose fallback only when no manifest is detectable", () => {
+    const run = scaffold([mk("F1", "P1", "confirmed")]); // scaffold target has no package.json
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.kind = "skill";
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const bl = buildBacklog(run);
+    expect(bl.tasks[0]?.verify.command).toMatch(/pnpm test/);
+  });
+
   it("derives a dependsOn chain when tasks share a target file", () => {
     const bl = buildBacklog(scaffold([mk("F1", "P0", "confirmed"), mk("F2", "P1", "confirmed"), mk("F3", "P2", "confirmed")]));
     expect(bl.tasks[0]?.dependsOn).toEqual([]);

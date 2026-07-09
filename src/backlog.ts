@@ -100,10 +100,14 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
             : "Make the minimal change that turns the RED test green — without weakening any gate."),
       },
       verify: {
+        // Prefer the runner detected from the target's own manifest/lockfile —
+        // verify-fix replays this verbatim through a shell, so a hardcoded pnpm
+        // string misleads an npm/yarn/bun target. Prose is only a last resort.
         command:
-          cfg.kind === "skill"
+          detectVerifyCommand(cfg.targetAbs) ??
+          (cfg.kind === "skill"
             ? "pnpm test  # then re-run the target's own check/verify gate"
-            : (detectVerifyCommand(cfg.targetAbs) ?? "run the new test (must pass) + the full suite (nothing regresses)"),
+            : "run the new test (must pass) + the full suite (nothing regresses)"),
       },
       dependsOn: [],
     };
