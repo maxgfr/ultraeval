@@ -2192,6 +2192,7 @@ function esc(s) {
 }
 
 // src/score.ts
+import { execFileSync as execFileSync4 } from "child_process";
 import { appendFileSync, mkdirSync as mkdirSync3 } from "fs";
 import { dirname as dirname3, join as join15 } from "path";
 function readJudges(runDir) {
@@ -2268,6 +2269,8 @@ function appendHistory(runDir, file) {
   const doc = exists(join15(runDir, "findings.json")) ? readJson(join15(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
+  const protocol = sc.provenance?.protocolVersion;
+  const rubric = sc.provenance?.rubricVersion;
   const entry = {
     scoredAt: sc.scoredAt ?? (/* @__PURE__ */ new Date()).toISOString(),
     ...commit ? { commit } : {},
@@ -2280,12 +2283,58 @@ function appendHistory(runDir, file) {
       p1: live.filter((f) => f.kind !== "opportunity" && f.severity === "P1").length,
       p2: live.filter((f) => f.kind !== "opportunity" && f.severity === "P2").length,
       opps: live.filter((f) => f.kind === "opportunity").length
-    }
+    },
+    ...protocol ? { protocol } : {},
+    ...rubric ? { rubric } : {}
   };
   mkdirSync3(dirname3(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}
 `);
   return entry;
+}
+function targetGitRoot(dir) {
+  try {
+    return execFileSync4("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+function defaultLedgerPath(runDir) {
+  const cfg = readJson(join15(runDir, "eval.config.json"));
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const base = targetGitRoot(targetAbs) ?? process.cwd();
+  return join15(base, "evals", "history.jsonl");
+}
+function readHistory(file) {
+  if (!exists(file)) return [];
+  return readText(file).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+    try {
+      return JSON.parse(l);
+    } catch {
+      return null;
+    }
+  }).filter((x) => x !== null);
+}
+function formatHistory(entries, file) {
+  const lines = [`history  ${file}  (${entries.length} run${entries.length === 1 ? "" : "s"})`];
+  let prev;
+  for (const e of entries) {
+    const when = (e.scoredAt ?? "").slice(0, 10) || "----------";
+    const sha = e.commit ? e.commit.slice(0, 7) : "-------";
+    const verdict = e.meetsExpectations ? "MEETS" : "below";
+    const delta = prev === void 0 ? "" : ` (${e.overall - prev >= 0 ? "+" : ""}${e.overall - prev})`;
+    const c = e.counts ?? { p0: 0, p1: 0, p2: 0, opps: 0 };
+    const agr = e.agreement !== void 0 ? ` \xB7 agr ${e.agreement}` : "";
+    lines.push(`  ${when}  ${sha}  ${String(e.overall).padStart(3)}/${e.bar} ${verdict}${delta}  P0/P1/P2 ${c.p0}/${c.p1}/${c.p2} \xB7 opp ${c.opps}${agr}`);
+    prev = e.overall;
+  }
+  const protocols = new Set(entries.map((e) => e.protocol).filter((v) => !!v));
+  const rubrics = new Set(entries.map((e) => e.rubric).filter((v) => !!v));
+  if (protocols.size > 1 || rubrics.size > 1)
+    lines.push(
+      `  ! entries span multiple versions (protocol ${[...protocols].join("/") || "?"}, rubric ${[...rubrics].join("/") || "?"}) \u2014 scores across a version bump are not directly comparable`
+    );
+  return lines.join("\n");
 }
 function formatScore(sc) {
   const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"}${sc.judgesCalibrated ? `, ${sc.judgesCalibrated} calibrated` : ""})`;
@@ -2362,7 +2411,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--shard",
   "--bar",
   "--honeypots",
-  "--task"
+  "--task",
+  "--file"
 ]);
 var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
 function parse(argv) {
@@ -2608,7 +2658,11 @@ Commands:
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
-             --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
+             --history appends a one-line ledger entry; the default file is evals/history.jsonl anchored to the
+             TARGET repo's git root (stable across cwds), or under the cwd when the target is not a git repo.
+  history  [--run <run>] [--file <f>] [<path>] [--json]
+             Read back the score-trend the ledger records: each run's overall vs bar, verdict, \u0394, and finding counts.
+             Ledger resolution: an explicit <path>/--file, else the --run target-anchored default; --json emits the raw array.
   rejudge  --run <run> --out <run2>
              Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
              Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
@@ -2633,6 +2687,7 @@ var COMMAND_FLAGS = {
   fix: ["run", "task", "workflow"],
   "verify-fix": ["run", "task"],
   score: ["run", "json", "history"],
+  history: ["run", "file", "json"],
   rejudge: ["run", "out"],
   status: ["run", "json"],
   render: ["run", "out", "no-html", "no-md", "sarif"],
@@ -2821,6 +2876,20 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "history": {
+        const explicit = str(args.file) || args._[1];
+        const file = explicit || (run ? defaultLedgerPath(run) : void 0);
+        if (!file) throw new Error("history requires a ledger path, --file <f>, or --run <run> (to locate the default ledger)");
+        const entries = readHistory(file);
+        if (args.json) {
+          console.log(JSON.stringify(entries, null, 2));
+          return;
+        }
+        console.log(
+          entries.length ? formatHistory(entries, file) : `ultraeval history: no ledger entries at ${file} \u2014 run \`score --run <run> --history\` to record a trend`
+        );
         return;
       }
       case "fix": {

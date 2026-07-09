@@ -25,6 +25,7 @@ export const VALUE_FLAGS = new Set([
   "--bar",
   "--honeypots",
   "--task",
+  "--file",
 ]);
 
 // Flags whose value is optional: `--history` alone means "use the default file".

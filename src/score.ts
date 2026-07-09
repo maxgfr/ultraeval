@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { MEETS_BAR } from "./types.js";
 import type { EvalConfig, FindingsDoc, JudgeLine, Scorecard } from "./types.js";
-import { exists, readJson, readText, writeJson } from "./util.js";
+import { exists, readJson, readText, resolveTargetAbs, writeJson } from "./util.js";
 
 export function readJudges(runDir: string): JudgeLine[] {
   const p = join(runDir, "judges.jsonl");
@@ -107,6 +108,10 @@ export interface HistoryEntry {
   bar: number;
   agreement?: number;
   counts: { p0: number; p1: number; p2: number; opps: number };
+  // Protocol/rubric version the run was scored under — lets `history` warn when
+  // a trend spans incompatible revisions (scores are not directly comparable).
+  protocol?: string;
+  rubric?: string;
 }
 
 export function appendHistory(runDir: string, file: string): HistoryEntry {
@@ -116,6 +121,8 @@ export function appendHistory(runDir: string, file: string): HistoryEntry {
   const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
+  const protocol = sc.provenance?.protocolVersion;
+  const rubric = sc.provenance?.rubricVersion;
   const entry: HistoryEntry = {
     scoredAt: sc.scoredAt ?? new Date().toISOString(),
     ...(commit ? { commit } : {}),
@@ -129,10 +136,74 @@ export function appendHistory(runDir: string, file: string): HistoryEntry {
       p2: live.filter((f) => f.kind !== "opportunity" && f.severity === "P2").length,
       opps: live.filter((f) => f.kind === "opportunity").length,
     },
+    ...(protocol ? { protocol } : {}),
+    ...(rubric ? { rubric } : {}),
   };
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}\n`);
   return entry;
+}
+
+// The stable default ledger location for a run. Anchored to the TARGET repo's
+// git root (so successive invocations from arbitrary cwds append to ONE ledger,
+// not a directory-fragmented pile — see FIX-015); when the target is not inside
+// a git repo, there is no canonical repo to anchor to, so we fall back to cwd.
+function targetGitRoot(dir: string): string | null {
+  try {
+    return execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function defaultLedgerPath(runDir: string): string {
+  const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const base = targetGitRoot(targetAbs) ?? process.cwd();
+  return join(base, "evals", "history.jsonl");
+}
+
+// Read the score-trend ledger back (the inverse of appendHistory). A missing
+// ledger is not an error — it just means no run has recorded a trend yet.
+export function readHistory(file: string): HistoryEntry[] {
+  if (!exists(file)) return [];
+  return readText(file)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      try {
+        return JSON.parse(l) as HistoryEntry;
+      } catch {
+        return null; // a corrupt line must never crash the reader
+      }
+    })
+    .filter((x): x is HistoryEntry => x !== null);
+}
+
+// A compact human trend: one row per scored run (date · short sha · overall vs
+// bar · verdict · Δ from the previous run · finding counts · agreement), plus a
+// warning when the entries span incompatible protocol/rubric versions.
+export function formatHistory(entries: HistoryEntry[], file: string): string {
+  const lines = [`history  ${file}  (${entries.length} run${entries.length === 1 ? "" : "s"})`];
+  let prev: number | undefined;
+  for (const e of entries) {
+    const when = (e.scoredAt ?? "").slice(0, 10) || "----------";
+    const sha = e.commit ? e.commit.slice(0, 7) : "-------";
+    const verdict = e.meetsExpectations ? "MEETS" : "below";
+    const delta = prev === undefined ? "" : ` (${e.overall - prev >= 0 ? "+" : ""}${e.overall - prev})`;
+    const c = e.counts ?? { p0: 0, p1: 0, p2: 0, opps: 0 };
+    const agr = e.agreement !== undefined ? ` · agr ${e.agreement}` : "";
+    lines.push(`  ${when}  ${sha}  ${String(e.overall).padStart(3)}/${e.bar} ${verdict}${delta}  P0/P1/P2 ${c.p0}/${c.p1}/${c.p2} · opp ${c.opps}${agr}`);
+    prev = e.overall;
+  }
+  const protocols = new Set(entries.map((e) => e.protocol).filter((v): v is string => !!v));
+  const rubrics = new Set(entries.map((e) => e.rubric).filter((v): v is string => !!v));
+  if (protocols.size > 1 || rubrics.size > 1)
+    lines.push(
+      `  ! entries span multiple versions (protocol ${[...protocols].join("/") || "?"}, rubric ${[...rubrics].join("/") || "?"}) — scores across a version bump are not directly comparable`,
+    );
+  return lines.join("\n");
 }
 
 export function formatScore(sc: Scorecard): string {

@@ -106,6 +106,52 @@ describe("cli — verify --apply surfaces a friendly error for a missing verdict
   });
 });
 
+describe("cli — history reads back the score-trend ledger (FIX-022)", () => {
+  function ledgerFile(entries: unknown[]): string {
+    const dir = mkdtempSync(join(tmpdir(), "ue-histcmd-"));
+    tmps.push(dir);
+    const file = join(dir, "history.jsonl");
+    writeFileSync(file, entries.map((e) => JSON.stringify(e)).join("\n"));
+    return file;
+  }
+
+  it("prints a compact trend with per-run overall and delta, exit 0", () => {
+    const file = ledgerFile([
+      {
+        scoredAt: "2026-01-01T00:00:00.000Z",
+        commit: "a".repeat(40),
+        overall: 58,
+        meetsExpectations: false,
+        bar: 80,
+        counts: { p0: 1, p1: 2, p2: 3, opps: 0 },
+      },
+      { scoredAt: "2026-01-02T00:00:00.000Z", commit: "b".repeat(40), overall: 81, meetsExpectations: true, bar: 80, counts: { p0: 0, p1: 1, p2: 2, opps: 1 } },
+    ]);
+    const r = run(["history", "--file", file]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/58/);
+    expect(r.out).toMatch(/81/);
+    expect(r.out).toMatch(/\+23/);
+  });
+
+  it("--json emits the raw ledger array", () => {
+    const file = ledgerFile([
+      { scoredAt: "2026-01-01T00:00:00.000Z", overall: 70, meetsExpectations: false, bar: 80, counts: { p0: 0, p1: 0, p2: 0, opps: 0 } },
+    ]);
+    const r = run(["history", "--file", file, "--json"]);
+    expect(r.status).toBe(0);
+    const arr = JSON.parse(r.out);
+    expect(Array.isArray(arr)).toBe(true);
+    expect(arr[0].overall).toBe(70);
+  });
+
+  it("a missing/empty ledger prints a friendly message and exits 0 (not a crash)", () => {
+    const r = run(["history", "--file", join(tmpdir(), `ue-absent-${Date.now()}.jsonl`)]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/no ledger|no history|score --run/i);
+  });
+});
+
 describe("cli — status names the pipeline state and the next command", () => {
   it("prints the artifact checklist and a next: hint", () => {
     const r = run(["status", "--run", sampleRun()]);

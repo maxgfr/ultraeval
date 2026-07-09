@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appendHistory, formatScore, scoreRun } from "../src/score.js";
+import { appendHistory, formatHistory, formatScore, readHistory, scoreRun } from "../src/score.js";
 
 const tmps: string[] = [];
 
@@ -402,5 +402,107 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     expect(sc.dimensions.find((d) => d.id === "security")?.spread).toBe(4);
     expect(sc.dimensions.find((d) => d.id === "correctness")?.spread).toBe(0);
     expect(sc.agreement).toBeCloseTo(0.6, 2); // 1 - avgSpread/5 = 1 - 2/5
+  });
+});
+
+describe("history — reading and formatting the score-trend ledger (FIX-022)", () => {
+  function ledger(entries: unknown[]): string {
+    const run = mkdtempSync(join(tmpdir(), "ue-hist-"));
+    tmps.push(run);
+    const file = join(run, "history.jsonl");
+    writeFileSync(file, entries.map((e) => JSON.stringify(e)).join("\n"));
+    return file;
+  }
+
+  it("readHistory returns [] for a missing ledger (never throws)", () => {
+    expect(readHistory(join(tmpdir(), `ue-nope-${Date.now()}.jsonl`))).toEqual([]);
+  });
+
+  it("readHistory parses one entry per non-blank line and skips malformed lines", () => {
+    const file = ledger([
+      { scoredAt: "2026-01-01T00:00:00.000Z", overall: 58, meetsExpectations: false, bar: 80, counts: { p0: 1, p1: 2, p2: 3, opps: 0 } },
+      { scoredAt: "2026-01-02T00:00:00.000Z", overall: 81, meetsExpectations: true, bar: 80, counts: { p0: 0, p1: 1, p2: 2, opps: 1 } },
+    ]);
+    writeFileSync(file, `${readFileSync(file, "utf8")}\nnot json\n`); // a corrupt trailing line must not crash the reader
+    const entries = readHistory(file);
+    expect(entries.length).toBe(2);
+    expect(entries[0]?.overall).toBe(58);
+    expect(entries[1]?.overall).toBe(81);
+  });
+
+  it("formatHistory renders a compact trend with the per-run delta between consecutive entries", () => {
+    const entries = [
+      {
+        scoredAt: "2026-01-01T00:00:00.000Z",
+        commit: "a".repeat(40),
+        overall: 58,
+        meetsExpectations: false,
+        bar: 80,
+        agreement: 0.9,
+        counts: { p0: 1, p1: 2, p2: 3, opps: 0 },
+      },
+      {
+        scoredAt: "2026-01-02T00:00:00.000Z",
+        commit: "b".repeat(40),
+        overall: 81,
+        meetsExpectations: true,
+        bar: 80,
+        agreement: 0.95,
+        counts: { p0: 0, p1: 1, p2: 2, opps: 1 },
+      },
+    ];
+    const out = formatHistory(entries, "/tmp/ledger.jsonl");
+    expect(out).toMatch(/58/);
+    expect(out).toMatch(/81/);
+    expect(out).toMatch(/\+23/); // 81 - 58
+    expect(out).toMatch(/MEETS/);
+    expect(out).toMatch(/aaaaaaa/); // short commit sha
+  });
+
+  it("formatHistory warns when entries span different protocol/rubric versions", () => {
+    const entries = [
+      {
+        scoredAt: "2026-01-01T00:00:00.000Z",
+        overall: 70,
+        meetsExpectations: false,
+        bar: 80,
+        counts: { p0: 0, p1: 0, p2: 0, opps: 0 },
+        protocol: "1",
+        rubric: "1",
+      },
+      {
+        scoredAt: "2026-01-02T00:00:00.000Z",
+        overall: 90,
+        meetsExpectations: true,
+        bar: 80,
+        counts: { p0: 0, p1: 0, p2: 0, opps: 0 },
+        protocol: "2",
+        rubric: "1",
+      },
+    ];
+    expect(formatHistory(entries, "/tmp/ledger.jsonl")).toMatch(/protocol|version|comparable/i);
+  });
+
+  it("appendHistory records the protocol/rubric versions from provenance so the trend can flag incomparable runs", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.provenance = {
+      engineVersion: "9.9.9",
+      protocolVersion: "2",
+      rubricVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: "abc123def456",
+    };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    scoreRun(run);
+    const file = join(run, "ledger.jsonl");
+    appendHistory(run, file);
+    const e = JSON.parse(readFileSync(file, "utf8").trim());
+    expect(e.protocol).toBe("2");
+    expect(e.rubric).toBe("1");
   });
 });

@@ -12,7 +12,7 @@ import { planRun } from "./plan.js";
 import { emitFixAgents, formatVerifyFix, verifyFix } from "./fix.js";
 import { rejudgeRun } from "./rejudge.js";
 import { render } from "./render.js";
-import { appendHistory, formatScore, scoreRun } from "./score.js";
+import { appendHistory, defaultLedgerPath, formatHistory, formatScore, readHistory, scoreRun } from "./score.js";
 import { formatStatus, statusRun } from "./status.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
@@ -58,7 +58,11 @@ Commands:
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
-             --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
+             --history appends a one-line ledger entry; the default file is evals/history.jsonl anchored to the
+             TARGET repo's git root (stable across cwds), or under the cwd when the target is not a git repo.
+  history  [--run <run>] [--file <f>] [<path>] [--json]
+             Read back the score-trend the ledger records: each run's overall vs bar, verdict, Δ, and finding counts.
+             Ledger resolution: an explicit <path>/--file, else the --run target-anchored default; --json emits the raw array.
   rejudge  --run <run> --out <run2>
              Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
              Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
@@ -86,6 +90,7 @@ const COMMAND_FLAGS: Record<string, string[]> = {
   fix: ["run", "task", "workflow"],
   "verify-fix": ["run", "task"],
   score: ["run", "json", "history"],
+  history: ["run", "file", "json"],
   rejudge: ["run", "out"],
   status: ["run", "json"],
   render: ["run", "out", "no-html", "no-md", "sarif"],
@@ -282,6 +287,24 @@ function main(): void {
           // keep --json stdout pure JSON — the ledger notice goes to stderr there
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "history": {
+        // Ledger resolution: an explicit path arg / --file wins; otherwise the
+        // --run's target-anchored default. Reading a trend must never require a run.
+        const explicit = str(args.file) || args._[1];
+        const file = explicit || (run ? defaultLedgerPath(run) : undefined);
+        if (!file) throw new Error("history requires a ledger path, --file <f>, or --run <run> (to locate the default ledger)");
+        const entries = readHistory(file);
+        if (args.json) {
+          console.log(JSON.stringify(entries, null, 2));
+          return;
+        }
+        console.log(
+          entries.length
+            ? formatHistory(entries, file)
+            : `ultraeval history: no ledger entries at ${file} — run \`score --run <run> --history\` to record a trend`,
+        );
         return;
       }
       case "fix": {
