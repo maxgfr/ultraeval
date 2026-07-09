@@ -190,6 +190,9 @@ export interface VerifyPair {
 export interface VerifyTodo {
   run: string;
   pairs: VerifyPair[];
+  // Honeypot traps ACTUALLY planted (may be < requested when the run is too
+  // small to cross-pair). Set only when --honeypots was requested.
+  planted?: number;
 }
 export interface VerdictItem {
   claimId: string;

@@ -297,8 +297,17 @@ function main(): void {
           const honeypots = num(args.honeypots);
           const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
           const todoName = shards !== undefined && shard !== undefined ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
-          const hp = honeypots ? ` (incl. ${honeypots} honeypot(s))` : "";
+          // Report the ACTUALLY-planted count, never the requested one — a small
+          // run can plant fewer (or zero) traps than asked (pool exhaustion).
+          const planted = todo.planted ?? 0;
+          const hp = honeypots ? ` (incl. ${planted} honeypot(s))` : "";
           console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
+          if (honeypots && planted < honeypots)
+            console.log(
+              planted === 0
+                ? "  ! 0 planted — run too small for honeypots (need >= 2 gradeable pairs across distinct findings); skeptic-QC will not run"
+                : `  ! only ${planted}/${honeypots} honeypot(s) planted — cross-pair pool exhausted; skeptic-QC is thinner than requested`,
+            );
         }
         return;
       }

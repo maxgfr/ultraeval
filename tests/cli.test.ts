@@ -51,6 +51,27 @@ describe("cli — unknown flags are rejected, never silently ignored", () => {
   });
 });
 
+describe("cli — verify --honeypots reports the actually-planted count, not the requested one", () => {
+  it("prints the planted count when planting succeeds", () => {
+    const r = run(["verify", "--run", sampleRun(), "--honeypots", "2"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/incl\. 2 honeypot\(s\)/);
+  });
+
+  it("warns and reports 0 planted when the run is too small to plant traps", () => {
+    const dir = sampleRun();
+    const fp = join(dir, "findings.json");
+    const doc = JSON.parse(readFileSync(fp, "utf8"));
+    doc.findings = [doc.findings[0]];
+    doc.findings[0].evidence = [{ ref: "app.js:3" }]; // one gradeable pair -> cannot cross-pair
+    writeFileSync(fp, JSON.stringify(doc));
+    const r = run(["verify", "--run", dir, "--honeypots", "2"]);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toMatch(/incl\. 2 honeypot/); // must not claim 2 were planted
+    expect(r.out).toMatch(/0 planted|too small/i);
+  });
+});
+
 describe("cli — check --json emits the machine-readable CheckResult for CI", () => {
   it("prints parseable JSON on a passing check and keeps exit 0", () => {
     const r = run(["check", "--run", sampleRun(), "--json"]);

@@ -47,10 +47,18 @@ export function runVerify(runDir: string, opts: VerifyOpts = {}): VerifyTodo {
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== undefined) pairs = pairs.filter((_, i) => i % (opts.shards as number) === opts.shard);
   const sh = opts.shards !== undefined && opts.shard !== undefined;
-  if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+  let planted: number | undefined;
+  if (opts.honeypots && opts.honeypots > 0) {
+    const h = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+    pairs = h.pairs;
+    planted = h.planted; // may be < requested (or 0) when the run is too small to cross-pair
+  }
   const out: VerifyTodo = { run: runDir, pairs };
   writeJson(join(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
   writeText(join(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  // Surface the honeypot count to the caller AFTER writing — the on-disk
+  // worklist stays a clean { run, pairs } the skeptic fills in.
+  if (planted !== undefined) out.planted = planted;
   return out;
 }
 
@@ -58,8 +66,8 @@ export function runVerify(runDir: string, opts: VerifyOpts = {}): VerifyTodo {
 // evidence digest (preferring a different file). The correct verdict is always
 // unsupported/refuted; a skeptic who grades one `supported` is rubber-stamping.
 // Ground truth goes to VERIFY.honeypots(.<shard>).json — NEVER into a prompt.
-function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: number): VerifyPair[] {
-  if (pairs.length < 2) return pairs; // nothing to cross-pair against
+function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: number): { pairs: VerifyPair[]; planted: number } {
+  if (pairs.length < 2) return { pairs, planted: 0 }; // nothing to cross-pair against
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
@@ -86,12 +94,16 @@ function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: 
   }
   const mixed = [...pairs];
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
-  const truthName = shard !== undefined ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-  writeJson(join(runDir, truthName), {
-    note: "ground truth for planted honeypot pairs — never paste this file into a skeptic prompt",
-    claimIds: traps.map((t) => t.claimId),
-  });
-  return mixed;
+  // Only stamp ground truth when traps were actually planted — an empty file
+  // would masquerade as skeptic-QC coverage that never ran.
+  if (traps.length) {
+    const truthName = shard !== undefined ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
+    writeJson(join(runDir, truthName), {
+      note: "ground truth for planted honeypot pairs — never paste this file into a skeptic prompt",
+      claimIds: traps.map((t) => t.claimId),
+    });
+  }
+  return { pairs: mixed, planted: traps.length };
 }
 
 // Union of the unsharded + sharded ground-truth files.

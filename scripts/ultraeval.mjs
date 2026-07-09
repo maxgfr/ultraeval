@@ -2328,14 +2328,20 @@ function runVerify(runDir, opts = {}) {
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i) => i % opts.shards === opts.shard);
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
-  if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+  let planted;
+  if (opts.honeypots && opts.honeypots > 0) {
+    const h = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+    pairs = h.pairs;
+    planted = h.planted;
+  }
   const out = { run: runDir, pairs };
   writeJson(join17(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
   writeText(join17(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  if (planted !== void 0) out.planted = planted;
   return out;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
-  if (pairs.length < 2) return pairs;
+  if (pairs.length < 2) return { pairs, planted: 0 };
   const cfg = readJson(join17(runDir, "eval.config.json"));
   const doc = readJson(join17(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
@@ -2360,12 +2366,14 @@ function plantHoneypots(runDir, pairs, n, shard) {
   }
   const mixed = [...pairs];
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
-  const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-  writeJson(join17(runDir, truthName), {
-    note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
-    claimIds: traps.map((t) => t.claimId)
-  });
-  return mixed;
+  if (traps.length) {
+    const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
+    writeJson(join17(runDir, truthName), {
+      note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
+      claimIds: traps.map((t) => t.claimId)
+    });
+  }
+  return { pairs: mixed, planted: traps.length };
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
@@ -2729,8 +2737,13 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
           const honeypots = num(args.honeypots);
           const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
           const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
-          const hp = honeypots ? ` (incl. ${honeypots} honeypot(s))` : "";
+          const planted = todo.planted ?? 0;
+          const hp = honeypots ? ` (incl. ${planted} honeypot(s))` : "";
           console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
+          if (honeypots && planted < honeypots)
+            console.log(
+              planted === 0 ? "  ! 0 planted \u2014 run too small for honeypots (need >= 2 gradeable pairs across distinct findings); skeptic-QC will not run" : `  ! only ${planted}/${honeypots} honeypot(s) planted \u2014 cross-pair pool exhausted; skeptic-QC is thinner than requested`
+            );
         }
         return;
       }

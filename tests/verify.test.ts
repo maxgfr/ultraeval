@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -81,6 +81,19 @@ describe("verify — worklist + reduce", () => {
     }
     const again = runVerify(run, { honeypots: 2 });
     expect(JSON.stringify(again)).toBe(JSON.stringify(todo)); // seeded, not Math.random
+  });
+
+  it("runVerify returns the actually-planted honeypot count when planting succeeds", () => {
+    const run = scaffold([f1, f2]);
+    const todo = runVerify(run, { honeypots: 2 });
+    expect(todo.planted).toBe(2);
+  });
+
+  it("plants 0 (and writes no ground-truth file) when the run is too small to cross-pair", () => {
+    const run = scaffold([f1]); // one finding -> one gradeable pair -> nothing to cross-pair against
+    const todo = runVerify(run, { honeypots: 2 });
+    expect(todo.planted).toBe(0); // NOT the requested 2
+    expect(existsSync(join(run, "VERIFY.honeypots.json"))).toBe(false); // no false skeptic-QC ground truth
   });
 
   it("apply: a complacent skeptic grading the traps supported is caught", () => {
