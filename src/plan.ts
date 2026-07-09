@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { agentContracts, findingsSchema, runbookMd, testPlanTemplate, workflowScript } from "./templates.js";
 import type { EvalConfig } from "./types.js";
@@ -16,8 +17,15 @@ export function planRun(runDir: string, engineAbs: string, opts: { eco?: boolean
     writeText(p, content);
     written.push(p);
   };
-  if (opts.eco === true) w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
-  else w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
+  // The two entry points are alternatives — remove the counterpart so the run
+  // dir never carries both a workflow and a runbook from different invocations.
+  if (opts.eco === true) {
+    rmSync(join(runDir, "eval.workflow.mjs"), { force: true });
+    w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
+  } else {
+    rmSync(join(runDir, "RUNBOOK.md"), { force: true });
+    w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
+  }
   for (const [name, content] of Object.entries(agentContracts(cfg, runDir, engineAbs))) w(`agents/${name}.md`, content);
   w("TEST-PLAN.template.md", testPlanTemplate(cfg));
   w("dimensions.json", `${JSON.stringify(cfg.dimensions, null, 2)}\n`);

@@ -1422,6 +1422,7 @@ function initRun(opts) {
 }
 
 // src/plan.ts
+import { rmSync as rmSync2 } from "fs";
 import { join as join11 } from "path";
 
 // src/templates.ts
@@ -1853,8 +1854,13 @@ function planRun(runDir, engineAbs, opts = {}) {
     writeText(p, content);
     written.push(p);
   };
-  if (opts.eco === true) w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
-  else w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
+  if (opts.eco === true) {
+    rmSync2(join11(runDir, "eval.workflow.mjs"), { force: true });
+    w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
+  } else {
+    rmSync2(join11(runDir, "RUNBOOK.md"), { force: true });
+    w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
+  }
   for (const [name, content] of Object.entries(agentContracts(cfg, runDir, engineAbs))) w(`agents/${name}.md`, content);
   w("TEST-PLAN.template.md", testPlanTemplate(cfg));
   w("dimensions.json", `${JSON.stringify(cfg.dimensions, null, 2)}
