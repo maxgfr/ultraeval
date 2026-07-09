@@ -36,8 +36,9 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   try {
     cfg = readJson<EvalConfig>(cfgPath);
   } catch {
+    // A malformed core artifact is a usage/runtime error (exit 2), not a gate verdict.
     errors.push("eval.config.json is not valid JSON");
-    return { ok: false, errors, warnings };
+    return { ok: false, errors, warnings, usageError: true };
   }
 
   const findingsPath = join(runDir, "findings.json");
@@ -49,8 +50,9 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   try {
     doc = readJson<FindingsDoc>(findingsPath);
   } catch {
+    // A malformed core artifact is a usage/runtime error (exit 2), not a gate verdict.
     errors.push("findings.json is not valid JSON");
-    return { ok: false, errors, warnings };
+    return { ok: false, errors, warnings, usageError: true };
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
   const ids = new Set(findings.map((f) => f.id));

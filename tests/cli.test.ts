@@ -74,6 +74,30 @@ describe("cli — verify --honeypots reports the actually-planted count, not the
   });
 });
 
+describe("cli — a malformed core artifact is a usage error, not a gate verdict (FIX-013)", () => {
+  it("check on an unparseable findings.json exits 2 (usage/runtime), not 1 (gate failed)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-badjson-"));
+    tmps.push(dir);
+    writeFileSync(
+      join(dir, "eval.config.json"),
+      JSON.stringify({ target: "t", targetAbs: "/t", kind: "codebase", category: "library", dimensions: [], version: "0" }),
+    );
+    writeFileSync(join(dir, "findings.json"), "{ not valid json ]");
+    const r = run(["check", "--run", dir]);
+    expect(r.status).toBe(2); // malformed artifact = runtime error, not a gate verdict
+    expect(r.out).toMatch(/not valid JSON/i);
+  });
+
+  it("check on an unparseable eval.config.json exits 2 (usage/runtime)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-badcfg-"));
+    tmps.push(dir);
+    writeFileSync(join(dir, "eval.config.json"), "{ broken ]");
+    const r = run(["check", "--run", dir]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/not valid JSON/i);
+  });
+});
+
 describe("cli — check --json emits the machine-readable CheckResult for CI", () => {
   it("prints parseable JSON on a passing check and keeps exit 0", () => {
     const r = run(["check", "--run", sampleRun(), "--json"]);

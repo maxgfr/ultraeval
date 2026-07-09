@@ -244,6 +244,10 @@ export interface CheckResult {
   ok: boolean;
   errors: string[];
   warnings: string[];
+  // An unparseable core artifact (eval.config.json/findings.json) is a usage or
+  // runtime error, not a grounding gate verdict — the CLI maps this to exit 2
+  // (not the gate-failed exit 1), matching the documented exit-code contract.
+  usageError?: boolean;
 }
 
 // ---- scoring -------------------------------------------------------------

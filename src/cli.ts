@@ -217,7 +217,9 @@ function cmdCheck(args: Args): void {
     coverageMin: num(args["coverage-min"]),
   });
   console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
-  process.exitCode = r.ok ? 0 : 1;
+  // A malformed core artifact is a usage/runtime error (exit 2); a genuine
+  // grounding failure is the gate-failed exit 1; a clean run exits 0.
+  process.exitCode = r.usageError ? 2 : r.ok ? 0 : 1;
 }
 
 function cmdVerify(args: Args): void {

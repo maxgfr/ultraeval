@@ -1165,7 +1165,7 @@ function checkRun(runDir, opts = {}) {
     cfg = readJson(cfgPath);
   } catch {
     errors.push("eval.config.json is not valid JSON");
-    return { ok: false, errors, warnings };
+    return { ok: false, errors, warnings, usageError: true };
   }
   const findingsPath = join6(runDir, "findings.json");
   if (!exists(findingsPath)) {
@@ -1177,7 +1177,7 @@ function checkRun(runDir, opts = {}) {
     doc = readJson(findingsPath);
   } catch {
     errors.push("findings.json is not valid JSON");
-    return { ok: false, errors, warnings };
+    return { ok: false, errors, warnings, usageError: true };
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
   const ids = new Set(findings.map((f) => f.id));
@@ -2887,7 +2887,7 @@ function cmdCheck(args) {
     coverageMin: num(args["coverage-min"])
   });
   console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
-  process.exitCode = r.ok ? 0 : 1;
+  process.exitCode = r.usageError ? 2 : r.ok ? 0 : 1;
 }
 function cmdVerify(args) {
   const run = str(args.run);
