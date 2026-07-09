@@ -397,7 +397,7 @@ ${a.tests.untested.map((u) => `- \`${u}\``).join("\n")}
 import { join as join3 } from "path";
 
 // src/types.ts
-var VERSION = "1.5.0";
+var VERSION = "1.6.0";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits

@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.6.0](https://github.com/maxgfr/ultraeval/compare/v1.5.0...v1.6.0) (2026-07-09)
+
+
+### Features
+
+* **cli,eval:** status command, unknown-flag rejection, judge independence, diff-scoped runs, SKILL.md v2 procedure ([04107a1](https://github.com/maxgfr/ultraeval/commit/04107a1356dab4ecdcc6e4fadcbfa5921319a531))
+
 # [1.5.0](https://github.com/maxgfr/ultraeval/compare/v1.4.0...v1.5.0) (2026-07-09)
 
 
