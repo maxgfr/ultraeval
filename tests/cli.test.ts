@@ -51,6 +51,16 @@ describe("cli — unknown flags are rejected, never silently ignored", () => {
   });
 });
 
+describe("cli — verify --apply surfaces a friendly error for a missing verdicts file", () => {
+  it("names the missing path + next step, exits 2, and never leaks raw ENOENT jargon", () => {
+    const r = run(["verify", "--run", sampleRun(), "--apply", "/nope/verdicts.json"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/verdicts file not found/);
+    expect(r.out).toMatch(/VERIFY\.todo\.json/);
+    expect(r.out).not.toMatch(/ENOENT/);
+  });
+});
+
 describe("cli — status names the pipeline state and the next command", () => {
   it("prints the artifact checklist and a next: hint", () => {
     const r = run(["status", "--run", sampleRun()]);
