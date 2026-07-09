@@ -3,7 +3,7 @@ name: ultraeval
 description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and generate a fix plan", "find what is wrong and give me a TDD backlog". ultraeval researches how to test that kind of target, generates a multi-agent workflow plus subagent contracts, runs it, and grounds every finding in a real file:line — a check/verify gate rejects hallucinated ones — then emits a prioritized backlog and per-fix TDD cards (failing-test-first) a model can implement. The process is normed: rubrics anchor to external referentials (ISO/IEC 25010/25059, 29148, WCAG, OWASP), severities are codified, and every run records provenance under a versioned protocol. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations, normed evaluation.'
 license: MIT
 metadata:
-  version: 1.5.0
+  version: 1.7.1
 ---
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs
@@ -53,12 +53,12 @@ Writes `eval.config.json` with starter dimensions (see `references/rubric-librar
 
 **2. Generate the workflow + subagent contracts.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs plan --run <RUN>
+node <skill-dir>/scripts/ultraeval.mjs plan --run <RUN>          # alias: orchestrate (the family verb)
 ```
-Emits `<RUN>/eval.workflow.mjs` (a ready-to-launch multi-agent Workflow, with the absolute engine + target paths baked in), `<RUN>/agents/*.md` (the dispatch contracts), `TEST-PLAN.template.md`, `dimensions.json`, `findings.schema.json`.
+Emits `<RUN>/eval.workflow.mjs` (a ready-to-launch multi-agent Workflow, with the absolute engine + target paths baked in), `<RUN>/agents/*.md` (the dispatch contracts), `TEST-PLAN.template.md`, `dimensions.json`, `findings.schema.json`. **Eco mode** (`plan --run <RUN> --eco` — when the user asks for the low-token path, or no subagents exist): swaps the workflow for `<RUN>/RUNBOOK.md`, the same stages played sequentially against the same contracts — correctness-identical, only wall-clock differs.
 
 **3. Run the eval.** Launch the generated workflow with your harness's Workflow tool:
-`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`. It pipelines **Research → TestPlan → Execute → Findings → Gate → Judge → Results** and self-invokes the engine gates. If you have no workflow harness, run the stages by hand: read each `agents/<stage>.md` and dispatch a subagent per the contract. See `references/orchestration.md`. **Every subagent gets the ABSOLUTE `<skill-dir>/scripts/ultraeval.mjs` path** — it has its own cwd and cannot resolve a relative one (`plan` already bakes the absolute path into the workflow).
+`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`. It pipelines **Research → TestPlan → Execute → Findings → Gate → Judge → Results** and self-invokes the engine gates. If you have no workflow harness, run the stages by hand: read each `agents/<stage>.md` and dispatch a subagent per the contract (or, eco / no subagents at all: follow `<RUN>/RUNBOOK.md` sequentially). See `references/orchestration.md`. **Every subagent gets the ABSOLUTE `<skill-dir>/scripts/ultraeval.mjs` path** — it has its own cwd and cannot resolve a relative one (`plan` already bakes the absolute path into the workflow).
 
 **4. Ground every finding.** Consolidate results into `<RUN>/findings.json` (schema: `references/gate-contract.md`). Each finding cites `evidence[].ref` as `path:line` in the target or `run:relpath#Lnn` in a produced log. Then:
 ```

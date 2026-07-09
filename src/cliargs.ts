@@ -15,7 +15,9 @@ export interface Args {
 export type FlagArity = "boolean" | "value" | "optional-value";
 export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
   init: { target: "value", out: "value", kind: "value", category: "value", mode: "value", bar: "value", since: "value" },
-  plan: { run: "value" },
+  plan: { run: "value", eco: "boolean" },
+  orchestrate: { run: "value", eco: "boolean" }, // family-wide alias for plan
+
   analyze: { run: "value", since: "value", json: "boolean", target: "value", out: "value" },
   brainstorm: { run: "value", rank: "boolean", check: "boolean" },
   compare: { run: "value", base: "value", json: "boolean", gate: "boolean" },
