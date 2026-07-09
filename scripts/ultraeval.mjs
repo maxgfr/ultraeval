@@ -602,7 +602,7 @@ function buildBacklog(runDir, opts = {}) {
         // Prefer the runner detected from the target's own manifest/lockfile —
         // verify-fix replays this verbatim through a shell, so a hardcoded pnpm
         // string misleads an npm/yarn/bun target. Prose is only a last resort.
-        command: detectVerifyCommand(cfg.targetAbs) ?? (cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : "run the new test (must pass) + the full suite (nothing regresses)")
+        command: detectVerifyCommand(targetAbs) ?? (cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : "run the new test (must pass) + the full suite (nothing regresses)")
       },
       dependsOn: []
     };

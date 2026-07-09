@@ -90,6 +90,34 @@ describe("backlog — TDD fix cards", () => {
     expect(bl.tasks[0]?.verify.command).toMatch(/run the new test/);
   });
 
+  it("detects the runner from the RESOLVED target on a moved/committed run whose stored targetAbs no longer exists (FIX-003)", () => {
+    const root = mkdtempSync(join(tmpdir(), "ue-bl-"));
+    tmps.push(root);
+    const run = join(root, "run");
+    // The portable target lives *inside* the run dir (a self-contained/committed run);
+    // the originally-stored absolute path is stale and no longer exists.
+    const target = join(run, "target");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "app.js"), "a\nb\n");
+    writeFileSync(join(target, "package.json"), JSON.stringify({ name: "t", scripts: { test: "vitest run" } }));
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({
+        target: "target",
+        targetAbs: "/nonexistent/original/checkout/target",
+        kind: "codebase",
+        category: "library",
+        dimensions: [],
+        version: "0.0.0",
+      }),
+    );
+    writeFileSync(join(run, "findings.json"), JSON.stringify({ findings: [mk("F1", "P1", "confirmed")] }));
+    const bl = buildBacklog(run);
+    // detectVerifyCommand must read the resolved target (which exists), not the stale cfg.targetAbs.
+    expect(bl.tasks[0]?.verify.command).toBe("npm test");
+    expect(bl.tasks[0]?.verify.command).not.toMatch(/run the new test/);
+  });
+
   it("skill tasks get the DETECTED runner (npm/yarn/pnpm per lockfile), not a hardcoded pnpm string", () => {
     const run = scaffold([mk("F1", "P1", "confirmed")]);
     const cfgPath = join(run, "eval.config.json");
