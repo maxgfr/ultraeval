@@ -2920,7 +2920,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join18(process.cwd(), "evals", "history.jsonl");
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : defaultLedgerPath(run);
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }

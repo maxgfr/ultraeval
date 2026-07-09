@@ -282,7 +282,10 @@ function main(): void {
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== undefined) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join(process.cwd(), "evals", "history.jsonl");
+          // Default the ledger to the TARGET repo (its git root), not the caller's
+          // cwd — subagents/harnesses invoke by absolute path from arbitrary cwds,
+          // so a cwd default fragments the one trend across directories (FIX-015).
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : defaultLedgerPath(run);
           appendHistory(run, file);
           // keep --json stdout pure JSON — the ledger notice goes to stderr there
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);

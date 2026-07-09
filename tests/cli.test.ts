@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,6 +103,36 @@ describe("cli — verify --apply surfaces a friendly error for a missing verdict
     expect(r.out).toMatch(/verdicts file not found/);
     expect(r.out).toMatch(/VERIFY\.todo\.json/);
     expect(r.out).not.toMatch(/ENOENT/);
+  });
+});
+
+describe("cli — score --history anchors the default ledger to the target repo, not the cwd (FIX-015)", () => {
+  it("writes the ledger under the target's git root regardless of the invoking cwd", () => {
+    // A git-repo target is the stable anchor for the trend the ledger preserves.
+    const target = mkdtempSync(join(tmpdir(), "ue-tgt-"));
+    tmps.push(target);
+    execFileSync("git", ["init", "-q"], { cwd: target });
+    const runDir = mkdtempSync(join(tmpdir(), "ue-run-"));
+    tmps.push(runDir);
+    writeFileSync(
+      join(runDir, "eval.config.json"),
+      JSON.stringify({
+        target,
+        targetAbs: target,
+        kind: "codebase",
+        category: "library",
+        dimensions: [{ id: "security", name: "Security", weight: 1, whatPerfectLooksLike: "x" }],
+        version: "0.0.0",
+      }),
+    );
+    writeFileSync(join(runDir, "judges.jsonl"), '{"dimensionScores":[{"id":"security","score":5}],"meetsExpectations":true,"calibration":{"passed":true}}\n');
+    // Invoke from a THIRD, unrelated cwd — the ledger must NOT follow it.
+    const cwd = mkdtempSync(join(tmpdir(), "ue-cwd-"));
+    tmps.push(cwd);
+    const out = execFileSync("node", [BUNDLE, "score", "--run", runDir, "--history"], { encoding: "utf8", cwd });
+    expect(existsSync(join(target, "evals", "history.jsonl"))).toBe(true); // target-anchored
+    expect(existsSync(join(cwd, "evals", "history.jsonl"))).toBe(false); // NOT fragmented under the cwd
+    expect(out).toMatch(/history entry appended ->.*evals\/history\.jsonl/); // resolved path is printed
   });
 });
 
