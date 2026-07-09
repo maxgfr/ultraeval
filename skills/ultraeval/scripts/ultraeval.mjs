@@ -868,6 +868,11 @@ function checkRun(runDir, opts = {}) {
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
   }
   if (exists(join5(runDir, "RESULTS.md")) && !exists(join5(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (exists(join5(runDir, "runs", "budget.md"))) {
+    const summaryPath = join5(runDir, "SUMMARY.md");
+    if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
+      warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
+  }
   if (!cfg.provenance) warnings.push("legacy run (pre-protocol) \u2014 no provenance recorded; re-init to stamp engine/protocol/rubric versions");
   return { ok: errors.length === 0, errors, warnings };
 }
@@ -1385,6 +1390,74 @@ function calibrationFixturePath(engineAbs) {
 }
 var anchorText = (d) => d.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "";
 var severityLegend = () => VALID_SEVERITIES.map((s) => `${s} (${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning})`).join(" \xB7 ");
+var LIVE_SCENARIOS = {
+  "agent skill": {
+    golden: "follow SKILL.md's quickstart end-to-end on a small local fixture and produce the skill's primary deliverable",
+    error: "invoke a documented command with a missing/invalid required flag \u2014 expect an actionable message, no raw stack trace, non-zero exit",
+    help: "every command SKILL.md documents exists; --help (or equivalent) matches the docs",
+    artifact: "the deliverable under runs/live-* plus the runs/live.md narrative",
+    pass: "deliverable complete and usable; the skill's own gates pass; no hallucinated paths/claims"
+  },
+  cli: {
+    golden: "run the README's first documented command sequence against a tmp fixture",
+    error: "an unknown subcommand AND a missing required argument \u2014 both exit non-zero with an actionable stderr message",
+    help: "--help exits 0 and lists every documented command; exit codes match the documented contract",
+    artifact: "verbatim command lines + exit codes + trimmed outputs in runs/live.md",
+    pass: "outputs and exit codes match the docs; errors name the fix"
+  },
+  library: {
+    golden: "import the package and run the README quickstart snippet as-is",
+    error: "call a public API with invalid input \u2014 expect the documented (typed) error, not a deep crash",
+    help: "the exported API surface matches the docs/types; the quickstart runs unmodified",
+    artifact: "the runnable snippet + its output log under runs/live-*",
+    pass: "snippet runs as documented; the error path fails the documented way"
+  },
+  "web app": {
+    golden: "boot the app locally and drive the primary user journey (create + read the core entity)",
+    error: "submit an invalid form and hit a non-existent route \u2014 validation feedback and a proper 404, never a 5xx",
+    help: "the README's run instructions work verbatim (install \u2192 start \u2192 URL)",
+    artifact: "HTTP transcripts or screenshots + runs/live.md narrative",
+    pass: "journey completes; no 5xx; basic a11y smoke on the main page"
+  },
+  security: {
+    golden: "scan a small labelled vulnerable fixture \u2014 the known true positives are reported",
+    error: "scan the sanitized variant \u2014 NO findings (false-positive check); an invalid target errors actionably",
+    help: "--help documents the scan modes used; exit codes distinguish clean/findings/error",
+    artifact: "both scan reports (vulnerable + safe) under runs/live-*",
+    pass: "labelled TPs found, safe variant clean, exit codes per contract"
+  },
+  requirements: {
+    golden: "render/validate the spec suite; the traceability check passes on the genuine document",
+    error: "remove a required section from a COPY \u2014 the validator fails naming the missing section",
+    help: "documented validate/render commands exist and match the docs",
+    artifact: "the validation report for both directions under runs/live-*",
+    pass: "gate proven in both directions (genuine passes, doctored fails)"
+  },
+  research: {
+    golden: "ask a question answerable from a small local corpus \u2014 the answer cites the fetched sources",
+    error: "ask an unanswerable question \u2014 explicit abstention, zero fabricated citations",
+    help: "the documented modes/flags exist; citation format matches the docs",
+    artifact: "the cited report under runs/live-*",
+    pass: "every claim attributable to a fetched source; the unanswerable question is refused"
+  }
+};
+function liveScenarioFor(cfg) {
+  const cat = (cfg.category ?? "").toLowerCase();
+  if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return LIVE_SCENARIOS.security;
+  if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return LIVE_SCENARIOS.requirements;
+  if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return LIVE_SCENARIOS.research;
+  if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return LIVE_SCENARIOS["web app"];
+  if (/\bcli\b|command.?line|terminal/.test(cat)) return LIVE_SCENARIOS.cli;
+  return cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library;
+}
+var liveScenarioBlock = (cfg) => [
+  `**Normed live scenario for this category** (full library: \`references/live-scenarios.md\` next to the engine):`,
+  `- Golden path: ${liveScenarioFor(cfg).golden}.`,
+  `- Error path: ${liveScenarioFor(cfg).error}.`,
+  `- Help contract: ${liveScenarioFor(cfg).help}.`,
+  `- Expected artifact: ${liveScenarioFor(cfg).artifact}.`,
+  `- Pass criteria: ${liveScenarioFor(cfg).pass}.`
+].join("\n");
 function workflowScript(cfg, runDirAbs, engineAbs) {
   const mode = cfg.mode ?? "audit";
   const doDefects = mode !== "improve";
@@ -1418,8 +1491,27 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
     ``,
     `log(${JSON.stringify(`ultraeval ${mode} eval for `)} + TARGET)`,
     ``,
+    `// Budget discipline (protocol v2): under a harness token target, scale down`,
+    `// DELIBERATELY and record every coverage cut \u2014 a silent cut reads as full coverage.`,
+    `let LENSES = ['correctness+grounding', 'completeness+coverage', 'ux+meets-expectations']`,
+    `let RESEARCH_GROUPED = false`,
+    `const CUTS = []`,
+    `if (typeof budget !== 'undefined' && budget && budget.total) {`,
+    `  const left = budget.remaining()`,
+    `  if (left < 600000) { RESEARCH_GROUPED = true; CUTS.push('research: ' + DIMENSIONS.length + ' per-dimension agents -> 1 grouped agent (' + Math.round(left / 1000) + 'k tokens left < 600k)') }`,
+    `  if (left < 300000) { LENSES = LENSES.slice(0, 2); CUTS.push('judges: 3 lenses -> 2 (' + Math.round(left / 1000) + 'k tokens left < 300k)') }`,
+    `}`,
+    `if (CUTS.length) {`,
+    `  log('budget: recording ' + CUTS.length + ' coverage cut(s) to ' + RUN + '/runs/budget.md')`,
+    `  await agent('Create the file ' + RUN + '/runs/budget.md (mkdir -p its directory) containing a markdown doc titled "# Budget coverage cuts" with one bullet per cut: ' + CUTS.map((c) => '"' + c + '"').join(', ') + '. Write NOTHING else and change no other file.', { label: 'budget-scribe', agentType: 'general-purpose' })`,
+    `}`,
+    ``,
     `phase('Research')`,
-    `await parallel(DIMENSIONS.map((d) => () => agent(contract('researcher', 'DIMENSION=' + d.id + ' (' + d.name + '). Write ' + RUN + '/research/' + d.id + '.md (cited).'), { label: 'research:' + d.id, phase: 'Research', agentType: 'general-purpose' })))`,
+    `if (RESEARCH_GROUPED) {`,
+    `  await agent(contract('researcher', 'DIMENSIONS=ALL (budget cut \u2014 see runs/budget.md). Cover EVERY dimension in one pass; write one ' + RUN + '/research/<id>.md per dimension (cited).'), { label: 'research:all', phase: 'Research', agentType: 'general-purpose' })`,
+    `} else {`,
+    `  await parallel(DIMENSIONS.map((d) => () => agent(contract('researcher', 'DIMENSION=' + d.id + ' (' + d.name + '). Write ' + RUN + '/research/' + d.id + '.md (cited).'), { label: 'research:' + d.id, phase: 'Research', agentType: 'general-purpose' })))`,
+    `}`,
     ``,
     `phase('TestPlan')`,
     `await agent(contract('testplan'), { label: 'testplan', phase: 'TestPlan', agentType: 'general-purpose' })`,
@@ -1449,11 +1541,10 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
     `await agent(contract('gate'), { label: 'gate', phase: 'Gate', agentType: 'general-purpose' })`,
     ``,
     `phase('Judge')`,
-    `const LENSES = ['correctness+grounding', 'completeness+coverage', 'ux+meets-expectations']`,
     `await parallel(LENSES.map((lens, i) => () => agent(contract('judge', 'LENS=' + lens), { label: 'judge' + (i + 1), phase: 'Judge', agentType: 'general-purpose' })))`,
     ``,
     `phase('Results')`,
-    `await agent(contract('remediator'), { label: 'results', phase: 'Results', agentType: 'general-purpose' })`,
+    `await agent(contract('remediator', CUTS.length ? 'BUDGET CUTS to report in SUMMARY.md (also listed in ' + RUN + '/runs/budget.md): ' + CUTS.join(' | ') : ''), { label: 'results', phase: 'Results', agentType: 'general-purpose' })`,
     ``,
     `return { target: TARGET, run: RUN }`,
     ``
@@ -1490,6 +1581,8 @@ Read \`${cfg.targetAbs}\` (its SKILL.md/README/CLI \`--help\`, or its source) an
 
 Enumerate EVERY functionality worth testing \u2014 modes, subcommands, flags, gates, and the live end-to-end behavior \u2014 mapped to the dimensions. For each: id, what it is, the concrete command or user prompt that tests it, and explicit pass criteria.
 
+The live rows MUST map to the category's normed scenario set (golden path, error path, help contract \u2014 see \`references/live-scenarios.md\` next to the engine; the executor contract embeds this category's block).
+
 Write \`${runDirAbs}/TEST-PLAN.md\` (a reviewable checklist with the rubric embedded). Be exhaustive about the CLI/behavior surface.
 `,
     executor: `# Contract: executor
@@ -1499,6 +1592,8 @@ You produce the raw evidence an eval stands on. Two MODES; do the one named in y
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
 
 **MODE=live (realistic).** Act as a real user of the target. Follow its own instructions faithfully and produce a real deliverable into \`${runDirAbs}/runs/live-*\`. Write a narrative to \`${runDirAbs}/runs/live.md\` covering what was produced, grounding quality, any hallucination, and each gate's outcome.
+
+${liveScenarioBlock(cfg)}
 
 HARD LIMITS (never block the pipeline):
 - **Every Bash step is timeboxed** \u2014 set an explicit \`timeout\` (\u2264 600000 ms). If a step exceeds it, kill it and record "timed out", then continue.
@@ -1552,6 +1647,7 @@ Finalize the eval and generate the AI-exploitable fix docs.
 3. Emit the TDD backlog: \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` \u2192 \`BACKLOG.json\`, \`REMEDIATION.md\`, and one \`fixes/FIX-*.md\` card per confirmed finding/opportunity (RED failing/spec test \u2192 GREEN change \u2192 VERIFY).
 4. Render the dashboard: \`node ${engineAbs} render --run ${runDirAbs}\` \u2192 \`index.md\` + \`index.html\` (shows the verdict + opportunities matrix).
 5. Re-run \`node ${engineAbs} check --run ${runDirAbs} --semantic\` and confirm exit 0 (backlog integrity is part of the gate).
+6. If \`${runDirAbs}/runs/budget.md\` exists (a budgeted run recorded coverage cuts), report EVERY cut in \`SUMMARY.md\` \u2014 \`check\` warns when the summary omits them; a silent cut reads as full coverage.
 
 Report the verdict, the P0/P1 backlog headline, the top opportunities (impact\xD7effort), and the paths a downstream fix agent should consume.
 `,

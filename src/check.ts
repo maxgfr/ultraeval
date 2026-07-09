@@ -173,6 +173,12 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation — its backlog card will be vague`);
   }
   if (exists(join(runDir, "RESULTS.md")) && !exists(join(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  // A budgeted run recorded coverage cuts — the summary must own them.
+  if (exists(join(runDir, "runs", "budget.md"))) {
+    const summaryPath = join(runDir, "SUMMARY.md");
+    if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
+      warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them — report every cut in the summary");
+  }
   if (!cfg.provenance) warnings.push("legacy run (pre-protocol) — no provenance recorded; re-init to stamp engine/protocol/rubric versions");
 
   return { ok: errors.length === 0, errors, warnings };

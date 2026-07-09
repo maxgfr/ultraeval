@@ -27,6 +27,10 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 - Honeypots (skeptic quality control): `verify --honeypots N` plants N deterministic trap pairs — one finding's claim glued to another finding's evidence — seeded on the run's `dimensionsHash`. Ground truth lives in `VERIFY.honeypots.json` and MUST NOT be shown to a skeptic. A trap graded `supported`/`partial` fails `verify --apply` and blocks `check --require-verify` until a fresh skeptic re-verifies; trap verdicts never reach the findings ledger.
 - `MEETS_BAR = 80`. `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < 80 · the judge panel has zero passed calibrations (`scorecard.judgesCalibrated`).
 
+## Budget discipline
+
+A budgeted run (the harness set a token target) MAY scale coverage down — fewer judge lenses, grouped research — but it MUST record every coverage cut in `runs/budget.md` and report the cuts in `SUMMARY.md` (`check` warns when the summary omits them). A silent cut reads as full coverage and is a protocol violation.
+
 ## Severities (normative definitions)
 
 Tokens stay `P0|P1|P2`. `SEVERITY_DEFS` in `src/types.ts` is the machine-readable copy of this table; the two MUST stay in sync. Band language aligns with CVSS v4.0 qualitative ratings; the membership test is degradation of a scored dimension.

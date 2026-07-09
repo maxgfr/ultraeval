@@ -50,6 +50,25 @@ describe("SKILL.md packaging", () => {
     expect(gc).toMatch(/claimId/);
   });
 
+  it("ships the live-scenario library covering every category, and SKILL.md links it", () => {
+    const p = join(SKILL_DIR, "references", "live-scenarios.md");
+    expect(existsSync(p)).toBe(true);
+    const ls = readFileSync(p, "utf8").toLowerCase();
+    for (const cat of ["agent skill", "cli", "library", "web app", "security", "requirements", "research"]) {
+      expect(ls, `live-scenarios.md covers ${cat}`).toContain(cat);
+    }
+    for (const part of ["golden path", "error path", "help contract", "expected artifact", "pass criteria"]) {
+      expect(ls, `live-scenarios.md defines ${part}`).toContain(part);
+    }
+    expect(raw).toContain("references/live-scenarios.md");
+  });
+
+  it("protocol.md requires a budgeted run to record its coverage cut", () => {
+    const proto = readFileSync(join(SKILL_DIR, "references", "protocol.md"), "utf8");
+    expect(proto).toMatch(/budget/i);
+    expect(proto).toMatch(/MUST record/);
+  });
+
   it("ships the golden judge-calibration fixture with expected scores and tolerances", () => {
     const p = join(SKILL_DIR, "references", "calibration-run.json");
     expect(existsSync(p)).toBe(true);

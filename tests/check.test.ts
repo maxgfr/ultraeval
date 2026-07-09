@@ -199,6 +199,24 @@ describe("check — grounding gate", () => {
     expect(r.errors.join(" ")).toMatch(/unadjudicated/);
   });
 
+  it("warns (not fails) when runs/budget.md records cuts but SUMMARY.md does not mention them", () => {
+    const run = scaffold([genuine], {
+      "runs/budget.md": "# Budget coverage cuts\n- judges: 3 lenses -> 2\n",
+      "SUMMARY.md": "# Summary\nEverything is fine [F1]\n",
+    });
+    const r = checkRun(run);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/budget/i);
+  });
+
+  it("no budget warning when SUMMARY.md reports the cuts", () => {
+    const run = scaffold([genuine], {
+      "runs/budget.md": "# Budget coverage cuts\n- judges: 3 lenses -> 2\n",
+      "SUMMARY.md": "# Summary\nBudget cuts: judges 3 -> 2 [M]\n",
+    });
+    expect(checkRun(run).warnings.join(" ")).not.toMatch(/budget/i);
+  });
+
   it("fails --require-verify while a honeypot failure is unresolved", () => {
     const run = scaffold([genuine], {
       "VERIFY.json": JSON.stringify({
