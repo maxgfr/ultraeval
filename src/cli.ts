@@ -35,8 +35,10 @@ Commands:
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
-  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
+  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
+             --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json — never show it to skeptics);
+             a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   score    --run <run> [--json] [--history [file]]
@@ -73,6 +75,7 @@ const VALUE_FLAGS = new Set([
   "--shards",
   "--shard",
   "--bar",
+  "--honeypots",
 ]);
 
 // Flags whose value is optional: `--history` alone means "use the default file".
@@ -225,9 +228,11 @@ function main(): void {
         } else {
           const shards = num(args.shards);
           const shard = num(args.shard);
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard });
+          const honeypots = num(args.honeypots);
+          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
           const todoName = shards !== undefined && shard !== undefined ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
+          const hp = honeypots ? ` (incl. ${honeypots} honeypot(s))` : "";
+          console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
         }
         return;
       }

@@ -50,6 +50,18 @@ describe("SKILL.md packaging", () => {
     expect(gc).toMatch(/claimId/);
   });
 
+  it("ships the golden judge-calibration fixture with expected scores and tolerances", () => {
+    const p = join(SKILL_DIR, "references", "calibration-run.json");
+    expect(existsSync(p)).toBe(true);
+    const fx = JSON.parse(readFileSync(p, "utf8"));
+    expect(fx.dimensions.length).toBeGreaterThanOrEqual(2);
+    for (const d of fx.dimensions) {
+      expect(typeof d.expected).toBe("number");
+      expect(typeof d.tolerance).toBe("number");
+    }
+    expect(Object.keys(fx.artifacts).length).toBeGreaterThan(0);
+  });
+
   it("protocol.md records the committed score-history ledger rule", () => {
     const proto = readFileSync(join(SKILL_DIR, "references", "protocol.md"), "utf8");
     expect(proto).toMatch(/SHOULD append/);

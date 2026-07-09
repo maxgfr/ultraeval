@@ -137,6 +137,10 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       try {
         const v = readJson<VerifyResult>(verifyPath);
         if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (v.honeypots?.failed?.length)
+          errors.push(
+            `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) — the skeptic rubber-stamped; re-verify with a fresh skeptic`,
+          );
         // Partial adjudication is not adjudication: every emitted pair must have
         // a verdict, or the unverified findings would sail through the exit gate.
         const pending = (v.unadjudicated ?? []).filter((fid) => {

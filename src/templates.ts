@@ -1,5 +1,18 @@
+import { dirname, join } from "node:path";
 import type { Dimension, EvalConfig } from "./types.js";
 import { SEVERITY_DEFS, VALID_SEVERITIES } from "./types.js";
+import { exists } from "./util.js";
+
+// The golden judge-calibration fixture ships with the skill (references/), next
+// to the engine bundle; fall back to the repo-dev layout when planning from a
+// checkout's scripts/ bundle.
+function calibrationFixturePath(engineAbs: string): string {
+  const candidates = [
+    join(dirname(engineAbs), "..", "references", "calibration-run.json"),
+    join(dirname(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json"),
+  ];
+  return candidates.find(exists) ?? (candidates[0] as string);
+}
 
 // One-line rendering of a dimension's standards anchors (for contracts/templates).
 const anchorText = (d: Dimension): string => (d.anchors?.length ? d.anchors.map((a) => `${a.standard} — ${a.ref}`).join("; ") : "");
@@ -175,9 +188,11 @@ If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings —
 
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
+**Step 0 — CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0–5 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields — read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
+
 Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0–5 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth — weight them.
 
-Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [] }\`.
+Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`.
 `,
     remediator: `# Contract: remediator
 

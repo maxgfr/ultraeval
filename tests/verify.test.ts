@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ function scaffold(findings: unknown[]): string {
   const target = join(root, "target");
   mkdirSync(target, { recursive: true });
   writeFileSync(join(target, "app.js"), "line1\nline2\nSQL = 'select ' + id\nline4\nline5\n");
+  writeFileSync(join(target, "lib.js"), "libA\nres.send(user.bio)\nlibC\n");
   const run = join(root, "run");
   mkdirSync(run, { recursive: true });
   writeFileSync(
@@ -31,6 +32,7 @@ afterEach(() => {
 });
 
 const f1 = { id: "F1", severity: "P0", title: "SQLi", statement: "SQL built by string concatenation", evidence: [{ ref: "app.js:3" }], status: "confirmed" };
+const f2 = { id: "F2", severity: "P1", title: "XSS", statement: "user bio is sent without escaping", evidence: [{ ref: "lib.js:2" }], status: "confirmed" };
 
 describe("verify — worklist + reduce", () => {
   it("emits one pair per gradeable evidence, with a source digest", () => {
@@ -60,6 +62,58 @@ describe("verify — worklist + reduce", () => {
     const r = applyVerdicts(run, verdicts(run, [{ claimId: "F1", evidenceRef: "app.js:3", verdict: "supported" }]));
     expect(r.ok).toBe(true);
     expect(r.supported).toBe(1);
+  });
+
+  it("--honeypots plants deterministic trap pairs and keeps the ground truth aside", () => {
+    const run = scaffold([f1, f2]);
+    const todo = runVerify(run, { honeypots: 2 });
+    expect(todo.pairs.length).toBe(4); // 2 real + 2 planted
+    const truth = JSON.parse(readFileSync(join(run, "VERIFY.honeypots.json"), "utf8"));
+    expect(truth.claimIds.length).toBe(2);
+    for (const id of truth.claimIds) {
+      expect(["F1", "F2"]).not.toContain(id); // no collision with real finding ids
+      const pair = todo.pairs.find((p) => p.claimId === id);
+      expect(pair).toBeTruthy();
+      // the trap pairs one finding's claim with ANOTHER finding's evidence
+      const claimOwner = [f1, f2].find((f) => f.statement === pair?.claim);
+      expect(claimOwner).toBeTruthy();
+      expect(claimOwner?.evidence.map((e) => e.ref)).not.toContain(pair?.evidenceRef);
+    }
+    const again = runVerify(run, { honeypots: 2 });
+    expect(JSON.stringify(again)).toBe(JSON.stringify(todo)); // seeded, not Math.random
+  });
+
+  it("apply: a complacent skeptic grading the traps supported is caught", () => {
+    const run = scaffold([f1, f2]);
+    const todo = runVerify(run, { honeypots: 2 });
+    const all = todo.pairs.map((p) => ({ claimId: p.claimId, evidenceRef: p.evidenceRef, verdict: "supported" }));
+    const r = applyVerdicts(run, verdicts(run, all));
+    expect(r.honeypots?.planted).toBe(2);
+    expect(r.honeypots?.caught).toBe(0);
+    expect(r.honeypots?.failed.length).toBe(2);
+    expect(r.ok).toBe(false);
+  });
+
+  it("apply: an honest skeptic who rejects the traps passes, findings unpolluted", () => {
+    const run = scaffold([f1, f2]);
+    const todo = runVerify(run, { honeypots: 2 });
+    const truth = new Set(JSON.parse(readFileSync(join(run, "VERIFY.honeypots.json"), "utf8")).claimIds);
+    const all = todo.pairs.map((p) => ({ claimId: p.claimId, evidenceRef: p.evidenceRef, verdict: truth.has(p.claimId) ? "unsupported" : "supported" }));
+    const r = applyVerdicts(run, verdicts(run, all));
+    expect(r.honeypots?.caught).toBe(2);
+    expect(r.honeypots?.failed).toEqual([]);
+    expect(r.ok).toBe(true);
+    expect(r.failures).toEqual([]);
+    expect(r.unadjudicated).toEqual([]);
+    expect(r.adjudicated).toBe(2); // honeypot verdicts stay out of the findings ledger
+  });
+
+  it("apply without planted honeypots behaves exactly as before", () => {
+    const run = scaffold([f1]);
+    runVerify(run);
+    const r = applyVerdicts(run, verdicts(run, [{ claimId: "F1", evidenceRef: "app.js:3", verdict: "supported" }]));
+    expect(r.honeypots).toBeUndefined();
+    expect(r.ok).toBe(true);
   });
 
   it("reduce: all-unsupported evidence fails the finding", () => {

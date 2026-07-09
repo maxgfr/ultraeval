@@ -82,6 +82,16 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(run(["check"]).status).toBe(2);
   });
 
+  it("judge contract requires calibration against the shipped golden fixture", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-e2e-cal-"));
+    tmps.push(out);
+    expect(run(["init", "--target", join(FIX, "target-lib"), "--out", out, "--kind", "codebase"]).status).toBe(0);
+    expect(run(["plan", "--run", out]).status).toBe(0);
+    const judge = readFileSync(join(out, "agents", "judge.md"), "utf8");
+    expect(judge).toMatch(/calibration-run\.json/);
+    expect(judge).toMatch(/"calibration"/);
+  });
+
   it("score --history without a value appends to evals/history.jsonl under the cwd", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-hist-"));
     tmps.push(dir);

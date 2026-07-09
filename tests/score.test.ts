@@ -41,6 +41,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
       {
         dimensionScores: [
@@ -48,6 +49,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     const sc = scoreRun(run);
@@ -96,6 +98,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 3 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     const sc = scoreRun(run);
@@ -104,13 +107,13 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("writes scorecard.json", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     scoreRun(run);
     expect(existsSync(join(run, "scorecard.json"))).toBe(true);
   });
 
   it("stamps the scorecard with the run provenance and scoredAt when the config has it", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.provenance = {
@@ -130,7 +133,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("a legacy config without provenance still scores and omits it from the scorecard", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     const sc = scoreRun(run);
     expect(sc.provenance).toBeUndefined();
     expect(sc.overall).toBeGreaterThan(0);
@@ -144,6 +147,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 3 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     const cfgPath = join(run, "eval.config.json");
@@ -157,8 +161,63 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("defaults the bar to 80 and records it", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     expect(scoreRun(run).bar).toBe(80);
+  });
+
+  it("calibration: counts calibrated judges and keeps the verdict when some passed", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: { scores: { grounding: 1 }, passed: true },
+      },
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: { scores: { grounding: 2 }, passed: true },
+      },
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+      },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.judgesCalibrated).toBe("2/3");
+    expect(sc.meetsExpectations).toBe(true);
+  });
+
+  it("calibration: a panel with zero calibrated judges forces meets-expectations false", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+      },
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: { scores: { grounding: 5 }, passed: false },
+      },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.judgesCalibrated).toBe("0/2");
+    expect(sc.meetsExpectations).toBe(false);
+    expect(sc.reason).toMatch(/calibrat/i);
   });
 
   it("marks a comfortable verdict robust under ±0.05 weight shifts", () => {
@@ -169,6 +228,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     const sc = scoreRun(run);
@@ -184,6 +244,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 2.5 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     const sc = scoreRun(run);
@@ -195,7 +256,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("computes sensitivity when weights do not sum to 1 (renormalized like the score)", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.dimensions = [
@@ -215,6 +276,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
+        calibration: { passed: true },
       },
     ]);
     expect(formatScore(scoreRun(run))).toMatch(/±0\.05/);
@@ -229,6 +291,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
             { id: "correctness", score: 5 },
           ],
           meetsExpectations: true,
+          calibration: { passed: true },
         },
       ],
       [
@@ -267,7 +330,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("history: omits the commit field on a run without provenance", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     scoreRun(run);
     const file = join(run, "ledger.jsonl");
     appendHistory(run, file);
@@ -277,7 +340,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("history: creates the parent directory when seeding a fresh ledger", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     scoreRun(run);
     const file = join(run, "evals", "history.jsonl");
     appendHistory(run, file);

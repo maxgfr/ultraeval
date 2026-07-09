@@ -198,6 +198,36 @@ function containmentProbe() {
   }
 }
 
+// Honeypot probe — a complacent skeptic must be caught (RED), an honest one passes (GREEN).
+function honeypotProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-hp-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    if (run(["verify", "--run", dir, "--honeypots", "2"]).status !== 0) return fail("[honeypot] verify --honeypots failed");
+    if (!existsSync(join(dir, "VERIFY.honeypots.json"))) return fail("[honeypot] no ground-truth file written");
+    const todo = JSON.parse(readFileSync(join(dir, "VERIFY.todo.json"), "utf8"));
+    const truth = new Set(JSON.parse(readFileSync(join(dir, "VERIFY.honeypots.json"), "utf8")).claimIds);
+    if (!truth.size) return fail("[honeypot] ground truth lists no planted traps");
+
+    // RED: complacent skeptic grades everything supported → apply and the exit gate must fail.
+    writeProbeVerdicts(dir, "supported");
+    if (run(["verify", "--run", dir, "--apply", join(dir, "verdicts.probe.json")]).status === 0) return fail("[honeypot] a complacent skeptic slipped through --apply");
+    if (run(["check", "--run", dir, "--semantic", "--require-verify"]).status === 0) return fail("[honeypot] check --require-verify passed despite failed honeypots");
+    pass("[honeypot] RED complacent skeptic (all supported) is caught by apply + check");
+
+    // GREEN: honest skeptic supports real pairs, rejects the traps.
+    const pairs = todo.pairs.map((p) => ({ claimId: p.claimId, evidenceRef: p.evidenceRef, verdict: truth.has(p.claimId) ? "unsupported" : "supported", note: "eval probe" }));
+    writeFileSync(join(dir, "verdicts.probe.json"), JSON.stringify({ pairs }));
+    if (run(["verify", "--run", dir, "--apply", join(dir, "verdicts.probe.json")]).status !== 0) return fail("[honeypot] an honest skeptic was rejected");
+    if (run(["check", "--run", dir, "--semantic", "--require-verify"]).status !== 0) return fail("[honeypot] gate stayed red after an honest re-verification");
+    pass("[honeypot] GREEN honest skeptic (traps rejected) passes apply + check");
+  } catch (e) {
+    fail(`[honeypot] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // clean --all must refuse a directory that is not an ultraeval run.
 function cleanGuardProbe() {
   const dir = mkdtempSync(join(tmpdir(), "ue-eval-clean-"));
@@ -213,7 +243,7 @@ function cleanGuardProbe() {
   }
 }
 
-console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity + containment + clean\n");
+console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity + containment + honeypot + clean\n");
 gateProbe();
 backlogProbe();
 schemaProbe();
@@ -221,6 +251,7 @@ scoreProbe();
 analyzeProbe();
 opportunityProbe();
 containmentProbe();
+honeypotProbe();
 cleanGuardProbe();
 if (failures) {
   console.error(`\n${failures} probe(s) failed`);

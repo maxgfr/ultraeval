@@ -16,7 +16,7 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 | Findings | run logs | `findings.json` schema-valid; every non-dismissed finding carries ≥1 resolvable evidence ref |
 | Analyze → Brainstorm (improve/deep only) | `analysis.json` | ranked opportunities folded into `findings.json` as `kind:"opportunity"`, each grounded |
 | Gate | `findings.json` | `check` exit 0 → `verify` fully adjudicated → `check --semantic --require-verify` exit 0 |
-| Judge | gate green | `judges.jsonl`: every dimension scored 0–5 by every lens (≥3 independent lenses SHOULD be used), each rationale grounded in a path the judge read |
+| Judge | gate green | `judges.jsonl`: every dimension scored 0–5 by every lens (≥3 independent lenses SHOULD be used), each rationale grounded in a path the judge read; every judge MUST first score the golden fixture `references/calibration-run.json` and report `calibration:{scores,passed}` in its line |
 | Results | `judges.jsonl` | `scorecard.json`, `RESULTS.md`, `SUMMARY.md`, `BACKLOG.json`, `fixes/`, `index.md`/`index.html`; final `check --semantic` exit 0 |
 
 ## Gate thresholds (normative constants)
@@ -24,7 +24,8 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 - Citation coverage in `RESULTS.md`: **0.6** default, **1.0** under `--strict` (`CAPS` in `src/types.ts`).
 - Verify worklist cap: **60** claim↔evidence pairs (`--max-verify`); shard for more.
 - A finding FAILS verification if any evidence is `refuted`, or none is `supported`/`partial`.
-- `MEETS_BAR = 80`. `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < 80.
+- Honeypots (skeptic quality control): `verify --honeypots N` plants N deterministic trap pairs — one finding's claim glued to another finding's evidence — seeded on the run's `dimensionsHash`. Ground truth lives in `VERIFY.honeypots.json` and MUST NOT be shown to a skeptic. A trap graded `supported`/`partial` fails `verify --apply` and blocks `check --require-verify` until a fresh skeptic re-verifies; trap verdicts never reach the findings ledger.
+- `MEETS_BAR = 80`. `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < 80 · the judge panel has zero passed calibrations (`scorecard.judgesCalibrated`).
 
 ## Severities (normative definitions)
 

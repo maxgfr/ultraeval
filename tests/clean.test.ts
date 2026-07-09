@@ -57,6 +57,15 @@ describe("clean — run-guard against deleting arbitrary directories", () => {
     expect(existsSync(join(d, "eval.sarif"))).toBe(false);
   });
 
+  it("removes honeypot ground-truth files (plain and sharded)", () => {
+    const d = runDir();
+    writeFileSync(join(d, "VERIFY.honeypots.json"), "{}");
+    writeFileSync(join(d, "VERIFY.honeypots.1.json"), "{}");
+    clean(d);
+    expect(existsSync(join(d, "VERIFY.honeypots.json"))).toBe(false);
+    expect(existsSync(join(d, "VERIFY.honeypots.1.json"))).toBe(false);
+  });
+
   it("default clean removes derived artifacts and keeps the deliverables", () => {
     const d = runDir();
     clean(d);

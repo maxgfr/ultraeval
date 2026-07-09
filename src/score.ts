@@ -39,7 +39,13 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
 
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
-  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
+  // Judge calibration (references/calibration-run.json): a panel with zero
+  // passed calibrations cannot green-light the verdict — its scale is untrusted.
+  const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
+  const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : undefined;
+  const calibrationVeto = judges.length > 0 && calibrated === 0;
+  const meetsBase = !liveP0 && !judgeSaysNo && !calibrationVeto;
+  const meetsExpectations = meetsBase && overall >= bar;
 
   // Verdict stability: nudge each weight by ±0.05 (renormalized, like the real
   // scoring) and record every dimension whose nudge flips meetsExpectations.
@@ -48,18 +54,29 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
     const tot = ws.reduce((a, b) => a + b.w, 0) || 1;
     return Math.round((ws.reduce((a, b) => a + (b.s / 5) * b.w, 0) / tot) * 100);
   };
-  const flips = dimensions
-    .filter((d) => [0.05, -0.05].some((delta) => (!liveP0 && !judgeSaysNo && overallWith(d.id, delta) >= bar) !== meetsExpectations))
-    .map((d) => d.id);
+  const flips = dimensions.filter((d) => [0.05, -0.05].some((delta) => (meetsBase && overallWith(d.id, delta) >= bar) !== meetsExpectations)).map((d) => d.id);
   const sensitivity = { robust: flips.length === 0, flips };
   const reason = liveP0
     ? "an unresolved P0 finding caps meets-expectations at false"
     : judgeSaysNo
       ? "a judge ruled it does not meet expectations"
-      : overall < bar
-        ? `weighted score ${overall} is below the ${bar} bar`
-        : `no P0, judges agree, score ${overall} >= ${bar}`;
-  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason, sensitivity };
+      : calibrationVeto
+        ? "no judge passed calibration — an uncalibrated panel cannot green-light the verdict"
+        : overall < bar
+          ? `weighted score ${overall} is below the ${bar} bar`
+          : `no P0, judges agree, score ${overall} >= ${bar}`;
+  return {
+    overall,
+    maxScore: 100,
+    meetsExpectations,
+    bar,
+    dimensions,
+    judges: judges.length,
+    agreement,
+    reason,
+    sensitivity,
+    ...(judgesCalibrated ? { judgesCalibrated } : {}),
+  };
 }
 
 export function scoreRun(runDir: string): Scorecard {
@@ -111,7 +128,7 @@ export function appendHistory(runDir: string, file: string): HistoryEntry {
 }
 
 export function formatScore(sc: Scorecard): string {
-  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
+  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"}${sc.judgesCalibrated ? `, ${sc.judgesCalibrated} calibrated` : ""})`;
   const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
   if (sc.sensitivity) {
     lines.push(

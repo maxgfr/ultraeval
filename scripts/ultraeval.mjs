@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join14 } from "path";
+import { join as join15 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -432,7 +432,7 @@ var SEVERITY_DEFS = {
 };
 var VALID_IMPACT = ["high", "med", "low"];
 var VALID_EFFORT = ["S", "M", "L"];
-var PROTOCOL_VERSION = "1";
+var PROTOCOL_VERSION = "2";
 var RUBRIC_VERSION = "1";
 var MEETS_BAR = 80;
 
@@ -836,6 +836,10 @@ function checkRun(runDir, opts = {}) {
       try {
         const v = readJson(verifyPath);
         if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (v.honeypots?.failed?.length)
+          errors.push(
+            `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) \u2014 the skeptic rubber-stamped; re-verify with a fresh skeptic`
+          );
         const pending = (v.unadjudicated ?? []).filter((fid) => {
           const f = findings.find((x) => x.id === fid);
           return f && f.status !== "dismissed";
@@ -1031,7 +1035,17 @@ function writeSarif(runDir, out) {
 // src/clean.ts
 import { readdirSync as readdirSync3, rmSync } from "fs";
 import { join as join8 } from "path";
-var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md", "eval.sarif"];
+var DERIVED = [
+  "VERIFY.todo.json",
+  "VERIFY.md",
+  "VERIFY.json",
+  "VERIFY.honeypots.json",
+  "index.html",
+  "index.md",
+  "BACKLOG.json",
+  "REMEDIATION.md",
+  "eval.sarif"
+];
 function clean(runDir, opts = {}) {
   const removed = [];
   if (exists(runDir) && !exists(join8(runDir, "eval.config.json"))) {
@@ -1053,7 +1067,7 @@ function clean(runDir, opts = {}) {
   }
   if (exists(runDir)) {
     for (const e of readdirSync3(runDir)) {
-      if (/^VERIFY\.(todo\.)?\d+\.(json|md)$/.test(e)) {
+      if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
         rmSync(join8(runDir, e), { force: true });
         removed.push(join8(runDir, e));
       }
@@ -1354,9 +1368,17 @@ function initRun(opts) {
 }
 
 // src/plan.ts
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 
 // src/templates.ts
+import { dirname as dirname2, join as join10 } from "path";
+function calibrationFixturePath(engineAbs) {
+  const candidates = [
+    join10(dirname2(engineAbs), "..", "references", "calibration-run.json"),
+    join10(dirname2(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
+  ];
+  return candidates.find(exists) ?? candidates[0];
+}
 var anchorText = (d) => d.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "";
 var severityLegend = () => VALID_SEVERITIES.map((s) => `${s} (${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning})`).join(" \xB7 ");
 function workflowScript(cfg, runDirAbs, engineAbs) {
@@ -1511,9 +1533,11 @@ If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings \u2
 
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
+**Step 0 \u2014 CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0\u20135 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields \u2014 read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
+
 Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0\u20135 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth \u2014 weight them.
 
-Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [] }\`.
+Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`.
 `,
     remediator: `# Contract: remediator
 
@@ -1624,10 +1648,10 @@ function findingsSchema() {
 
 // src/plan.ts
 function planRun(runDir, engineAbs) {
-  const cfg = readJson(join10(runDir, "eval.config.json"));
+  const cfg = readJson(join11(runDir, "eval.config.json"));
   const written = [];
   const w = (rel, content) => {
-    const p = join10(runDir, rel);
+    const p = join11(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
@@ -1642,18 +1666,18 @@ function planRun(runDir, engineAbs) {
 }
 
 // src/render.ts
-import { join as join11 } from "path";
+import { join as join12 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
-  const cfg = readJson(join11(runDir, "eval.config.json"));
-  const doc = readJson(join11(runDir, "findings.json"));
-  const verify = exists(join11(runDir, "VERIFY.json")) ? readJson(join11(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join11(runDir, "BACKLOG.json")) ? readJson(join11(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join11(runDir, "scorecard.json")) ? readJson(join11(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join12(runDir, "eval.config.json"));
+  const doc = readJson(join12(runDir, "findings.json"));
+  const verify = exists(join12(runDir, "VERIFY.json")) ? readJson(join12(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join12(runDir, "BACKLOG.json")) ? readJson(join12(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join12(runDir, "scorecard.json")) ? readJson(join12(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -1661,12 +1685,12 @@ function render(runDir, opts = {}) {
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join11(out, "index.md");
+    const p = join12(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join11(out, "index.html");
+    const p = join12(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -1771,9 +1795,9 @@ function esc(s) {
 
 // src/score.ts
 import { appendFileSync, mkdirSync as mkdirSync2 } from "fs";
-import { dirname as dirname2, join as join12 } from "path";
+import { dirname as dirname3, join as join13 } from "path";
 function readJudges(runDir) {
-  const p = join12(runDir, "judges.jsonl");
+  const p = join13(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -1799,31 +1823,46 @@ function computeScore(cfg, judges, doc) {
   const agreement = Number((1 - avgSpread / 5).toFixed(2));
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
-  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
+  const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
+  const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : void 0;
+  const calibrationVeto = judges.length > 0 && calibrated === 0;
+  const meetsBase = !liveP0 && !judgeSaysNo && !calibrationVeto;
+  const meetsExpectations = meetsBase && overall >= bar;
   const overallWith = (dimId, delta) => {
     const ws = dimensions.map((x) => ({ w: Math.max(0, x.weight + (x.id === dimId ? delta : 0)), s: x.score }));
     const tot = ws.reduce((a, b) => a + b.w, 0) || 1;
     return Math.round(ws.reduce((a, b) => a + b.s / 5 * b.w, 0) / tot * 100);
   };
-  const flips = dimensions.filter((d) => [0.05, -0.05].some((delta) => (!liveP0 && !judgeSaysNo && overallWith(d.id, delta) >= bar) !== meetsExpectations)).map((d) => d.id);
+  const flips = dimensions.filter((d) => [0.05, -0.05].some((delta) => (meetsBase && overallWith(d.id, delta) >= bar) !== meetsExpectations)).map((d) => d.id);
   const sensitivity = { robust: flips.length === 0, flips };
-  const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : overall < bar ? `weighted score ${overall} is below the ${bar} bar` : `no P0, judges agree, score ${overall} >= ${bar}`;
-  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason, sensitivity };
+  const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : calibrationVeto ? "no judge passed calibration \u2014 an uncalibrated panel cannot green-light the verdict" : overall < bar ? `weighted score ${overall} is below the ${bar} bar` : `no P0, judges agree, score ${overall} >= ${bar}`;
+  return {
+    overall,
+    maxScore: 100,
+    meetsExpectations,
+    bar,
+    dimensions,
+    judges: judges.length,
+    agreement,
+    reason,
+    sensitivity,
+    ...judgesCalibrated ? { judgesCalibrated } : {}
+  };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join12(runDir, "eval.config.json"));
-  const doc = exists(join12(runDir, "findings.json")) ? readJson(join12(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join13(runDir, "eval.config.json"));
+  const doc = exists(join13(runDir, "findings.json")) ? readJson(join13(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join12(runDir, "scorecard.json"), sc);
+  writeJson(join13(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join12(runDir, "scorecard.json");
+  const scPath = join13(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join12(runDir, "findings.json")) ? readJson(join12(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join13(runDir, "findings.json")) ? readJson(join13(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const entry = {
@@ -1840,13 +1879,13 @@ function appendHistory(runDir, file) {
       opps: live.filter((f) => f.kind === "opportunity").length
     }
   };
-  mkdirSync2(dirname2(file), { recursive: true });
+  mkdirSync2(dirname3(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}
 `);
   return entry;
 }
 function formatScore(sc) {
-  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
+  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"}${sc.judgesCalibrated ? `, ${sc.judgesCalibrated} calibrated` : ""})`;
   const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
   if (sc.sensitivity) {
     lines.push(
@@ -1862,10 +1901,20 @@ function formatScore(sc) {
 }
 
 // src/verify.ts
-import { isAbsolute as isAbsolute2, join as join13, resolve as resolve3 } from "path";
+import { readdirSync as readdirSync4 } from "fs";
+import { isAbsolute as isAbsolute2, join as join14, resolve as resolve3 } from "path";
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = a + 1831565813 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join13(runDir, "eval.config.json"));
-  const doc = readJson(join13(runDir, "findings.json"));
+  const cfg = readJson(join14(runDir, "eval.config.json"));
+  const doc = readJson(join14(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -1884,11 +1933,56 @@ function runVerify(runDir, opts = {}) {
   const full = buildWorklist(runDir, opts.maxVerify);
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i) => i % opts.shards === opts.shard);
-  const out = { run: runDir, pairs };
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
-  writeJson(join13(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join13(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+  const out = { run: runDir, pairs };
+  writeJson(join14(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join14(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
+}
+function plantHoneypots(runDir, pairs, n, shard) {
+  if (pairs.length < 2) return pairs;
+  const cfg = readJson(join14(runDir, "eval.config.json"));
+  const doc = readJson(join14(runDir, "findings.json"));
+  const seedHex = cfg.provenance?.dimensionsHash ?? "0";
+  const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
+  let maxN = 0;
+  for (const f of doc.findings ?? []) {
+    const m = /^F(\d+)$/.exec(f.id);
+    if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
+  }
+  const offset = (shard ?? 0) * n;
+  const pathOf = (ref) => /:\d/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref;
+  const real = [...pairs];
+  const traps = [];
+  for (let k = 0; k < n; k++) {
+    const a = real[Math.floor(rng() * real.length)];
+    const elsewhere = real.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
+    const pool = elsewhere.length ? elsewhere : real.filter((p) => p.claimId !== a.claimId);
+    if (!pool.length) break;
+    const b = pool[Math.floor(rng() * pool.length)];
+    traps.push({ claimId: `F${maxN + offset + k + 1}`, evidenceRef: b.evidenceRef, claim: a.claim, digest: b.digest, verdict: null, note: "" });
+  }
+  const mixed = [...pairs];
+  for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
+  const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
+  writeJson(join14(runDir, truthName), {
+    note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
+    claimIds: traps.map((t) => t.claimId)
+  });
+  return mixed;
+}
+function loadHoneypotIds(runDir) {
+  const ids = /* @__PURE__ */ new Set();
+  const files = [join14(runDir, "VERIFY.honeypots.json")];
+  if (exists(runDir)) {
+    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join14(runDir, e));
+  }
+  for (const f of files) {
+    if (!exists(f)) continue;
+    for (const id of readJson(f).claimIds ?? []) ids.add(id);
+  }
+  return ids;
 }
 function renderWorklistMd(todo) {
   const lines = [
@@ -1947,15 +2041,30 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join13(runDir, "findings.json"));
-  const result = reduceVerdicts(loadVerdicts(runDir, spec), doc.findings ?? []);
-  writeJson(join13(runDir, "VERIFY.json"), result);
+  const doc = readJson(join14(runDir, "findings.json"));
+  const all = loadVerdicts(runDir, spec);
+  const trapIds = loadHoneypotIds(runDir);
+  const result = reduceVerdicts(
+    all.filter((v) => !trapIds.has(v.claimId)),
+    doc.findings ?? []
+  );
+  if (trapIds.size) {
+    const graded = all.filter((v) => trapIds.has(v.claimId) && VALID_VERDICTS.includes(v.verdict));
+    const failed = [...new Set(graded.filter((v) => v.verdict === "supported" || v.verdict === "partial").map((v) => v.claimId))];
+    const caught = new Set(graded.filter((v) => v.verdict === "refuted" || v.verdict === "unsupported").map((v) => v.claimId));
+    for (const id of failed) caught.delete(id);
+    result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
+    if (failed.length) result.ok = false;
+  }
+  writeJson(join14(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
   const head = r.ok ? "PASS" : "FAIL";
   return [
     `${head}  ${r.adjudicated} adjudicated \xB7 ${r.supported} supported \xB7 ${r.partial} partial \xB7 ${r.refuted} refuted \xB7 ${r.unsupported} unsupported`,
+    ...r.honeypots ? [`  honeypots: ${r.honeypots.caught}/${r.honeypots.planted} caught`] : [],
+    ...(r.honeypots?.failed ?? []).map((f) => `  \u2717 honeypot ${f} graded supported \u2014 the skeptic is rubber-stamping; re-verify with a fresh skeptic`),
     ...r.failures.map((f) => `  \u2717 ${f} not supported by its evidence`),
     ...r.unadjudicated.map((f) => `  ! ${f} still unadjudicated`)
   ].join("\n");
@@ -1981,8 +2090,10 @@ Commands:
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
-  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
+  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
+             --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json \u2014 never show it to skeptics);
+             a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   score    --run <run> [--json] [--history [file]]
@@ -2012,7 +2123,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--max-verify",
   "--shards",
   "--shard",
-  "--bar"
+  "--bar",
+  "--honeypots"
 ]);
 var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
 function parse(argv) {
@@ -2082,7 +2194,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         let targetAbs;
         let out;
         if (run) {
-          const cfg = readJson(join14(run, "eval.config.json"));
+          const cfg = readJson(join15(run, "eval.config.json"));
           targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
           out = run;
         } else {
@@ -2162,9 +2274,11 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         } else {
           const shards = num(args.shards);
           const shard = num(args.shard);
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard });
+          const honeypots = num(args.honeypots);
+          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
           const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
+          const hp = honeypots ? ` (incl. ${honeypots} honeypot(s))` : "";
+          console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
         }
         return;
       }
@@ -2179,7 +2293,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join14(process.cwd(), "evals", "history.jsonl");
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join15(process.cwd(), "evals", "history.jsonl");
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
