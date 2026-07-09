@@ -84,4 +84,13 @@ describe("generated contracts — anchored referentials", () => {
     expect(text).not.toMatch(/average the overalls/);
     expect(text).toMatch(/do not hand-average/);
   });
+
+  it("the executor contract carries the sandbox warning for untrusted targets", () => {
+    expect(agentContracts(cfg, "/run", "/engine").executor).toMatch(/sandbox untrusted/i);
+  });
+
+  it("the executor contract warns that run-dir helper scripts inherit the repo's module type", () => {
+    const text = agentContracts(cfg, "/run", "/engine").executor;
+    expect(text).toMatch(/\.mjs.*\.cjs|module type|package\.json.*type/i);
+  });
 });

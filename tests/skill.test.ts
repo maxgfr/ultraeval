@@ -43,4 +43,16 @@ describe("SKILL.md packaging", () => {
     expect(proto).toMatch(/provenance/i);
     expect(proto).toMatch(/MUST NOT launch/);
   });
+
+  it("gate-contract.md documents the verdicts file shape verify --apply accepts", () => {
+    const gc = readFileSync(join(SKILL_DIR, "references", "gate-contract.md"), "utf8");
+    expect(gc).toMatch(/"pairs"/);
+    expect(gc).toMatch(/claimId/);
+  });
+
+  it("analysis-playbook.md documents the impact→severity mapping brainstorm --rank applies", () => {
+    const ap = readFileSync(join(SKILL_DIR, "references", "analysis-playbook.md"), "utf8");
+    expect(ap).toMatch(/high\s*(→|->)\s*P1/);
+    expect(ap).toMatch(/med\/low\s*(→|->)\s*P2|med(ium)?\s*(→|->)\s*P2/);
+  });
 });

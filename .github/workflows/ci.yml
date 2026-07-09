@@ -107,3 +107,23 @@ jobs:
           test -f "$RUNNER_TEMP/fixes/REMEDIATION.md"
           node scripts/ultraeval.mjs render --run tests/fixtures/sample-run --out "$RUNNER_TEMP/fixes"
           test -f "$RUNNER_TEMP/fixes/index.md"
+
+      - name: Full command surface on Node 18 (init/plan/analyze/brainstorm/score/compare/sarif)
+        run: |
+          OUT="$RUNNER_TEMP/n18-run"
+          node scripts/ultraeval.mjs init --target tests/fixtures/target-lib --out "$OUT" --kind codebase --category library --mode deep
+          node scripts/ultraeval.mjs plan --run "$OUT"
+          test -f "$OUT/eval.workflow.mjs"
+          test -f "$OUT/dimensions.json"
+          node scripts/ultraeval.mjs analyze --run "$OUT" --json > /dev/null
+          node scripts/ultraeval.mjs brainstorm --run "$OUT"
+          test -f "$OUT/BRAINSTORM.todo.md"
+          cp -R tests/fixtures/sample-run "$RUNNER_TEMP/n18-a"
+          cp -R tests/fixtures/sample-run "$RUNNER_TEMP/n18-b"
+          printf '%s\n' '{"lens":"a","dimensionScores":[{"id":"security","score":4},{"id":"correctness","score":4}],"meetsExpectations":true}' > "$RUNNER_TEMP/n18-a/judges.jsonl"
+          printf '%s\n' '{"lens":"a","dimensionScores":[{"id":"security","score":5},{"id":"correctness","score":5}],"meetsExpectations":true}' > "$RUNNER_TEMP/n18-b/judges.jsonl"
+          node scripts/ultraeval.mjs score --run "$RUNNER_TEMP/n18-a"
+          node scripts/ultraeval.mjs score --run "$RUNNER_TEMP/n18-b"
+          node scripts/ultraeval.mjs compare --run "$RUNNER_TEMP/n18-b" --base "$RUNNER_TEMP/n18-a" --json --gate > /dev/null
+          node scripts/ultraeval.mjs render --run "$RUNNER_TEMP/n18-b" --sarif
+          test -f "$RUNNER_TEMP/n18-b/eval.sarif"

@@ -72,6 +72,16 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(r.out).not.toMatch(/Usage:/);
   });
 
+  it("cli characterization: help lists every command, unknown command and missing --run exit 2", () => {
+    const help = run(["--help"]);
+    expect(help.status).toBe(0);
+    for (const c of ["init", "plan", "analyze", "brainstorm", "compare", "check", "verify", "backlog", "score", "render", "clean"]) {
+      expect(help.out).toMatch(new RegExp(`^  ${c} `, "m"));
+    }
+    expect(run(["frobnicate"]).status).toBe(2);
+    expect(run(["check"]).status).toBe(2);
+  });
+
   it("check fails (exit 1) on a doctored citation", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-bad-"));
     tmps.push(dir);
