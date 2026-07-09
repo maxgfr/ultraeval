@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { commandHandlers } from "../src/cli.js";
 import { COMMAND_FLAGS, FLAG_SPEC, OPTIONAL_VALUE_FLAGS, VALUE_FLAGS } from "../src/cliargs.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -180,6 +181,24 @@ describe("cli — history reads back the score-trend ledger (FIX-022)", () => {
     const r = run(["history", "--file", join(tmpdir(), `ue-absent-${Date.now()}.jsonl`)]);
     expect(r.status).toBe(0);
     expect(r.out).toMatch(/no ledger|no history|score --run/i);
+  });
+});
+
+describe("cli — main() dispatches through a command-handler table (FIX-010)", () => {
+  it("exposes one handler per dispatched command, keyed by command name", () => {
+    // main() is a thin router: every command in FLAG_SPEC has a handler in the
+    // table, and the table has no handler for a command the parser cannot dispatch.
+    expect(typeof commandHandlers).toBe("object");
+    for (const cmd of Object.keys(FLAG_SPEC)) {
+      expect(typeof commandHandlers[cmd], `handler for ${cmd}`).toBe("function");
+    }
+    expect(Object.keys(commandHandlers).sort()).toEqual(Object.keys(FLAG_SPEC).sort());
+  });
+
+  it("importing the CLI module does not execute main() (no process side effects)", () => {
+    // The module is import-safe: exercised implicitly by importing commandHandlers
+    // above without the test runner's argv being parsed/dispatched.
+    expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
   });
 });
 

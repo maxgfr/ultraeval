@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // src/cli.ts
+import { realpathSync } from "fs";
 import { join as join18 } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 // src/analyze.ts
 import { execFileSync } from "child_process";
@@ -2784,6 +2785,225 @@ function rejectUnknownFlags(cmd, args) {
     throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
   }
 }
+function cmdInit(args) {
+  const target = str(args.target);
+  const out = str(args.out);
+  if (!target || !out) throw new Error("init requires --target <path> and --out <run>");
+  const { cfg, runDir } = initRun({
+    target,
+    out,
+    kind: str(args.kind),
+    category: str(args.category),
+    mode: str(args.mode),
+    bar: num(args.bar),
+    since: str(args.since)
+  });
+  console.log(`ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions -> ${runDir}`);
+}
+function cmdPlan(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("plan requires --run <run>");
+  const engine = fileURLToPath(import.meta.url);
+  const written = planRun(run, engine);
+  console.log(`ultraeval plan: generated
+${written.map((w) => `  ${w}`).join("\n")}`);
+  console.log(`
+Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or run the stages by hand via agents/*.md`);
+}
+function cmdAnalyze(args) {
+  const run = str(args.run);
+  const since = str(args.since);
+  let targetAbs;
+  let out;
+  if (run) {
+    const cfg = readJson(join18(run, "eval.config.json"));
+    targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
+    out = run;
+  } else {
+    targetAbs = str(args.target);
+    out = str(args.out);
+  }
+  if (!targetAbs || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
+  const onlyFiles = since ? changedFiles(targetAbs, since) : void 0;
+  const a = runAnalyze(targetAbs, out, { onlyFiles });
+  if (args.json) console.log(JSON.stringify(a, null, 2));
+  else
+    console.log(
+      `ultraeval analyze: ${a.files} files \xB7 ${a.loc} LOC \xB7 ${a.hotspots.length} hotspots \xB7 ${a.deps.edges} edges \xB7 tests ${a.tests.ratio}${since ? ` \xB7 since ${since}` : ""} -> ${out}/analysis.json`
+    );
+}
+function cmdBrainstorm(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("brainstorm requires --run <run>");
+  if (args.rank) {
+    const r = rankBrainstorm(run);
+    console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
+    for (const s of r.skipped) console.log(`  ! skipped${s.title ? ` "${s.title}"` : ""}: ${s.reason}`);
+    if (args.check) {
+      const c = checkRun(run);
+      console.log(formatCheckReport(c, run));
+      process.exitCode = c.ok ? 0 : 1;
+    } else {
+      console.log("  next: `check --run <run>` to gate them.");
+    }
+  } else {
+    const r = runBrainstorm(run);
+    console.log(`ultraeval brainstorm: ${r.lenses} lenses -> ${run}/BRAINSTORM.todo.md (fill opportunities.json, then --rank)`);
+  }
+}
+function cmdCompare(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("compare requires --run <new-run> and --base <old-run>");
+  const base = str(args.base);
+  if (!base) throw new Error("compare requires --base <old-run>");
+  const r = runCompare(base, run, run);
+  if (args.json) {
+    const { md: _md, ...rest } = r;
+    console.log(JSON.stringify(rest, null, 2));
+  } else {
+    console.log(
+      `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced \xB7 ${r.retitled.length} retitled -> ${run}/COMPARE.md`
+    );
+  }
+  for (const w of r.warnings) console.log(`  ! ${w}`);
+  if (args.gate) {
+    const fails = gateFailures(r);
+    for (const f of fails) console.log(`  \u2717 gate: ${f}`);
+    process.exitCode = fails.length ? 1 : 0;
+  }
+}
+function cmdCheck(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("check requires --run <run>");
+  if (!exists(join18(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+  const r = checkRun(run, {
+    semantic: !!args.semantic,
+    requireVerify: !!args["require-verify"],
+    strict: !!args.strict,
+    strictScope: !!args["strict-scope"],
+    minFindings: num(args["min-findings"]),
+    coverageMin: num(args["coverage-min"])
+  });
+  console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
+  process.exitCode = r.ok ? 0 : 1;
+}
+function cmdVerify(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("verify requires --run <run>");
+  const apply = str(args.apply);
+  if (apply) {
+    const res = applyVerdicts(run, apply);
+    console.log(formatVerifyReport(res));
+    process.exitCode = res.ok ? 0 : 1;
+  } else {
+    const shards = num(args.shards);
+    const shard = num(args.shard);
+    const honeypots = num(args.honeypots);
+    const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
+    const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
+    const planted = todo.planted ?? 0;
+    const hp = honeypots ? ` (incl. ${planted} honeypot(s))` : "";
+    console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
+    if (honeypots && planted < honeypots)
+      console.log(
+        planted === 0 ? "  ! 0 planted \u2014 run too small for honeypots (need >= 2 gradeable pairs across distinct findings); skeptic-QC will not run" : `  ! only ${planted}/${honeypots} honeypot(s) planted \u2014 cross-pair pool exhausted; skeptic-QC is thinner than requested`
+      );
+  }
+}
+function cmdBacklog(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("backlog requires --run <run>");
+  const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
+  console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
+}
+function cmdStatus(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("status requires --run <run>");
+  const s = statusRun(run);
+  console.log(args.json ? JSON.stringify(s, null, 2) : formatStatus(s, run));
+}
+function cmdScore(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("score requires --run <run>");
+  const sc = scoreRun(run);
+  console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
+  if (args.history !== void 0) {
+    const file = typeof args.history === "string" && args.history !== "" ? args.history : defaultLedgerPath(run);
+    appendHistory(run, file);
+    (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
+  }
+}
+function cmdHistory(args) {
+  const run = str(args.run);
+  const explicit = str(args.file) || args._[1];
+  const file = explicit || (run ? defaultLedgerPath(run) : void 0);
+  if (!file) throw new Error("history requires a ledger path, --file <f>, or --run <run> (to locate the default ledger)");
+  const entries = readHistory(file);
+  if (args.json) {
+    console.log(JSON.stringify(entries, null, 2));
+    return;
+  }
+  console.log(
+    entries.length ? formatHistory(entries, file) : `ultraeval history: no ledger entries at ${file} \u2014 run \`score --run <run> --history\` to record a trend`
+  );
+}
+function cmdFix(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("fix requires --run <run>");
+  const engine = fileURLToPath(import.meta.url);
+  const written = emitFixAgents(run, engine, { task: str(args.task), workflow: !!args.workflow });
+  console.log(`ultraeval fix: ${written.length} file(s) -> ${run}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
+}
+function cmdVerifyFix(args) {
+  const run = str(args.run);
+  const task = str(args.task);
+  if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
+  const res = verifyFix(run, task);
+  console.log(formatVerifyFix(res));
+  process.exitCode = res.ok ? 0 : 1;
+}
+function cmdRejudge(args) {
+  const run = str(args.run);
+  const out = str(args.out);
+  if (!run || !out) throw new Error("rejudge requires --run <run> and --out <run2>");
+  const engine = fileURLToPath(import.meta.url);
+  const copied = rejudgeRun(run, out, engine);
+  console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
+  console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
+}
+function cmdRender(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("render requires --run <run>");
+  const written = render(run, { out: str(args.out), html: !args["no-html"], md: !args["no-md"] });
+  if (args.sarif) written.push(writeSarif(run, str(args.out)));
+  console.log(`ultraeval render:
+${written.map((w) => `  ${w}`).join("\n")}`);
+}
+function cmdClean(args) {
+  const run = str(args.run);
+  if (!run) throw new Error("clean requires --run <run>");
+  const removed = clean(run, { all: !!args.all });
+  console.log(removed.length ? `ultraeval clean: removed
+${removed.map((w) => `  ${w}`).join("\n")}` : "ultraeval clean: nothing to remove");
+}
+var commandHandlers = {
+  init: cmdInit,
+  plan: cmdPlan,
+  analyze: cmdAnalyze,
+  brainstorm: cmdBrainstorm,
+  compare: cmdCompare,
+  check: cmdCheck,
+  verify: cmdVerify,
+  backlog: cmdBacklog,
+  status: cmdStatus,
+  score: cmdScore,
+  history: cmdHistory,
+  fix: cmdFix,
+  "verify-fix": cmdVerifyFix,
+  rejudge: cmdRejudge,
+  render: cmdRender,
+  clean: cmdClean
+};
 function main() {
   const args = parse(process.argv.slice(2));
   const cmd = args._[0];
@@ -2795,221 +3015,30 @@ function main() {
     console.log(HELP);
     return;
   }
-  const run = str(args.run);
   try {
     rejectUnknownFlags(cmd, args);
-    switch (cmd) {
-      case "init": {
-        const target = str(args.target);
-        const out = str(args.out);
-        if (!target || !out) throw new Error("init requires --target <path> and --out <run>");
-        const { cfg, runDir } = initRun({
-          target,
-          out,
-          kind: str(args.kind),
-          category: str(args.category),
-          mode: str(args.mode),
-          bar: num(args.bar),
-          since: str(args.since)
-        });
-        console.log(`ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions -> ${runDir}`);
-        return;
-      }
-      case "plan": {
-        if (!run) throw new Error("plan requires --run <run>");
-        const engine = fileURLToPath(import.meta.url);
-        const written = planRun(run, engine);
-        console.log(`ultraeval plan: generated
-${written.map((w) => `  ${w}`).join("\n")}`);
-        console.log(`
-Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or run the stages by hand via agents/*.md`);
-        return;
-      }
-      case "analyze": {
-        const since = str(args.since);
-        let targetAbs;
-        let out;
-        if (run) {
-          const cfg = readJson(join18(run, "eval.config.json"));
-          targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
-          out = run;
-        } else {
-          targetAbs = str(args.target);
-          out = str(args.out);
-        }
-        if (!targetAbs || !out) throw new Error("analyze requires --run <run> (or --target <dir> --out <dir>)");
-        const onlyFiles = since ? changedFiles(targetAbs, since) : void 0;
-        const a = runAnalyze(targetAbs, out, { onlyFiles });
-        if (args.json) console.log(JSON.stringify(a, null, 2));
-        else
-          console.log(
-            `ultraeval analyze: ${a.files} files \xB7 ${a.loc} LOC \xB7 ${a.hotspots.length} hotspots \xB7 ${a.deps.edges} edges \xB7 tests ${a.tests.ratio}${since ? ` \xB7 since ${since}` : ""} -> ${out}/analysis.json`
-          );
-        return;
-      }
-      case "brainstorm": {
-        if (!run) throw new Error("brainstorm requires --run <run>");
-        if (args.rank) {
-          const r = rankBrainstorm(run);
-          console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
-          for (const s of r.skipped) console.log(`  ! skipped${s.title ? ` "${s.title}"` : ""}: ${s.reason}`);
-          if (args.check) {
-            const c = checkRun(run);
-            console.log(formatCheckReport(c, run));
-            process.exitCode = c.ok ? 0 : 1;
-          } else {
-            console.log("  next: `check --run <run>` to gate them.");
-          }
-        } else {
-          const r = runBrainstorm(run);
-          console.log(`ultraeval brainstorm: ${r.lenses} lenses -> ${run}/BRAINSTORM.todo.md (fill opportunities.json, then --rank)`);
-        }
-        return;
-      }
-      case "compare": {
-        if (!run) throw new Error("compare requires --run <new-run> and --base <old-run>");
-        const base = str(args.base);
-        if (!base) throw new Error("compare requires --base <old-run>");
-        const r = runCompare(base, run, run);
-        if (args.json) {
-          const { md: _md, ...rest } = r;
-          console.log(JSON.stringify(rest, null, 2));
-        } else {
-          console.log(
-            `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced \xB7 ${r.retitled.length} retitled -> ${run}/COMPARE.md`
-          );
-        }
-        for (const w of r.warnings) console.log(`  ! ${w}`);
-        if (args.gate) {
-          const fails = gateFailures(r);
-          for (const f of fails) console.log(`  \u2717 gate: ${f}`);
-          process.exitCode = fails.length ? 1 : 0;
-        }
-        return;
-      }
-      case "check": {
-        if (!run) throw new Error("check requires --run <run>");
-        if (!exists(join18(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
-        const r = checkRun(run, {
-          semantic: !!args.semantic,
-          requireVerify: !!args["require-verify"],
-          strict: !!args.strict,
-          strictScope: !!args["strict-scope"],
-          minFindings: num(args["min-findings"]),
-          coverageMin: num(args["coverage-min"])
-        });
-        console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
-        process.exitCode = r.ok ? 0 : 1;
-        return;
-      }
-      case "verify": {
-        if (!run) throw new Error("verify requires --run <run>");
-        const apply = str(args.apply);
-        if (apply) {
-          const res = applyVerdicts(run, apply);
-          console.log(formatVerifyReport(res));
-          process.exitCode = res.ok ? 0 : 1;
-        } else {
-          const shards = num(args.shards);
-          const shard = num(args.shard);
-          const honeypots = num(args.honeypots);
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
-          const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
-          const planted = todo.planted ?? 0;
-          const hp = honeypots ? ` (incl. ${planted} honeypot(s))` : "";
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
-          if (honeypots && planted < honeypots)
-            console.log(
-              planted === 0 ? "  ! 0 planted \u2014 run too small for honeypots (need >= 2 gradeable pairs across distinct findings); skeptic-QC will not run" : `  ! only ${planted}/${honeypots} honeypot(s) planted \u2014 cross-pair pool exhausted; skeptic-QC is thinner than requested`
-            );
-        }
-        return;
-      }
-      case "backlog": {
-        if (!run) throw new Error("backlog requires --run <run>");
-        const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
-        console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
-        return;
-      }
-      case "status": {
-        if (!run) throw new Error("status requires --run <run>");
-        const s = statusRun(run);
-        console.log(args.json ? JSON.stringify(s, null, 2) : formatStatus(s, run));
-        return;
-      }
-      case "score": {
-        if (!run) throw new Error("score requires --run <run>");
-        const sc = scoreRun(run);
-        console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
-        if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : defaultLedgerPath(run);
-          appendHistory(run, file);
-          (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
-        }
-        return;
-      }
-      case "history": {
-        const explicit = str(args.file) || args._[1];
-        const file = explicit || (run ? defaultLedgerPath(run) : void 0);
-        if (!file) throw new Error("history requires a ledger path, --file <f>, or --run <run> (to locate the default ledger)");
-        const entries = readHistory(file);
-        if (args.json) {
-          console.log(JSON.stringify(entries, null, 2));
-          return;
-        }
-        console.log(
-          entries.length ? formatHistory(entries, file) : `ultraeval history: no ledger entries at ${file} \u2014 run \`score --run <run> --history\` to record a trend`
-        );
-        return;
-      }
-      case "fix": {
-        if (!run) throw new Error("fix requires --run <run>");
-        const engine = fileURLToPath(import.meta.url);
-        const written = emitFixAgents(run, engine, { task: str(args.task), workflow: !!args.workflow });
-        console.log(`ultraeval fix: ${written.length} file(s) -> ${run}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
-        return;
-      }
-      case "verify-fix": {
-        const task = str(args.task);
-        if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
-        const res = verifyFix(run, task);
-        console.log(formatVerifyFix(res));
-        process.exitCode = res.ok ? 0 : 1;
-        return;
-      }
-      case "rejudge": {
-        const out = str(args.out);
-        if (!run || !out) throw new Error("rejudge requires --run <run> and --out <run2>");
-        const engine = fileURLToPath(import.meta.url);
-        const copied = rejudgeRun(run, out, engine);
-        console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
-        console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
-        return;
-      }
-      case "render": {
-        if (!run) throw new Error("render requires --run <run>");
-        const written = render(run, { out: str(args.out), html: !args["no-html"], md: !args["no-md"] });
-        if (args.sarif) written.push(writeSarif(run, str(args.out)));
-        console.log(`ultraeval render:
-${written.map((w) => `  ${w}`).join("\n")}`);
-        return;
-      }
-      case "clean": {
-        if (!run) throw new Error("clean requires --run <run>");
-        const removed = clean(run, { all: !!args.all });
-        console.log(removed.length ? `ultraeval clean: removed
-${removed.map((w) => `  ${w}`).join("\n")}` : "ultraeval clean: nothing to remove");
-        return;
-      }
-      default:
-        console.error(`unknown command: ${cmd}
+    const handler = commandHandlers[cmd];
+    if (!handler) {
+      console.error(`unknown command: ${cmd}
 
 ${HELP}`);
-        process.exitCode = 2;
+      process.exitCode = 2;
+      return;
     }
+    handler(args);
   } catch (e) {
     console.error(`ultraeval ${cmd}: ${e.message}`);
     process.exitCode = 2;
   }
 }
-main();
+function isEntrypoint() {
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1] ?? "")).href;
+  } catch {
+    return false;
+  }
+}
+if (isEntrypoint()) main();
+export {
+  commandHandlers
+};
