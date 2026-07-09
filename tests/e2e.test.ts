@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { FLAG_SPEC } from "../src/cliargs.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BUNDLE = join(ROOT, "scripts", "ultraeval.mjs");
@@ -105,14 +106,12 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(help.out).toMatch(/later files win per claim\+evidence pair/i);
   });
 
-  it("--help lists every command the parser dispatches (no COMMAND_FLAGS/help drift)", () => {
-    // Derive the dispatched command set from cli.ts's COMMAND_FLAGS table (source
-    // of truth) and assert the usage text names each — so a new command can never
-    // ship in the parser without a --help entry.
-    const cliSrc = readFileSync(join(ROOT, "src", "cli.ts"), "utf8");
-    const start = cliSrc.indexOf("COMMAND_FLAGS");
-    const block = cliSrc.slice(start, cliSrc.indexOf("};", start));
-    const cmds = [...block.matchAll(/^\s*"?([a-z-]+)"?:\s*\[/gm)].map((m) => m[1]);
+  it("--help lists every command the parser dispatches (no FLAG_SPEC/help drift)", () => {
+    // Derive the dispatched command set from FLAG_SPEC (the single source of truth
+    // for the flag surface, from which VALUE_FLAGS + COMMAND_FLAGS both derive) and
+    // assert the usage text names each — so a new command can never ship in the
+    // parser without a --help entry.
+    const cmds = Object.keys(FLAG_SPEC);
     expect(cmds).toContain("history"); // the new command is in the set
     expect(cmds.length).toBeGreaterThan(10);
     const help = run(["--help"]).out;

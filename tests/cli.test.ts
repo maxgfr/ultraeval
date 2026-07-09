@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { COMMAND_FLAGS, FLAG_SPEC, OPTIONAL_VALUE_FLAGS, VALUE_FLAGS } from "../src/cliargs.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BUNDLE = join(ROOT, "scripts", "ultraeval.mjs");
@@ -179,6 +180,54 @@ describe("cli — history reads back the score-trend ledger (FIX-022)", () => {
     const r = run(["history", "--file", join(tmpdir(), `ue-absent-${Date.now()}.jsonl`)]);
     expect(r.status).toBe(0);
     expect(r.out).toMatch(/no ledger|no history|score --run/i);
+  });
+});
+
+describe("cli — flag registries cannot drift (FIX-006)", () => {
+  it("VALUE_FLAGS is exactly the set of value-arity flags declared in FLAG_SPEC (parser cannot lag the allow-list)", () => {
+    const specValue = new Set(
+      Object.values(FLAG_SPEC)
+        .flatMap((flags) => Object.entries(flags))
+        .filter(([, arity]) => arity === "value")
+        .map(([name]) => `--${name}`),
+    );
+    expect([...VALUE_FLAGS].sort()).toEqual([...specValue].sort());
+  });
+
+  it("OPTIONAL_VALUE_FLAGS is exactly the optional-value flags declared in FLAG_SPEC", () => {
+    const specOptional = new Set(
+      Object.values(FLAG_SPEC)
+        .flatMap((flags) => Object.entries(flags))
+        .filter(([, arity]) => arity === "optional-value")
+        .map(([name]) => `--${name}`),
+    );
+    expect([...OPTIONAL_VALUE_FLAGS].sort()).toEqual([...specOptional].sort());
+  });
+
+  it("COMMAND_FLAGS lists exactly FLAG_SPEC's per-command flag names", () => {
+    for (const [cmd, flags] of Object.entries(FLAG_SPEC)) {
+      expect(COMMAND_FLAGS[cmd]?.slice().sort()).toEqual(Object.keys(flags).sort());
+    }
+    expect(Object.keys(COMMAND_FLAGS).sort()).toEqual(Object.keys(FLAG_SPEC).sort());
+  });
+
+  it("every value-taking command flag is registered as value-consuming in the parser (no silent boolean misparse)", () => {
+    // The exact drift the finding warns about: a value flag in a command's
+    // allow-list but absent from VALUE_FLAGS → parse() would treat `--flag value`
+    // as `{flag:true}` and push `value` into positionals with no error.
+    for (const flags of Object.values(FLAG_SPEC)) {
+      for (const [name, arity] of Object.entries(flags)) {
+        if (arity === "value") expect(VALUE_FLAGS.has(`--${name}`)).toBe(true);
+        if (arity === "optional-value") expect(OPTIONAL_VALUE_FLAGS.has(`--${name}`)).toBe(true);
+      }
+    }
+  });
+
+  it("every VALUE_FLAGS / OPTIONAL_VALUE_FLAGS member is used by at least one command (no orphan parser flag)", () => {
+    const known = new Set(Object.values(COMMAND_FLAGS).flat());
+    for (const vf of [...VALUE_FLAGS, ...OPTIONAL_VALUE_FLAGS]) {
+      expect(known.has(vf.replace(/^--/, ""))).toBe(true);
+    }
   });
 });
 

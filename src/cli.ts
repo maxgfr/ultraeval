@@ -16,7 +16,7 @@ import { appendHistory, defaultLedgerPath, formatHistory, formatScore, readHisto
 import { formatStatus, statusRun } from "./status.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
-import { type Args, num, parse, str } from "./cliargs.js";
+import { type Args, COMMAND_FLAGS, num, parse, str } from "./cliargs.js";
 import { exists, readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
 
@@ -76,26 +76,9 @@ Commands:
 
 Exit codes: 0 = ok / gate passed · 1 = gate failed (check/verify) · 2 = usage or runtime error.`;
 
-// Known flags per command. A typo'd gate flag must never be silently ignored —
-// `check --require-verfy` weakening the exit gate is exactly the failure mode.
-const COMMAND_FLAGS: Record<string, string[]> = {
-  init: ["target", "out", "kind", "category", "mode", "bar", "since"],
-  plan: ["run"],
-  analyze: ["run", "since", "json", "target", "out"],
-  brainstorm: ["run", "rank", "check"],
-  compare: ["run", "base", "json", "gate"],
-  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min", "json"],
-  verify: ["run", "apply", "max-verify", "shards", "shard", "honeypots"],
-  backlog: ["run", "tdd", "out"],
-  fix: ["run", "task", "workflow"],
-  "verify-fix": ["run", "task"],
-  score: ["run", "json", "history"],
-  history: ["run", "file", "json"],
-  rejudge: ["run", "out"],
-  status: ["run", "json"],
-  render: ["run", "out", "no-html", "no-md", "sarif"],
-  clean: ["run", "all"],
-};
+// COMMAND_FLAGS (the per-command allow-list rejectUnknownFlags enforces) is
+// derived from FLAG_SPEC in cliargs.ts alongside the parser's VALUE_FLAGS, so a
+// typo'd or value-flag drift between the two registries is now impossible.
 
 // Smallest edit distance for the did-you-mean hint.
 function editDistance(a: string, b: string): number {

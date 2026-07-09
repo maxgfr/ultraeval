@@ -2444,27 +2444,40 @@ function formatStatus(s, runDir) {
 }
 
 // src/cliargs.ts
-var VALUE_FLAGS = /* @__PURE__ */ new Set([
-  "--target",
-  "--out",
-  "--run",
-  "--kind",
-  "--category",
-  "--mode",
-  "--since",
-  "--base",
-  "--apply",
-  "--min-findings",
-  "--coverage-min",
-  "--max-verify",
-  "--shards",
-  "--shard",
-  "--bar",
-  "--honeypots",
-  "--task",
-  "--file"
-]);
-var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
+var FLAG_SPEC = {
+  init: { target: "value", out: "value", kind: "value", category: "value", mode: "value", bar: "value", since: "value" },
+  plan: { run: "value" },
+  analyze: { run: "value", since: "value", json: "boolean", target: "value", out: "value" },
+  brainstorm: { run: "value", rank: "boolean", check: "boolean" },
+  compare: { run: "value", base: "value", json: "boolean", gate: "boolean" },
+  check: {
+    run: "value",
+    semantic: "boolean",
+    "require-verify": "boolean",
+    strict: "boolean",
+    "min-findings": "value",
+    "coverage-min": "value",
+    json: "boolean"
+  },
+  verify: { run: "value", apply: "value", "max-verify": "value", shards: "value", shard: "value", honeypots: "value" },
+  backlog: { run: "value", tdd: "boolean", out: "value" },
+  fix: { run: "value", task: "value", workflow: "boolean" },
+  "verify-fix": { run: "value", task: "value" },
+  score: { run: "value", json: "boolean", history: "optional-value" },
+  history: { run: "value", file: "value", json: "boolean" },
+  rejudge: { run: "value", out: "value" },
+  status: { run: "value", json: "boolean" },
+  render: { run: "value", out: "value", "no-html": "boolean", "no-md": "boolean", sarif: "boolean" },
+  clean: { run: "value", all: "boolean" }
+};
+var flagsOfArity = (arity) => [
+  ...new Set(
+    Object.values(FLAG_SPEC).flatMap((flags) => Object.entries(flags)).filter(([, a]) => a === arity).map(([name]) => `--${name}`)
+  )
+];
+var VALUE_FLAGS = new Set(flagsOfArity("value"));
+var OPTIONAL_VALUE_FLAGS = new Set(flagsOfArity("optional-value"));
+var COMMAND_FLAGS = Object.fromEntries(Object.entries(FLAG_SPEC).map(([cmd, flags]) => [cmd, Object.keys(flags)]));
 function parse(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -2725,24 +2738,6 @@ Commands:
   help | --help        version | --version
 
 Exit codes: 0 = ok / gate passed \xB7 1 = gate failed (check/verify) \xB7 2 = usage or runtime error.`;
-var COMMAND_FLAGS = {
-  init: ["target", "out", "kind", "category", "mode", "bar", "since"],
-  plan: ["run"],
-  analyze: ["run", "since", "json", "target", "out"],
-  brainstorm: ["run", "rank", "check"],
-  compare: ["run", "base", "json", "gate"],
-  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min", "json"],
-  verify: ["run", "apply", "max-verify", "shards", "shard", "honeypots"],
-  backlog: ["run", "tdd", "out"],
-  fix: ["run", "task", "workflow"],
-  "verify-fix": ["run", "task"],
-  score: ["run", "json", "history"],
-  history: ["run", "file", "json"],
-  rejudge: ["run", "out"],
-  status: ["run", "json"],
-  render: ["run", "out", "no-html", "no-md", "sarif"],
-  clean: ["run", "all"]
-};
 function editDistance(a, b) {
   const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 0; j <= b.length; j++) dp[0][j] = j;
