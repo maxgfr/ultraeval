@@ -18,6 +18,8 @@ function runDir(): string {
   writeFileSync(join(d, "findings.json"), JSON.stringify({ findings: [] }));
   writeFileSync(join(d, "VERIFY.json"), "{}");
   writeFileSync(join(d, "index.html"), "<html></html>");
+  writeFileSync(join(d, "BACKLOG.json"), JSON.stringify({ tasks: [] }));
+  writeFileSync(join(d, "REMEDIATION.md"), "# remediation");
   mkdirSync(join(d, "fixes"));
   writeFileSync(join(d, "fixes", "FIX-001-x.md"), "# card");
   return d;
@@ -71,8 +73,27 @@ describe("clean — run-guard against deleting arbitrary directories", () => {
     clean(d);
     expect(existsSync(join(d, "VERIFY.json"))).toBe(false);
     expect(existsSync(join(d, "index.html"))).toBe(false);
-    expect(existsSync(join(d, "fixes"))).toBe(false);
     expect(existsSync(join(d, "eval.config.json"))).toBe(true);
     expect(existsSync(join(d, "findings.json"))).toBe(true);
+  });
+
+  it("default clean preserves the remediation deliverables (BACKLOG.json, REMEDIATION.md, fixes/) — only --all removes them", () => {
+    const d = runDir();
+    const removed = clean(d);
+    // The docs (SKILL.md §Safety + --help) promise clean keeps the deliverables;
+    // BACKLOG.json + REMEDIATION.md + fixes/FIX-*.md are the remediation deliverable a fix agent consumes.
+    expect(existsSync(join(d, "BACKLOG.json"))).toBe(true);
+    expect(existsSync(join(d, "REMEDIATION.md"))).toBe(true);
+    expect(existsSync(join(d, "fixes"))).toBe(true);
+    expect(existsSync(join(d, "fixes", "FIX-001-x.md"))).toBe(true);
+    expect(removed).not.toContain(join(d, "BACKLOG.json"));
+    expect(removed).not.toContain(join(d, "REMEDIATION.md"));
+    expect(removed).not.toContain(join(d, "fixes"));
+  });
+
+  it("--all still removes the remediation deliverables", () => {
+    const d = runDir();
+    clean(d, { all: true });
+    expect(existsSync(d)).toBe(false);
   });
 });

@@ -2,20 +2,13 @@ import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { exists } from "./util.js";
 
-// Derived artifacts a re-run regenerates. Default `clean` removes ONLY these and
-// keeps the deliverables (findings.json, RESULTS.md, SUMMARY.md, research/,
-// runs/, agents/, eval.workflow.mjs, eval.config.json). `--all` removes the run.
-const DERIVED = [
-  "VERIFY.todo.json",
-  "VERIFY.md",
-  "VERIFY.json",
-  "VERIFY.honeypots.json",
-  "index.html",
-  "index.md",
-  "BACKLOG.json",
-  "REMEDIATION.md",
-  "eval.sarif",
-];
+// Derived gate/render artifacts a re-run regenerates. Default `clean` removes ONLY
+// these and keeps the deliverables — findings.json, RESULTS.md, SUMMARY.md,
+// research/, runs/, agents/, eval.workflow.mjs, eval.config.json, and the
+// remediation deliverable (BACKLOG.json, REMEDIATION.md, fixes/FIX-*.md) a fix
+// agent consumes. `--all` removes the whole run. This matches SKILL.md §Safety and
+// the `--help` text, which both promise clean "keeps the deliverables".
+const DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "VERIFY.honeypots.json", "index.html", "index.md", "eval.sarif"];
 
 export function clean(runDir: string, opts: { all?: boolean } = {}): string[] {
   const removed: string[] = [];
@@ -47,10 +40,7 @@ export function clean(runDir: string, opts: { all?: boolean } = {}): string[] {
       }
     }
   }
-  const fixes = join(runDir, "fixes");
-  if (exists(fixes)) {
-    rmSync(fixes, { recursive: true, force: true });
-    removed.push(fixes);
-  }
+  // fixes/ (the TDD-card tree) is a remediation deliverable, not a derived
+  // gate/render artifact — default clean preserves it; only `--all` removes it.
   return removed;
 }

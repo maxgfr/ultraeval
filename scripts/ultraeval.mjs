@@ -1472,17 +1472,7 @@ function writeSarif(runDir, out) {
 // src/clean.ts
 import { readdirSync as readdirSync4, rmSync as rmSync2 } from "fs";
 import { join as join9 } from "path";
-var DERIVED = [
-  "VERIFY.todo.json",
-  "VERIFY.md",
-  "VERIFY.json",
-  "VERIFY.honeypots.json",
-  "index.html",
-  "index.md",
-  "BACKLOG.json",
-  "REMEDIATION.md",
-  "eval.sarif"
-];
+var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "VERIFY.honeypots.json", "index.html", "index.md", "eval.sarif"];
 function clean(runDir, opts = {}) {
   const removed = [];
   if (exists(runDir) && !exists(join9(runDir, "eval.config.json"))) {
@@ -1509,11 +1499,6 @@ function clean(runDir, opts = {}) {
         removed.push(join9(runDir, e));
       }
     }
-  }
-  const fixes = join9(runDir, "fixes");
-  if (exists(fixes)) {
-    rmSync2(fixes, { recursive: true, force: true });
-    removed.push(fixes);
   }
   return removed;
 }
