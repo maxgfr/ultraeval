@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { Backlog, EvalConfig, FindingsDoc, Provenance, Scorecard, VerifyResult } from "./types.js";
-import { exists, opportunityValue, readJson, writeText } from "./util.js";
+import type { Backlog, EvalConfig, FindingsDoc, Scorecard, VerifyResult } from "./types.js";
+import { exists, opportunityValue, provLine, readJson, writeText } from "./util.js";
 
 // One-line anchor text for a dimension, joined from the config by id (the
 // scorecard stays score-focused and does not duplicate anchors).
@@ -8,11 +8,6 @@ function anchorFor(cfg: EvalConfig, id: string): string {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} — ${a.ref}`).join("; ") : "—";
 }
-
-const provLine = (p?: Provenance): string =>
-  p
-    ? `engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}`
-    : "";
 
 export interface RenderOpts {
   out?: string;

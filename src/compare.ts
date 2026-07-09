@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { EvalConfig, Finding, FindingsDoc, Provenance, Scorecard } from "./types.js";
-import { exists, readJson, titleKey, writeText } from "./util.js";
+import type { EvalConfig, Finding, FindingsDoc, Scorecard } from "./types.js";
+import { exists, provLine, readJson, titleKey, writeText } from "./util.js";
 
 interface Side {
   findings: Finding[];
@@ -31,11 +31,6 @@ function fingerprint(f: Finding): string | null {
   const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x): x is string => !!x))].sort();
   return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
 }
-
-const provLine = (p?: Provenance): string =>
-  p
-    ? `engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}`
-    : "no provenance (legacy run)";
 
 // A score delta only means something when both runs were scored the same way.
 function comparabilityWarnings(base: Side, cur: Side): string[] {
@@ -113,8 +108,8 @@ export function compareRuns(baseDir: string, newDir: string): CompareResult {
       : "";
   const md = `# Comparison — base \`${baseDir}\` → current \`${newDir}\`
 
-- base: ${provLine(base.cfg?.provenance)}
-- current: ${provLine(cur.cfg?.provenance)}
+- base: ${provLine(base.cfg?.provenance, "no provenance (legacy run)")}
+- current: ${provLine(cur.cfg?.provenance, "no provenance (legacy run)")}
 
 ${scoreLine}${stabilityLine}
 ${warningBlock}

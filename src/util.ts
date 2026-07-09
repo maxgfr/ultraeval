@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { Effort, Impact } from "./types.js";
+import type { Effort, Impact, Provenance } from "./types.js";
 
 // ---- fs helpers ----------------------------------------------------------
 export function exists(p: string): boolean {
@@ -202,6 +202,16 @@ export function extractContext(absPath: string, start?: number, end?: number, pa
 // duplicated across verify/backlog and compare/brainstorm).
 export const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
 export const titleKey = (title: string): string => title.toLowerCase().trim();
+
+// The provenance one-liner (engine/protocol/rubric + short target SHA + dirty
+// star). Shared by compare (COMPARE.md) and render (index.md/html); the two
+// callers differ only in what an ABSENT provenance renders as — compare labels
+// it "no provenance (legacy run)", render prints nothing.
+export function provLine(p?: Provenance, emptyText = ""): string {
+  return p
+    ? `engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}`
+    : emptyText;
+}
 
 // ---- opportunity ranking -------------------------------------------------
 // value = impact / effort — a "quick win" (high/S) tops a "big bet" (high/L).

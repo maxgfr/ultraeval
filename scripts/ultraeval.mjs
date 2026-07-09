@@ -146,6 +146,9 @@ function extractContext(absPath, start, end, pad = 2) {
 }
 var SEV_ORDER = { P0: 0, P1: 1, P2: 2 };
 var titleKey = (title) => title.toLowerCase().trim();
+function provLine(p, emptyText = "") {
+  return p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : emptyText;
+}
 function opportunityValue(impact, effort) {
   const i = impact === "high" ? 3 : impact === "med" ? 2 : 1;
   const e = effort === "S" ? 1 : effort === "M" ? 2 : 3;
@@ -941,7 +944,6 @@ function fingerprint(f) {
   const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x) => !!x))].sort();
   return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
 }
-var provLine = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "no provenance (legacy run)";
 function comparabilityWarnings(base, cur) {
   const warnings = [];
   if (!base.cfg || !cur.cfg) return warnings;
@@ -999,8 +1001,8 @@ ${warnings.map((w) => `> **\u26A0 ${w}**`).join("\n")}
 Stability (same target commit ${baseCommit.slice(0, 7)}): |\u0394overall| = ${Math.abs(scoreDelta ?? 0)} \xB7 agreement ${base.score.agreement ?? "\u2014"} \u2192 ${cur.score.agreement ?? "\u2014"}` : "";
   const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
 
-- base: ${provLine(base.cfg?.provenance)}
-- current: ${provLine(cur.cfg?.provenance)}
+- base: ${provLine(base.cfg?.provenance, "no provenance (legacy run)")}
+- current: ${provLine(cur.cfg?.provenance, "no provenance (legacy run)")}
 
 ${scoreLine}${stabilityLine}
 ${warningBlock}
@@ -2024,7 +2026,6 @@ function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
-var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
   const cfg = readJson(join14(runDir, "eval.config.json"));
   const doc = readJson(join14(runDir, "findings.json"));
@@ -2062,7 +2063,7 @@ function opportunities(doc) {
 function buildMd(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
   const rows = doc.findings.filter((f) => f.status !== "dismissed" && f.kind !== "opportunity").map((f) => `| ${f.id} | ${f.severity} | ${f.title.replace(/\|/g, "\\|")} | ${f.status} | ${(f.evidence ?? []).map((e) => `\`${e.ref}\``).join(" ")} |`).join("\n");
-  const prov = provLine2(cfg.provenance);
+  const prov = provLine(cfg.provenance);
   const parts = [
     `# Evaluation \u2014 ${cfg.target}`,
     ``,
@@ -2135,7 +2136,7 @@ function buildHtml(cfg, doc, verify, backlog, scorecard) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval \u2014 ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation \u2014 ${esc(cfg.target)}</h1>
 <p class="meta"><code>${esc(cfg.targetAbs)}</code> \xB7 ${cfg.kind} \xB7 ${esc(cfg.category)} \xB7 ${c.total} findings (P0 ${c.p0} \xB7 P1 ${c.p1} \xB7 P2 ${c.p2})${c.opps ? ` \xB7 ${c.opps} opportunities` : ""}</p>
-${provLine2(cfg.provenance) ? `<p class="meta">${esc(provLine2(cfg.provenance))}</p>` : ""}
+${provLine(cfg.provenance) ? `<p class="meta">${esc(provLine(cfg.provenance))}</p>` : ""}
 ${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
 ${oppsHtml}

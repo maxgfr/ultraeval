@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveEvidence, SEV_ORDER, titleKey } from "../src/util.js";
+import type { Provenance } from "../src/types.js";
+import { provLine, resolveEvidence, SEV_ORDER, titleKey } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -29,6 +30,42 @@ describe("shared ranking/identity helpers", () => {
     expect(SEV_ORDER.P1).toBe(1);
     expect(SEV_ORDER.P2).toBe(2);
     expect(titleKey("  Quick Win ")).toBe("quick win");
+  });
+});
+
+describe("provLine — shared provenance one-liner (compare + render)", () => {
+  const prov = (over: Partial<Provenance> = {}): Provenance =>
+    ({
+      engineVersion: "1.0.0",
+      protocolVersion: "1",
+      rubricVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: "aaaaaaaaaaaa",
+      targetGit: { commit: "a".repeat(40), dirty: false },
+      ...over,
+    }) as Provenance;
+
+  it("renders engine/protocol/rubric + short target SHA", () => {
+    expect(provLine(prov())).toBe("engine 1.0.0 · protocol 1 · rubric 1 · target aaaaaaa");
+  });
+
+  it("appends a dirty star when the target tree is dirty", () => {
+    expect(provLine(prov({ targetGit: { commit: "a".repeat(40), dirty: true } }))).toBe("engine 1.0.0 · protocol 1 · rubric 1 · target aaaaaaa*");
+  });
+
+  it("omits the target segment when there is no targetGit", () => {
+    expect(provLine(prov({ targetGit: undefined }))).toBe("engine 1.0.0 · protocol 1 · rubric 1");
+  });
+
+  it("render's fallback (default emptyText) is the empty string", () => {
+    expect(provLine(undefined)).toBe("");
+  });
+
+  it("compare's fallback labels a legacy run", () => {
+    expect(provLine(undefined, "no provenance (legacy run)")).toBe("no provenance (legacy run)");
   });
 });
 
