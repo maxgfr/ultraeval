@@ -138,6 +138,32 @@ asserts the install-bundle shape (no root SKILL.md, engine + references present)
 - New rubric category: add a set in `src/rubrics.ts` and a matcher in `defaultDimensions`, document it in
   `references/rubric-library.md`.
 
+## Troubleshooting
+
+- **`eval.workflow.mjs` throws a `SyntaxError`, or nothing happens, under `node`.** It is a Workflow-harness
+  script — `agent()`/`phase()`/`parallel()`/`log()` are globals the harness injects, not Node builtins.
+  Launch it with your Workflow tool (`Workflow({ scriptPath: "<run>/eval.workflow.mjs" })`) or run the
+  stages by hand from `agents/*.md`. Run under plain `node` it now prints that guidance and exits 2.
+
+- **`score` errored instead of printing a number / `judges.jsonl` is missing.** `score` no longer emits a
+  plausible `0/100` from an empty panel: with no `judges.jsonl` (or an empty one) it throws ("no judge
+  verdicts in judges.jsonl — the Judge phase has not run") and exits 2. Dispatch the judge panel
+  (`agents/judge.md`) to append `judges.jsonl`, then re-run `score`.
+
+- **`verify --apply` says "verdicts file not found".** The path you passed does not exist — point `--apply`
+  at the FILLED `VERIFY.todo.json` (or a `{"pairs":[…]}` verdicts file), not the honeypot ground truth.
+  It exits 2 (usage) with that message and never leaks the raw `ENOENT`.
+
+- **`verify --honeypots N` warns "only k/N planted" (or "0 planted").** Planting a trap needs two gradeable
+  claim↔evidence pairs drawn from DISTINCT findings; a small run exhausts that pool, so fewer than N (or
+  zero) get planted. Lower `--honeypots`, or add more grounded findings. `0 planted` means skeptic-QC does
+  not run for that worklist — the reported count is always the actually-planted one, never the requested one.
+
+- **`check` warns "dimensions changed since init".** The `dimensionsHash` stamped into provenance at `init`
+  no longer matches the current `eval.config.json` dimensions — the rubric was edited after `init`. This is
+  a WARNING only and is EXPECTED when the research stage refined the dimensions; it is recorded for the
+  audit trail and never fails the gate.
+
 ## Exit codes
 
 `0` ok / gate passed · `1` gate failed (`check`/`verify`) · `2` usage or runtime error.
