@@ -175,6 +175,7 @@ function main(): void {
         console.log(
           `ultraeval compare: score Δ ${r.scoreDelta ?? "n/a"} · ${r.resolved.length} resolved · ${r.introduced.length} introduced -> ${run}/COMPARE.md`,
         );
+        for (const w of r.warnings) console.log(`  ! ${w}`);
         return;
       }
       case "check": {

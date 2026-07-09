@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -176,5 +176,30 @@ describe("check — grounding gate", () => {
     const root = mkdtempSync(join(tmpdir(), "ue-check-"));
     tmps.push(root);
     expect(checkRun(root).ok).toBe(false);
+  });
+
+  it("warns (never fails) on a legacy run whose config has no provenance", () => {
+    const r = checkRun(scaffold([genuine]));
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/provenance/);
+  });
+
+  it("does not warn about provenance when the config records it", () => {
+    const run = scaffold([genuine]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.provenance = {
+      engineVersion: "1.0.0",
+      protocolVersion: "1",
+      rubricVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: "abc123def456",
+    };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const r = checkRun(run);
+    expect(r.warnings.join(" ")).not.toMatch(/provenance/);
   });
 });

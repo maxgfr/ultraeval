@@ -48,11 +48,19 @@ export function scoreRun(runDir: string): Scorecard {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
+  if (cfg.provenance) sc.provenance = cfg.provenance;
+  sc.scoredAt = new Date().toISOString();
   writeJson(join(runDir, "scorecard.json"), sc);
   return sc;
 }
 
 export function formatScore(sc: Scorecard): string {
   const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
-  return [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`].join("\n");
+  const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
+  if (sc.provenance) {
+    const p = sc.provenance;
+    const sha = p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";
+    lines.push(`  engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${sha}`);
+  }
+  return lines.join("\n");
 }

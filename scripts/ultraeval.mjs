@@ -412,6 +412,8 @@ var SEVERITY_DEFS = {
 };
 var VALID_IMPACT = ["high", "med", "low"];
 var VALID_EFFORT = ["S", "M", "L"];
+var PROTOCOL_VERSION = "1";
+var RUBRIC_VERSION = "1";
 var MEETS_BAR = 80;
 
 // src/backlog.ts
@@ -809,6 +811,7 @@ function checkRun(runDir, opts = {}) {
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
   }
   if (exists(join5(runDir, "RESULTS.md")) && !exists(join5(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (!cfg.provenance) warnings.push("legacy run (pre-protocol) \u2014 no provenance recorded; re-init to stamp engine/protocol/rubric versions");
   return { ok: errors.length === 0, errors, warnings };
 }
 function formatCheckReport(r, runDir) {
@@ -824,9 +827,26 @@ import { join as join6 } from "path";
 function load(dir) {
   const findings = exists(join6(dir, "findings.json")) ? readJson(join6(dir, "findings.json")).findings ?? [] : [];
   const score = exists(join6(dir, "scorecard.json")) ? readJson(join6(dir, "scorecard.json")) : null;
-  return { findings, score };
+  const cfg = exists(join6(dir, "eval.config.json")) ? readJson(join6(dir, "eval.config.json")) : null;
+  return { findings, score, cfg };
 }
 var key = (f) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+var provLine = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "no provenance (legacy run)";
+function comparabilityWarnings(base, cur) {
+  const warnings = [];
+  if (!base.cfg || !cur.cfg) return warnings;
+  const rubric = (cfg) => JSON.stringify((cfg.dimensions ?? []).map((d) => [d.id, d.weight]));
+  if (rubric(base.cfg) !== rubric(cur.cfg)) warnings.push("rubrics differ (dimension ids/weights) \u2014 scores are not directly comparable");
+  const bp = base.cfg.provenance;
+  const cp = cur.cfg.provenance;
+  if (bp && cp) {
+    if (bp.protocolVersion !== cp.protocolVersion)
+      warnings.push(`protocol versions differ (${bp.protocolVersion} \u2192 ${cp.protocolVersion}) \u2014 score delta is not comparable across protocol versions`);
+    if (bp.rubricVersion !== cp.rubricVersion)
+      warnings.push(`rubric versions differ (${bp.rubricVersion} \u2192 ${cp.rubricVersion}) \u2014 score delta is not comparable across rubric versions`);
+  }
+  return warnings;
+}
 function compareRuns(baseDir, newDir) {
   const base = load(baseDir);
   const cur = load(newDir);
@@ -837,12 +857,19 @@ function compareRuns(baseDir, newDir) {
   const resolved = liveBase.filter((f) => !curKeys.has(key(f)));
   const introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
   const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
+  const warnings = comparabilityWarnings(base, cur);
   const line = (f) => `- ${f.kind === "opportunity" ? "opp" : f.severity} \xB7 ${f.title}`;
   const scoreLine = base.score && cur.score ? `Score: ${base.score.overall} \u2192 ${cur.score.overall} (${(scoreDelta ?? 0) >= 0 ? "+" : ""}${scoreDelta}) \xB7 meets-expectations ${base.score.meetsExpectations} \u2192 ${cur.score.meetsExpectations}` : "Score: (one or both runs have no scorecard.json)";
+  const warningBlock = warnings.length ? `
+${warnings.map((w) => `> **\u26A0 ${w}**`).join("\n")}
+` : "";
   const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
 
-${scoreLine}
+- base: ${provLine(base.cfg?.provenance)}
+- current: ${provLine(cur.cfg?.provenance)}
 
+${scoreLine}
+${warningBlock}
 ## Resolved since base (${resolved.length})
 
 ${resolved.map(line).join("\n") || "- none"}
@@ -851,7 +878,7 @@ ${resolved.map(line).join("\n") || "- none"}
 
 ${introduced.map(line).join("\n") || "- none"}
 `;
-  return { scoreDelta, resolved, introduced, md };
+  return { scoreDelta, resolved, introduced, warnings, md };
 }
 function runCompare(baseDir, newDir, outDir) {
   const r = compareRuns(baseDir, newDir);
@@ -896,6 +923,8 @@ function clean(runDir, opts = {}) {
 }
 
 // src/init.ts
+import { execFileSync as execFileSync2 } from "child_process";
+import { createHash } from "crypto";
 import { join as join8, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
@@ -1124,20 +1153,52 @@ function detectKind(targetAbs) {
   }
   return "codebase";
 }
+function gitInfo(targetAbs) {
+  const git = (args) => execFileSync2("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  try {
+    const commit = git(["rev-parse", "HEAD"]);
+    const dirty = git(["status", "--porcelain"]).length > 0;
+    let branch;
+    try {
+      branch = git(["rev-parse", "--abbrev-ref", "HEAD"]) || void 0;
+    } catch {
+      branch = void 0;
+    }
+    return { commit, ...branch ? { branch } : {}, dirty };
+  } catch {
+    return void 0;
+  }
+}
+var dimensionsHash = (dims) => createHash("sha256").update(JSON.stringify(dims)).digest("hex").slice(0, 12);
 function initRun(opts) {
   const targetAbs = resolve2(process.cwd(), opts.target);
   if (!exists(targetAbs)) throw new Error(`target not found: ${opts.target}`);
   const kind = opts.kind ?? detectKind(targetAbs);
   const category = opts.category ?? (kind === "skill" ? "agent skill" : "software project");
+  const mode = opts.mode ?? "audit";
+  const dimensions = defaultDimensions(kind, category);
+  const targetGit = gitInfo(targetAbs);
+  const provenance = {
+    engineVersion: VERSION,
+    protocolVersion: PROTOCOL_VERSION,
+    rubricVersion: RUBRIC_VERSION,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    mode,
+    kind,
+    category,
+    dimensionsHash: dimensionsHash(dimensions),
+    ...targetGit ? { targetGit } : {}
+  };
   const cfg = {
     target: opts.target,
     targetAbs,
     kind,
     category,
-    mode: opts.mode ?? "audit",
-    dimensions: defaultDimensions(kind, category),
+    mode,
+    dimensions,
     note: "starter dimensions \u2014 the research stage refines them",
-    version: VERSION
+    version: VERSION,
+    provenance
   };
   const runDir = resolve2(process.cwd(), opts.out);
   ensureDir(join8(runDir, "runs"));
@@ -1423,6 +1484,11 @@ function planRun(runDir, engineAbs) {
 
 // src/render.ts
 import { join as join10 } from "path";
+function anchorFor(cfg, id) {
+  const d = (cfg.dimensions ?? []).find((x) => x.id === id);
+  return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
+}
+var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
   const cfg = readJson(join10(runDir, "eval.config.json"));
   const doc = readJson(join10(runDir, "findings.json"));
@@ -1460,10 +1526,12 @@ function opportunities(doc) {
 function buildMd(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
   const rows = doc.findings.filter((f) => f.status !== "dismissed" && f.kind !== "opportunity").map((f) => `| ${f.id} | ${f.severity} | ${f.title.replace(/\|/g, "\\|")} | ${f.status} | ${(f.evidence ?? []).map((e) => `\`${e.ref}\``).join(" ")} |`).join("\n");
+  const prov = provLine2(cfg.provenance);
   const parts = [
     `# Evaluation \u2014 ${cfg.target}`,
     ``,
     `> target \`${cfg.targetAbs}\` \xB7 ${cfg.kind} \xB7 ${cfg.category} \xB7 ${c.total} findings (P0 ${c.p0} \xB7 P1 ${c.p1} \xB7 P2 ${c.p2})${c.opps ? ` \xB7 ${c.opps} opportunities` : ""}`,
+    ...prov ? [`> ${prov}`] : [],
     ``
   ];
   if (scorecard) {
@@ -1472,9 +1540,9 @@ function buildMd(cfg, doc, verify, backlog, scorecard) {
       ``,
       `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
       ``,
-      `| dimension | score | weight |`,
-      `|-----------|-------|--------|`,
-      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} |`),
+      `| dimension | score | weight | anchored to |`,
+      `|-----------|-------|--------|-------------|`,
+      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} | ${anchorFor(cfg, d.id)} |`),
       ``
     );
   }
@@ -1516,7 +1584,7 @@ h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}t
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}th,td{border-color:#333}code{background:#222}.meta{color:#999}}`;
 function buildHtml(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
-  const verdict = scorecard ? `<h2>Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td></tr>`).join("")}</table>` : "";
+  const verdict = scorecard ? `<h2>Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>` : "";
   const rows = doc.findings.filter((f) => f.status !== "dismissed" && f.kind !== "opportunity").map(
     (f) => `<tr><td>${f.id}</td><td class="${f.severity.toLowerCase()}">${f.severity}</td><td>${esc(f.title)}</td><td>${f.status}</td><td>${(f.evidence ?? []).map((e) => `<code>${esc(e.ref)}</code>`).join(" ")}</td></tr>`
   ).join("");
@@ -1527,6 +1595,7 @@ function buildHtml(cfg, doc, verify, backlog, scorecard) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval \u2014 ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation \u2014 ${esc(cfg.target)}</h1>
 <p class="meta"><code>${esc(cfg.targetAbs)}</code> \xB7 ${cfg.kind} \xB7 ${esc(cfg.category)} \xB7 ${c.total} findings (P0 ${c.p0} \xB7 P1 ${c.p1} \xB7 P2 ${c.p2})${c.opps ? ` \xB7 ${c.opps} opportunities` : ""}</p>
+${provLine2(cfg.provenance) ? `<p class="meta">${esc(provLine2(cfg.provenance))}</p>` : ""}
 ${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
 ${oppsHtml}
@@ -1570,12 +1639,20 @@ function scoreRun(runDir) {
   const cfg = readJson(join11(runDir, "eval.config.json"));
   const doc = exists(join11(runDir, "findings.json")) ? readJson(join11(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
+  if (cfg.provenance) sc.provenance = cfg.provenance;
+  sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
   writeJson(join11(runDir, "scorecard.json"), sc);
   return sc;
 }
 function formatScore(sc) {
   const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
-  return [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`].join("\n");
+  const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
+  if (sc.provenance) {
+    const p = sc.provenance;
+    const sha = p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";
+    lines.push(`  engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${sha}`);
+  }
+  return lines.join("\n");
 }
 
 // src/verify.ts
@@ -1833,6 +1910,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         console.log(
           `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced -> ${run}/COMPARE.md`
         );
+        for (const w of r.warnings) console.log(`  ! ${w}`);
         return;
       }
       case "check": {

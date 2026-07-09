@@ -81,6 +81,26 @@ export interface Dimension {
   anchors?: DimensionAnchor[];
 }
 
+// Protocol/rubric versions are semantic contracts, bumped BY HAND in the commit
+// that changes phase/gate semantics (protocol) or starter dims/weights/anchors
+// (rubric) — deliberately not in the sync-version.mjs lockstep.
+export const PROTOCOL_VERSION = "1";
+export const RUBRIC_VERSION = "1";
+
+// Who/what/when of a run — makes runs attributable to a code state and a rubric
+// revision, and lets `compare` refuse to read a delta across incompatible runs.
+export interface Provenance {
+  engineVersion: string;
+  protocolVersion: string;
+  rubricVersion: string;
+  createdAt: string; // ISO 8601
+  mode: Mode;
+  kind: Kind;
+  category: string;
+  dimensionsHash: string; // sha256 (12 hex) of the dimensions at init
+  targetGit?: { commit: string; branch?: string; dirty: boolean };
+}
+
 export interface EvalConfig {
   target: string; // as the user gave it (may be relative)
   targetAbs: string; // resolved absolute path to the evaluated repo/dir
@@ -90,6 +110,7 @@ export interface EvalConfig {
   dimensions: Dimension[];
   note?: string;
   version: string;
+  provenance?: Provenance; // absent on legacy (pre-protocol) runs
 }
 
 // Where a finding is grounded. Grammar of `ref` (see references/gate-contract.md):
@@ -228,6 +249,8 @@ export interface Scorecard {
   dimensions: { id: string; name: string; weight: number; score: number }[]; // 0-5 avg across judges
   judges: number;
   reason: string;
+  provenance?: Provenance; // copied from eval.config.json when present
+  scoredAt?: string; // ISO 8601, stamped by `score`
 }
 
 // meets-expectations bar: below this weighted score it is false regardless of votes

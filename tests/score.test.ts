@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -107,5 +107,32 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
     scoreRun(run);
     expect(existsSync(join(run, "scorecard.json"))).toBe(true);
+  });
+
+  it("stamps the scorecard with the run provenance and scoredAt when the config has it", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.provenance = {
+      engineVersion: "9.9.9",
+      protocolVersion: "1",
+      rubricVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: "abc123def456",
+    };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const sc = scoreRun(run);
+    expect(sc.provenance?.engineVersion).toBe("9.9.9");
+    expect(Number.isNaN(Date.parse(sc.scoredAt ?? ""))).toBe(false);
+  });
+
+  it("a legacy config without provenance still scores and omits it from the scorecard", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    const sc = scoreRun(run);
+    expect(sc.provenance).toBeUndefined();
+    expect(sc.overall).toBeGreaterThan(0);
   });
 });
