@@ -10,7 +10,7 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
     {
       "id": "F1",                       // F<number>, unique
       "dimension": "security",           // optional; one of the run's dimension ids
-      "severity": "P0",                  // P0 trust/correctness/data-loss · P1 fidelity/coverage · P2 polish
+      "severity": "P0",                  // P0 Critical · P1 Major · P2 Minor — normative definitions in references/protocol.md (SEVERITY_DEFS)
       "title": "SQL injection in /u",
       "statement": "req.query.id flows unsanitized into a SELECT string.",
       "evidence": [                       // >= 1 resolvable ref REQUIRED
@@ -54,5 +54,6 @@ Flags: `--semantic` (fold VERIFY.json), `--require-verify` (fail if no adjudicat
 
 - `verify --run <RUN>` writes `VERIFY.todo.json` (one `{claimId, evidenceRef, claim, digest}` pair per gradeable evidence; `digest` is the extracted source/log context) + `VERIFY.md`. `--shards N --shard i` writes a disjoint slice for parallel skeptics; `--max-verify N` caps (default 60).
 - Fill each pair's `verdict`: `supported` (source states it) · `partial` (weaker version) · `unsupported` (does not address it) · `refuted` (contradicts it). An invalid token is ignored — it cannot false-green.
+- The verdicts file `--apply` accepts: `{ "pairs": [ { "claimId": "F1", "evidenceRef": "src/app.js:3", "verdict": "supported", "note": "…" } ] }` — a bare array of the same items works too, and the filled `VERIFY.todo.json` is itself valid input. `evidenceRef`/`note` are optional: verdicts reduce **per finding** (claimId); `evidenceRef` is the merge key when combining sharded verdict files (last one wins).
 - `verify --run <RUN> --apply <verdicts.json|a,b,c>` reduces to `VERIFY.json`. A finding **fails** if any evidence is `refuted`, or all its evidence is `unsupported`.
 - `check --run <RUN> --semantic` folds `VERIFY.json` in — additive, can only ADD a failure: a finding still `confirmed`/`open` but in `VERIFY.failures` fails the gate. Dismiss it or fix the claim.

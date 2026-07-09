@@ -4,12 +4,24 @@
   "description": "Evaluate a skill or codebase with a multi-agent workflow, then generate grounded, AI-exploitable fix docs and a TDD backlog. A skills.sh agent skill.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
-  "bin": { "ultraeval": "scripts/ultraeval.mjs" },
-  "files": ["skills", "scripts", "assets", "src"],
-  "engines": { "node": ">=18" },
+  "bin": {
+    "ultraeval": "scripts/ultraeval.mjs"
+  },
+  "files": [
+    "skills",
+    "scripts",
+    "assets",
+    "src"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT",
   "author": "maxgfr",
-  "repository": { "type": "git", "url": "https://github.com/maxgfr/ultraeval" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxgfr/ultraeval"
+  },
   "keywords": [
     "skills",
     "agent-skill",
@@ -43,10 +55,15 @@
     "@semantic-release/exec": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@types/node": "^20.14.0",
+    "ajv": "^8.20.0",
     "semantic-release": "^24.2.0",
     "tsup": "^8.3.0",
     "typescript": "^5.5.0",
     "vitest": "^4.1.0"
   },
-  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }

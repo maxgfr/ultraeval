@@ -57,6 +57,22 @@ describe("brainstorm — worklist + rank", () => {
     expect(doc.findings.some((f: F) => f.id === "F1" && f.kind !== "opportunity")).toBe(true);
   });
 
+  it("reports skipped and malformed opportunities instead of silently dropping or folding them", () => {
+    const dir = run([
+      { title: "good", impact: "high", effort: "S", statement: "s", evidence: [{ ref: "a.ts:1" }] },
+      { impact: "high", effort: "S", statement: "no title", evidence: [{ ref: "a.ts:1" }] },
+      { title: "bad impact", impact: "huge", effort: "S", statement: "s", evidence: [{ ref: "a.ts:1" }] },
+      { title: "good", impact: "med", effort: "M", statement: "duplicate title", evidence: [{ ref: "a.ts:1" }] },
+    ]);
+    const res = rankBrainstorm(dir);
+    expect(res.added).toBe(1);
+    expect(res.skipped.length).toBe(3);
+    const reasons = res.skipped.map((s) => s.reason).join(" ");
+    expect(reasons).toMatch(/title/);
+    expect(reasons).toMatch(/impact/);
+    expect(reasons).toMatch(/duplicate/);
+  });
+
   it("dedups an opportunity already present in findings", () => {
     const dir = run(
       [{ title: "Quick Win", impact: "high", effort: "S", statement: "s", evidence: [{ ref: "a.ts:1" }] }],

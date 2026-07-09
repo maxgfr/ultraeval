@@ -115,6 +115,12 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
     const body = raw.slice(4);
     const [rel = "", anchor] = body.split("#");
     const absPath = resolve(opts.runDir, rel);
+    // Same containment guard as target refs: a run: citation must stay inside
+    // the run dir — `run:../../x` escaping it is never graded as evidence.
+    const relFromRun = relative(opts.runDir, absPath);
+    if (relFromRun.startsWith("..") || isAbsolute(relFromRun)) {
+      return { raw, kind: "external", gradeable: false, resolved: false, reason: "path escapes the run directory (not graded)", absPath };
+    }
     if (!existsSync(absPath)) return { raw, kind: "run", gradeable: true, resolved: false, reason: `run artifact not found: ${rel}`, absPath };
     const line = anchor?.match(/^L(\d+)$/);
     if (line) {
@@ -190,6 +196,12 @@ export function extractContext(absPath: string, start?: number, end?: number, pa
     .map((l, i) => `${from + i + 1}: ${l}`)
     .join("\n");
 }
+
+// ---- shared ranking / identity helpers ------------------------------------
+// Single copies of the severity ordering and the title identity key (previously
+// duplicated across verify/backlog and compare/brainstorm).
+export const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+export const titleKey = (title: string): string => title.toLowerCase().trim();
 
 // ---- opportunity ranking -------------------------------------------------
 // value = impact / effort — a "quick win" (high/S) tops a "big bet" (high/L).

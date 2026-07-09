@@ -1,6 +1,6 @@
 ---
 name: ultraeval
-description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and generate a fix plan", "find what is wrong and give me a TDD backlog". ultraeval researches how to test that kind of target, generates a multi-agent workflow plus subagent contracts, runs it, and grounds every finding in a real file:line — a check/verify gate rejects hallucinated ones — then emits a prioritized backlog and per-fix TDD cards (failing-test-first) a model can implement. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations.'
+description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and generate a fix plan", "find what is wrong and give me a TDD backlog". ultraeval researches how to test that kind of target, generates a multi-agent workflow plus subagent contracts, runs it, and grounds every finding in a real file:line — a check/verify gate rejects hallucinated ones — then emits a prioritized backlog and per-fix TDD cards (failing-test-first) a model can implement. The process is normed: rubrics anchor to external referentials (ISO/IEC 25010/25059, 29148, WCAG, OWASP), severities are codified, and every run records provenance under a versioned protocol. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations, normed evaluation.'
 license: MIT
 metadata:
   version: 1.3.0
@@ -47,7 +47,7 @@ For `improve`/`deep`, `plan` adds **Analyze** and **Brainstorm** stages to the g
 ```
 node <skill-dir>/scripts/ultraeval.mjs init --target <PATH> --out <RUN> [--kind skill|codebase] [--category "<c>"]
 ```
-Writes `eval.config.json` with starter dimensions (see `references/rubric-library.md`).
+Writes `eval.config.json` with starter dimensions (see `references/rubric-library.md`) and the run's **provenance** (engine/protocol/rubric versions, target git SHA + dirty flag, dimensions hash) — the audit trail `score` stamps into the scorecard and `compare` uses to refuse non-comparable deltas.
 
 **2. Generate the workflow + subagent contracts.**
 ```
@@ -96,6 +96,7 @@ A finding is only trustworthy if its evidence resolves. `check` opens each `path
 
 ## Method & rubrics
 
+- `references/protocol.md` — **the normative protocol** (RFC-2119): phase entry/exit criteria, gate thresholds, codified P0/P1/P2 severities, anchoring rules, provenance & comparability, and the self-evaluation constraint.
 - `references/eval-playbook.md` — the research→test-plan→execute→judge→results method, and how to build a scored rubric per dimension.
 - `references/orchestration.md` — the generated workflow, the subagent dispatch contracts, and the absolute-`<skill-dir>` invariant for fan-out.
 - `references/gate-contract.md` — `findings.json` schema, evidence-ref grammar, and exactly what makes `check`/`verify` pass or fail.

@@ -9,6 +9,11 @@ const DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "
 
 export function clean(runDir: string, opts: { all?: boolean } = {}): string[] {
   const removed: string[] = [];
+  // Run-guard: refuse to delete anything from a directory that is not an
+  // ultraeval run — a typo'd --run must never destroy an arbitrary directory.
+  if (exists(runDir) && !exists(join(runDir, "eval.config.json"))) {
+    throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
+  }
   if (opts.all) {
     if (exists(runDir)) {
       rmSync(runDir, { recursive: true, force: true });

@@ -32,3 +32,50 @@ describe("rubrics — category-aware dimensions", () => {
     expect(ids("codebase", "library")).toContain("correctness");
   });
 });
+
+describe("rubrics — standards anchors", () => {
+  const sets: [string, ReturnType<typeof defaultDimensions>][] = [
+    ["skill base", defaultDimensions("skill", "agent skill")],
+    ["codebase base", defaultDimensions("codebase", "library")],
+    ["security", defaultDimensions("codebase", "security tool")],
+    ["requirements", defaultDimensions("skill", "PRD / requirements generator")],
+    ["research", defaultDimensions("skill", "research / RAG tool")],
+    ["web", defaultDimensions("codebase", "web app")],
+    ["cli", defaultDimensions("codebase", "CLI tool")],
+  ];
+
+  it("every starter dimension carries at least one machine-readable anchor", () => {
+    for (const [name, dims] of sets) {
+      for (const d of dims) {
+        expect(d.anchors?.length, `${name}:${d.id} has no anchors`).toBeGreaterThan(0);
+        for (const a of d.anchors ?? []) {
+          expect(a.standard, `${name}:${d.id}`).toBeTruthy();
+          expect(a.ref, `${name}:${d.id}`).toBeTruthy();
+        }
+      }
+    }
+  });
+
+  const anchorsOf = (dims: ReturnType<typeof defaultDimensions>) => dims.map((d) => JSON.stringify(d.anchors ?? []));
+
+  it("codebase dimensions anchor to ISO/IEC 25010", () => {
+    for (const a of anchorsOf(defaultDimensions("codebase", "library"))) expect(a).toMatch(/25010/);
+  });
+
+  it("skill dimensions anchor to ISO/IEC 25010 or 25059", () => {
+    for (const a of anchorsOf(defaultDimensions("skill", "agent skill"))) expect(a).toMatch(/25010|25059/);
+  });
+
+  it("requirements dimensions anchor to ISO/IEC/IEEE 29148", () => {
+    for (const a of anchorsOf(defaultDimensions("skill", "PRD / requirements generator"))) expect(a).toMatch(/29148/);
+  });
+
+  it("security dimensions anchor to a labelled corpus methodology", () => {
+    expect(anchorsOf(defaultDimensions("codebase", "security tool")).join(" ")).toMatch(/OWASP|Juliet|SAMATE/);
+  });
+
+  it("web accessibility anchors to WCAG 2.2", () => {
+    const a11y = defaultDimensions("codebase", "web app").find((d) => d.id === "accessibility");
+    expect(JSON.stringify(a11y?.anchors ?? [])).toMatch(/WCAG 2\.2/);
+  });
+});

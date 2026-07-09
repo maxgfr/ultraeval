@@ -1,8 +1,7 @@
 import { join } from "node:path";
 import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, Severity, VerifyResult } from "./types.js";
-import { exists, opportunityPriority, opportunityValue, readJson, slug, writeJson, writeText } from "./util.js";
-
-const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+import { SEVERITY_DEFS } from "./types.js";
+import { exists, opportunityPriority, opportunityValue, readJson, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
 
 export interface BacklogOpts {
   out?: string;
@@ -114,7 +113,7 @@ function renderRemediation(bl: Backlog, cfg: EvalConfig): string {
 
 Target: \`${bl.target}\` · ${bl.tasks.length} fix task(s), most impactful first.
 Each task has a matching TDD card under \`fixes/\` (RED failing test → GREEN change → VERIFY).
-${section("P0", "P0 — trust / correctness / data-loss")}${section("P1", "P1 — fidelity / coverage")}${section("P2", "P2 — polish / ergonomics")}`;
+${(["P0", "P1", "P2"] as const).map((s) => section(s, `${s} — ${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning}`)).join("")}`;
 }
 
 function renderFixCard(t: FixTask, f?: Finding): string {

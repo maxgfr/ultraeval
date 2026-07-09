@@ -1,6 +1,18 @@
 import { join } from "node:path";
-import type { Backlog, EvalConfig, FindingsDoc, Scorecard, VerifyResult } from "./types.js";
+import type { Backlog, EvalConfig, FindingsDoc, Provenance, Scorecard, VerifyResult } from "./types.js";
 import { exists, opportunityValue, readJson, writeText } from "./util.js";
+
+// One-line anchor text for a dimension, joined from the config by id (the
+// scorecard stays score-focused and does not duplicate anchors).
+function anchorFor(cfg: EvalConfig, id: string): string {
+  const d = (cfg.dimensions ?? []).find((x) => x.id === id);
+  return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} — ${a.ref}`).join("; ") : "—";
+}
+
+const provLine = (p?: Provenance): string =>
+  p
+    ? `engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}`
+    : "";
 
 export interface RenderOpts {
   out?: string;
@@ -54,10 +66,12 @@ function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null,
     .filter((f) => f.status !== "dismissed" && f.kind !== "opportunity")
     .map((f) => `| ${f.id} | ${f.severity} | ${f.title.replace(/\|/g, "\\|")} | ${f.status} | ${(f.evidence ?? []).map((e) => `\`${e.ref}\``).join(" ")} |`)
     .join("\n");
+  const prov = provLine(cfg.provenance);
   const parts = [
     `# Evaluation — ${cfg.target}`,
     ``,
     `> target \`${cfg.targetAbs}\` · ${cfg.kind} · ${cfg.category} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})${c.opps ? ` · ${c.opps} opportunities` : ""}`,
+    ...(prov ? [`> ${prov}`] : []),
     ``,
   ];
   if (scorecard) {
@@ -66,9 +80,9 @@ function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null,
       ``,
       `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
       ``,
-      `| dimension | score | weight |`,
-      `|-----------|-------|--------|`,
-      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} |`),
+      `| dimension | score | weight | anchored to |`,
+      `|-----------|-------|--------|-------------|`,
+      ...scorecard.dimensions.map((d) => `| ${d.name} | ${d.score.toFixed(1)}/5 | ${d.weight} | ${anchorFor(cfg, d.id)} |`),
       ``,
     );
   }
@@ -117,7 +131,7 @@ h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}t
 function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null, scorecard: Scorecard | null): string {
   const c = counts(doc);
   const verdict = scorecard
-    ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td></tr>`).join("")}</table>`
+    ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>`
     : "";
   const rows = doc.findings
     .filter((f) => f.status !== "dismissed" && f.kind !== "opportunity")
@@ -139,6 +153,7 @@ function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | nul
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ultraeval — ${esc(cfg.target)}</title><style>${STYLE}</style></head><body>
 <h1>Evaluation — ${esc(cfg.target)}</h1>
 <p class="meta"><code>${esc(cfg.targetAbs)}</code> · ${cfg.kind} · ${esc(cfg.category)} · ${c.total} findings (P0 ${c.p0} · P1 ${c.p1} · P2 ${c.p2})${c.opps ? ` · ${c.opps} opportunities` : ""}</p>
+${provLine(cfg.provenance) ? `<p class="meta">${esc(provLine(cfg.provenance))}</p>` : ""}
 ${verdict}
 <h2>Findings</h2><table><tr><th>id</th><th>sev</th><th>title</th><th>status</th><th>evidence</th></tr>${rows}</table>
 ${oppsHtml}

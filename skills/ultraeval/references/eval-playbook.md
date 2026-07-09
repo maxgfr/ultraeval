@@ -7,7 +7,7 @@ The goal is a verdict you can trust and a fix plan a model can execute. Two evid
 
 ## Stages
 
-1. **Research (per dimension).** Find the *state of the art for evaluating this kind of target*, not just the target. For a RAG/skill: faithfulness / citation precision-recall / hallucination rate (RAGAS, attributable-to-source). For a SAST tool: precision/recall vs OWASP Benchmark / Juliet, false-positive rate, reachability. For requirements: INVEST, ISO/IEC/IEEE 29148. For an a11y checker: WCAG/ACT-Rules coverage, axe comparison. Distil each into a 0–5 rubric with anchors.
+1. **Research (per dimension).** Find the *state of the art for evaluating this kind of target*, not just the target. For a RAG/skill: faithfulness / citation precision-recall / hallucination rate (RAGAS, attributable-to-source). For a SAST tool: precision/recall vs OWASP Benchmark / Juliet, false-positive rate, reachability. For requirements: INVEST, ISO/IEC/IEEE 29148. For an a11y checker: WCAG/ACT-Rules coverage, axe comparison. Distil each into a 0–5 rubric with anchors. Each dimension already carries a machine-readable `anchors[]` referential — refine it with cited justification, never silently drop it (`references/protocol.md`).
 
 2. **Test plan.** Enumerate EVERY functionality: modes, subcommands, flags, gates, and the live end-to-end behavior — mapped to dimensions, each with a concrete command/prompt and pass criteria.
 
@@ -24,6 +24,8 @@ The goal is a verdict you can trust and a fix plan a model can execute. Two evid
 ## Scoring
 
 Overall = weighted mean of dimension scores (weights in `dimensions.json`), normalized to 0–100. "Meets expectations" is a separate boolean: it is `false` if any P0 finding stands, or if the as-shipped path to the good deliverable has real gaps — score the *shipped* thing, not the destination an expert could reach by hand.
+
+Every run records provenance (engine/protocol/rubric versions, target git SHA); a score is only comparable to another run's score under the same protocol and rubric versions — `compare` warns otherwise. See `references/protocol.md`.
 
 ## Anti-patterns
 

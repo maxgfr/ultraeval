@@ -18,12 +18,13 @@ No `npm install`, no API keys — the engine is a single committed `.mjs` bundle
 ## What it does
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → render
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → score → render
 ```
 
 - **`plan`** generates `eval.workflow.mjs` — a ready-to-launch multi-agent Workflow parameterized to your target — plus `agents/*.md` dispatch contracts. This is the "generate the workflow and subagents" part.
 - Every finding must resolve to a real `file:line` in the target (or a produced run-log line). **`check` rejects a hallucinated or stale citation**; **`verify`** adversarially confirms the cited content actually supports the claim.
 - **`backlog --tdd`** turns confirmed findings into `BACKLOG.json` (machine-readable, priority-ordered) and one `fixes/FIX-*.md` **TDD card** per finding (RED failing-test-first → GREEN change → VERIFY).
+- **The process is normed.** Every rubric dimension anchors to an external referential (ISO/IEC 25010:2023 for code, an ISO 25010/25059 composite for skills, 29148/WCAG/OWASP per category), P0/P1/P2 severities are codified (CVSS-aligned bands), and every run records **provenance** (engine/protocol/rubric versions, target git SHA) under a versioned protocol — `compare` refuses to read a delta across incompatible runs. Normative text: [`references/protocol.md`](./skills/ultraeval/references/protocol.md).
 
 ## What it produces
 

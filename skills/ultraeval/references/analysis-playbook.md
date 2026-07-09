@@ -26,7 +26,7 @@ This is objective substrate: every opportunity can cite a metric's subject file 
    - *product / capability*: feature-gaps, new modes/flags, adjacent use-cases.
    Be divergent — generate many candidates.
 2. Fill `opportunities.json`: `{ opportunities: [ { dimension?, impact: high|med|low, effort: S|M|L, title, statement, recommendation, evidence: [{ ref }] } ] }`. Every one anchors to a real `file:line` or `analysis:<file>`.
-3. `brainstorm --run <RUN> --rank` dedups, ranks by **value = impact / effort**, and folds them into `findings.json` as `kind:"opportunity"`. `check` then gates them; drop any that do not resolve.
+3. `brainstorm --run <RUN> --rank` dedups, ranks by **value = impact / effort**, and folds them into `findings.json` as `kind:"opportunity"` with a backlog priority derived from impact: **high → P1, med/low → P2** (opportunities are never P0). Malformed or duplicate entries are skipped and reported, not silently folded. `check` then gates them; drop any that do not resolve.
 
 ## Opportunities vs defects
 

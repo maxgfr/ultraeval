@@ -37,6 +37,19 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     }
   });
 
+  it("plan surfaces the normed process: anchors in dimensions.json/contracts, codified severities", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-e2e-norm-"));
+    tmps.push(out);
+    expect(run(["init", "--target", join(FIX, "target-lib"), "--out", out, "--kind", "codebase"]).status).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(out, "eval.config.json"), "utf8"));
+    expect(cfg.provenance?.engineVersion).toBeTruthy();
+    expect(run(["plan", "--run", out]).status).toBe(0);
+    const dims = JSON.parse(readFileSync(join(out, "dimensions.json"), "utf8"));
+    expect(JSON.stringify(dims)).toContain("ISO/IEC 25010:2023");
+    expect(readFileSync(join(out, "agents", "researcher.md"), "utf8")).toContain("ISO/IEC 25010:2023");
+    expect(readFileSync(join(out, "agents", "findings.md"), "utf8")).toContain("breaks trust, correctness, safety");
+  });
+
   it("gate chain + backlog + render on a copied sample run (all exit 0)", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-run-"));
     tmps.push(dir);
@@ -57,6 +70,16 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(r.status).toBe(0);
     expect(r.out).toMatch(/^\d+\.\d+\.\d+/);
     expect(r.out).not.toMatch(/Usage:/);
+  });
+
+  it("cli characterization: help lists every command, unknown command and missing --run exit 2", () => {
+    const help = run(["--help"]);
+    expect(help.status).toBe(0);
+    for (const c of ["init", "plan", "analyze", "brainstorm", "compare", "check", "verify", "backlog", "score", "render", "clean"]) {
+      expect(help.out).toMatch(new RegExp(`^  ${c} `, "m"));
+    }
+    expect(run(["frobnicate"]).status).toBe(2);
+    expect(run(["check"]).status).toBe(2);
   });
 
   it("check fails (exit 1) on a doctored citation", () => {

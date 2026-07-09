@@ -25,34 +25,47 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
   const dimensions = dims.map((d) => {
     const scores = judges.flatMap((j) => (j.dimensionScores ?? []).filter((s) => s.id === d.id).map((s) => s.score)).filter((n) => typeof n === "number");
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-    return { id: d.id, name: d.name, weight: d.weight, score: Number(avg.toFixed(2)) };
+    // inter-judge dispersion: a consensual 3.0 and a 1-vs-5 split must not read the same
+    const spread = scores.length > 1 ? Number((Math.max(...scores) - Math.min(...scores)).toFixed(2)) : 0;
+    return { id: d.id, name: d.name, weight: d.weight, score: Number(avg.toFixed(2)), spread };
   });
   const totalWeight = dimensions.reduce((a, b) => a + b.weight, 0) || 1;
   const weighted = dimensions.reduce((a, b) => a + (b.score / 5) * b.weight, 0) / totalWeight;
   const overall = Math.round(weighted * 100);
+  const bar = cfg.meetsBar ?? MEETS_BAR;
+  const avgSpread = dimensions.length ? dimensions.reduce((a, b) => a + (b.spread ?? 0), 0) / dimensions.length : 0;
+  const agreement = Number((1 - avgSpread / 5).toFixed(2));
 
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
-  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= MEETS_BAR;
+  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
   const reason = liveP0
     ? "an unresolved P0 finding caps meets-expectations at false"
     : judgeSaysNo
       ? "a judge ruled it does not meet expectations"
-      : overall < MEETS_BAR
-        ? `weighted score ${overall} is below the ${MEETS_BAR} bar`
-        : `no P0, judges agree, score ${overall} >= ${MEETS_BAR}`;
-  return { overall, maxScore: 100, meetsExpectations, dimensions, judges: judges.length, reason };
+      : overall < bar
+        ? `weighted score ${overall} is below the ${bar} bar`
+        : `no P0, judges agree, score ${overall} >= ${bar}`;
+  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason };
 }
 
 export function scoreRun(runDir: string): Scorecard {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
+  if (cfg.provenance) sc.provenance = cfg.provenance;
+  sc.scoredAt = new Date().toISOString();
   writeJson(join(runDir, "scorecard.json"), sc);
   return sc;
 }
 
 export function formatScore(sc: Scorecard): string {
   const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
-  return [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`].join("\n");
+  const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
+  if (sc.provenance) {
+    const p = sc.provenance;
+    const sha = p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";
+    lines.push(`  engine ${p.engineVersion} · protocol ${p.protocolVersion} · rubric ${p.rubricVersion}${sha}`);
+  }
+  return lines.join("\n");
 }

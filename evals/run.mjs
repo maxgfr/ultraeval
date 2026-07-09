@@ -178,13 +178,50 @@ function opportunityProbe() {
   }
 }
 
-console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity\n");
+// a run: ref escaping the run dir must never count as grounding (laundering/traversal guard).
+function containmentProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-esc-"));
+  try {
+    cpSync(SAMPLE, dir, { recursive: true });
+    writeFileSync(join(dir, "..", "ue-eval-outside.txt"), "outside\n");
+    const fp = join(dir, "findings.json");
+    const doc = JSON.parse(readFileSync(fp, "utf8"));
+    doc.findings[0].evidence = [{ ref: "run:../ue-eval-outside.txt" }];
+    writeFileSync(fp, JSON.stringify(doc));
+    if (run(["check", "--run", dir]).status === 0) return fail("[containment] a run:-escape ref slipped through check");
+    pass("[containment] run: ref escaping the run dir fails check (exit 1)");
+  } catch (e) {
+    fail(`[containment] ${e.message}`);
+  } finally {
+    rmSync(join(dir, "..", "ue-eval-outside.txt"), { force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// clean --all must refuse a directory that is not an ultraeval run.
+function cleanGuardProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-clean-"));
+  try {
+    writeFileSync(join(dir, "precious.txt"), "do not delete\n");
+    if (run(["clean", "--run", dir, "--all"]).status === 0) return fail("[clean] --all deleted a non-run directory");
+    if (!existsSync(join(dir, "precious.txt"))) return fail("[clean] refusal still removed files");
+    pass("[clean] --all refuses a non-run directory (guard holds)");
+  } catch (e) {
+    fail(`[clean] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity + containment + clean\n");
 gateProbe();
 backlogProbe();
 schemaProbe();
 scoreProbe();
 analyzeProbe();
 opportunityProbe();
+containmentProbe();
+cleanGuardProbe();
 if (failures) {
   console.error(`\n${failures} probe(s) failed`);
   process.exit(1);
