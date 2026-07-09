@@ -75,6 +75,10 @@ function resolveEvidence(ref, opts) {
     const body = raw.slice(4);
     const [rel2 = "", anchor] = body.split("#");
     const absPath2 = resolve(opts.runDir, rel2);
+    const relFromRun = relative(opts.runDir, absPath2);
+    if (relFromRun.startsWith("..") || isAbsolute(relFromRun)) {
+      return { raw, kind: "external", gradeable: false, resolved: false, reason: "path escapes the run directory (not graded)", absPath: absPath2 };
+    }
     if (!existsSync(absPath2)) return { raw, kind: "run", gradeable: true, resolved: false, reason: `run artifact not found: ${rel2}`, absPath: absPath2 };
     const line = anchor?.match(/^L(\d+)$/);
     if (line) {
@@ -743,12 +747,16 @@ function checkRun(runDir, opts = {}) {
     if (f.status === "dismissed") continue;
     const ev = Array.isArray(f.evidence) ? f.evidence : [];
     let anyResolved = false;
+    let anyTargetAnchored = false;
     for (const e of ev) {
       const r = resolveEvidence(e.ref, resolveOpts);
       if (r.gradeable && !r.resolved) errors.push(`${f.id} cites ${e.ref}: ${r.reason}`);
       if (r.resolved) anyResolved = true;
+      if (r.resolved && r.kind === "file") anyTargetAnchored = true;
     }
     if (!anyResolved) errors.push(`${f.id} has no resolvable evidence \u2014 a finding must point at a real file:line (or run: artifact)`);
+    else if (!anyTargetAnchored)
+      errors.push(`${f.id} is grounded only in the run's own artifacts \u2014 cite at least one target file[:line] alongside the run: log`);
   }
   const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
   for (const file of [...HARD_FILES, ...SOFT_FILES]) {
@@ -788,6 +796,11 @@ function checkRun(runDir, opts = {}) {
       try {
         const v = readJson(verifyPath);
         if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        const pending = (v.unadjudicated ?? []).filter((fid) => {
+          const f = findings.find((x) => x.id === fid);
+          return f && f.status !== "dismissed";
+        });
+        if (pending.length) errors.push(`--require-verify: ${pending.length} finding(s) still unadjudicated (${pending.join(", ")}) \u2014 grade every verify pair`);
       } catch {
         errors.push("--require-verify: VERIFY.json is not valid JSON");
       }
@@ -892,6 +905,9 @@ import { join as join7 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md"];
 function clean(runDir, opts = {}) {
   const removed = [];
+  if (exists(runDir) && !exists(join7(runDir, "eval.config.json"))) {
+    throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
+  }
   if (opts.all) {
     if (exists(runDir)) {
       rmSync(runDir, { recursive: true, force: true });

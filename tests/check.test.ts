@@ -67,9 +67,11 @@ describe("check — grounding gate", () => {
     expect(checkRun(scaffold([{ ...genuine, evidence: [{ ref: "app.js" }] }])).ok).toBe(true);
   });
 
-  it("resolves a run: artifact reference", () => {
+  it("resolves a run: artifact reference (but a run-only finding still needs a target anchor)", () => {
     const run = scaffold([{ ...genuine, evidence: [{ ref: "run:runs/core.md#L1" }] }], { "runs/core.md": "the log line\nsecond line\n" });
-    expect(checkRun(run).ok).toBe(true);
+    const r = checkRun(run);
+    expect(r.errors.join(" ")).not.toMatch(/cites run:/); // the ref itself resolves
+    expect(r.errors.join(" ")).toMatch(/only in the run's own artifacts/); // laundering guard
   });
 
   it("skips dismissed findings", () => {
@@ -176,6 +178,54 @@ describe("check — grounding gate", () => {
     const root = mkdtempSync(join(tmpdir(), "ue-check-"));
     tmps.push(root);
     expect(checkRun(root).ok).toBe(false);
+  });
+
+  it("fails --require-verify when some findings are still unadjudicated (partial-adjudication bypass)", () => {
+    const run = scaffold([genuine, { ...genuine, id: "F2", evidence: [{ ref: "app.js:2" }] }], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        adjudicated: 1,
+        supported: 1,
+        partial: 0,
+        refuted: 0,
+        unsupported: 0,
+        failures: [],
+        unadjudicated: ["F2"],
+        verdicts: [{ claimId: "F1", verdict: "supported" }],
+      }),
+    });
+    const r = checkRun(run, { requireVerify: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/unadjudicated/);
+  });
+
+  it("passes --require-verify when every finding is adjudicated", () => {
+    const run = scaffold([genuine], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        adjudicated: 1,
+        supported: 1,
+        partial: 0,
+        refuted: 0,
+        unsupported: 0,
+        failures: [],
+        unadjudicated: [],
+        verdicts: [{ claimId: "F1", verdict: "supported" }],
+      }),
+    });
+    expect(checkRun(run, { requireVerify: true }).ok).toBe(true);
+  });
+
+  it("fails a finding grounded only in the run's own artifacts (evidence-laundering guard)", () => {
+    const run = scaffold([{ ...genuine, evidence: [{ ref: "run:runs/core.md#L1" }] }], { "runs/core.md": "scanner confirmed X\n" });
+    const r = checkRun(run);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/only in the run's own artifacts/);
+  });
+
+  it("passes a finding that pairs a run: log with a target anchor", () => {
+    const run = scaffold([{ ...genuine, evidence: [{ ref: "run:runs/core.md#L1" }, { ref: "app.js:3" }] }], { "runs/core.md": "scanner confirmed X\n" });
+    expect(checkRun(run).ok).toBe(true);
   });
 
   it("warns (never fails) on a legacy run whose config has no provenance", () => {
