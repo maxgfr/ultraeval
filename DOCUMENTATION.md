@@ -14,6 +14,10 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 contracts, with the absolute engine/target paths baked in. Launch it with a Workflow harness, or run the
 stages by hand from the contracts. Either way the same engine commands enforce the guarantees below.
 
+`status --run <run>` reports where a run sits in this pipeline (which artifacts exist) and the exact next
+command to run; `clean --run <run>` removes derived gate/render artifacts (keeping the deliverables), or
+`--all` removes the whole run.
+
 ## The grounding gate (the point)
 
 The failure mode of every "AI evaluates X" tool is confident, ungrounded findings. `check` makes that
@@ -27,6 +31,9 @@ structurally hard:
 3. **Report integrity** — `RESULTS.md` may not cite a `[F#]` that does not exist, and (in `--strict`)
    every substantive claim must carry a citation.
 4. **Backlog integrity** — every `BACKLOG.json` task references a live finding.
+
+`check --json` prints the `CheckResult` (`{ ok, errors, warnings }`) verbatim so CI can consume the gate
+without scraping the human report; the exit code is unchanged (`0` pass / `1` fail).
 
 `verify` adds the semantic layer: a skeptic judges whether each cited location actually *supports* the
 claim (`supported`/`partial`/`refuted`/`unsupported`); `check --semantic --require-verify` folds those
@@ -52,8 +59,11 @@ Three trust signals ride along: **judge calibration** (each judge first scores t
 counts the passes), **weight sensitivity** (`scorecard.sensitivity` — every dimension weight is nudged
 ±0.05, renormalized; `flips` lists the dimensions whose nudge flips the verdict), and the **history
 ledger** (`score --history [file]` appends one JSONL line — scoredAt, target commit, overall, verdict,
-counts — to a committed file, default `evals/history.jsonl`, so the score trend survives gitignored run
-dirs). `rejudge --run <run> --out <run2>` reuses a run's artifacts with a fresh judge panel; `compare`
+counts, protocol/rubric versions — to a committed file, default `evals/history.jsonl` **anchored to the
+target repo's git root** so successive runs from arbitrary cwds append to one trend, not a fragmented pile;
+a non-git loose-dir target falls back to the cwd. `history --run <run>` reads that trend back — each run's
+overall vs bar, verdict, Δ, and counts, with a warning when entries span a protocol/rubric bump (`--json`
+emits the raw array)). `rejudge --run <run> --out <run2>` reuses a run's artifacts with a fresh judge panel; `compare`
 prints a Stability line (|Δoverall| at constant target SHA) — test-retest for the verdict itself.
 
 ## Rubrics
@@ -103,7 +113,11 @@ timeboxes and a ban on launching another live/fan-out tool inside the executor.
 ## The closed fix loop
 
 `backlog --tdd` derives `dependsOn` between tasks sharing a target file (backward-only edges — the order
-is topological). `fix --run <run> [--task FIX-XXX] [--workflow]` turns each task into an autonomous
+is topological). Each card's RED test path follows the target's own layout (`tests/`, `src/__tests__/`,
+colocated `*.test`/`*.spec`, `_test.go`) and its VERIFY command is the runner detected from the target's
+manifest/lockfile (`npm`/`yarn`/`pnpm test`, `go test`, `cargo test`, `pytest`), falling back to prose only
+when none is detectable — so a fix agent runs the target's real gate, not a hardcoded one.
+`fix --run <run> [--task FIX-XXX] [--workflow]` turns each task into an autonomous
 fix-agent contract (`fixes/agents/FIX-*.agent.md`: absolute paths, the full RED→GREEN→VERIFY card, the
 target's own invariants, and a no-gate-weakening rule), plus an optional sequential `fix.workflow.mjs`.
 `verify-fix --run <run> --task FIX-XXX` closes the loop: it replays the task's verify command (timeboxed)

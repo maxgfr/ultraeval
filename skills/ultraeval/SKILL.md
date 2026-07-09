@@ -26,6 +26,8 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 
 Everything is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Fanning out subagents is an optimization the generated workflow encodes — never a requirement.
 
+At any point, `status --run <RUN>` prints the pipeline checklist (which artifacts exist) and the exact next command to run.
+
 ## Inputs to confirm
 
 - **Target** — a path to the skill/repo to evaluate (or a git URL the user has already cloned locally).
@@ -62,7 +64,7 @@ Emits `<RUN>/eval.workflow.mjs` (a ready-to-launch multi-agent Workflow, with th
 ```
 node <skill-dir>/scripts/ultraeval.mjs check --run <RUN>
 ```
-Fix `findings.json` until it exits 0 — **repair or delete ungrounded findings; never weaken the gate.**
+Fix `findings.json` until it exits 0 — **repair or delete ungrounded findings; never weaken the gate.** `check --run <RUN> --json` prints the machine-readable `CheckResult` (`{ ok, errors, warnings }`) verbatim for CI (exit code unchanged).
 
 **5. Verify (adversarial exit gate).**
 ```
@@ -83,7 +85,8 @@ Emits `BACKLOG.json` (a machine-readable, priority-ordered task list a downstrea
 
 **7. Score + render + present.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs score --run <RUN> --history # judges.jsonl + dimensions -> scorecard.json + one committed ledger line (evals/history.jsonl)
+node <skill-dir>/scripts/ultraeval.mjs score --run <RUN> --history # judges.jsonl + dimensions -> scorecard.json + one committed ledger line (evals/history.jsonl, anchored to the target repo's git root)
+node <skill-dir>/scripts/ultraeval.mjs history --run <RUN>        # read the score trend back: each run's overall vs bar, verdict, Δ, counts (--json for CI)
 node <skill-dir>/scripts/ultraeval.mjs render --run <RUN>          # index.html + index.md dashboard (shows the verdict)
 ```
 `score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, a panel with zero passed calibrations, or a score below the bar) caps meets-expectations at false. The scorecard also carries `sensitivity` (does a ±0.05 weight shift flip the verdict?) and `judgesCalibrated`. To measure verdict stability, `rejudge --run <RUN> --out <RUN2>` re-judges the same artifacts with a fresh panel and `compare` prints a Stability line at constant target commit. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.

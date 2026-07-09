@@ -105,6 +105,20 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(help.out).toMatch(/later files win per claim\+evidence pair/i);
   });
 
+  it("--help lists every command the parser dispatches (no COMMAND_FLAGS/help drift)", () => {
+    // Derive the dispatched command set from cli.ts's COMMAND_FLAGS table (source
+    // of truth) and assert the usage text names each — so a new command can never
+    // ship in the parser without a --help entry.
+    const cliSrc = readFileSync(join(ROOT, "src", "cli.ts"), "utf8");
+    const start = cliSrc.indexOf("COMMAND_FLAGS");
+    const block = cliSrc.slice(start, cliSrc.indexOf("};", start));
+    const cmds = [...block.matchAll(/^\s*"?([a-z-]+)"?:\s*\[/gm)].map((m) => m[1]);
+    expect(cmds).toContain("history"); // the new command is in the set
+    expect(cmds.length).toBeGreaterThan(10);
+    const help = run(["--help"]).out;
+    for (const c of cmds) expect(help).toMatch(new RegExp(`\\b${c}\\b`));
+  });
+
   it("judge contract requires calibration against the shipped golden fixture", () => {
     const out = mkdtempSync(join(tmpdir(), "ue-e2e-cal-"));
     tmps.push(out);

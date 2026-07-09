@@ -56,7 +56,7 @@ $ENGINE analyze --run /tmp/eval [--since <ref>] [--json]   # deterministic hotsp
 $ENGINE brainstorm --run /tmp/eval                  # divergent lenses -> BRAINSTORM.todo.md
 $ENGINE brainstorm --run /tmp/eval --rank [--check] # fold ranked, grounded opportunities into findings.json (and gate them)
 $ENGINE compare --run /tmp/eval-new --base /tmp/eval-old   # diff two runs -> COMPARE.md (score Δ, resolved, introduced)
-$ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation)
+$ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation); add --json for the CheckResult in CI
 $ENGINE verify --run /tmp/eval --honeypots 3        # adversarial worklist + planted traps that catch a rubber-stamping skeptic
 $ENGINE verify --run /tmp/eval --apply verdicts.json
 $ENGINE check --run /tmp/eval --semantic --require-verify   # exit gate (also fails while a honeypot failure is unresolved)
@@ -64,6 +64,7 @@ $ENGINE backlog --run /tmp/eval --tdd               # BACKLOG.json + fixes/FIX-*
 $ENGINE fix --run /tmp/eval --workflow              # one autonomous fix-agent contract per task + fix.workflow.mjs
 $ENGINE verify-fix --run /tmp/eval --task FIX-001   # replay the task's verify command; stamp status done + verifiedAt
 $ENGINE score --run /tmp/eval --history             # scorecard.json (verdict + weight-sensitivity + judgesCalibrated) + ledger line
+$ENGINE history --run /tmp/eval                     # read the score trend back (overall vs bar, Δ, counts); --json for CI
 $ENGINE rejudge --run /tmp/eval --out /tmp/eval-rj  # fresh judge panel over the same artifacts (test-retest stability)
 $ENGINE render --run /tmp/eval                      # index.html + index.md (shows the verdict)
 $ENGINE clean --run /tmp/eval                       # remove derived artifacts (keeps deliverables)
