@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.7.1](https://github.com/maxgfr/ultraeval/compare/v1.7.0...v1.7.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **plan:** remove the counterpart artifact when switching workflow<->eco + improve-mode runbook test ([#7](https://github.com/maxgfr/ultraeval/issues/7)) ([3704b79](https://github.com/maxgfr/ultraeval/commit/3704b79810ba18beef31789e3949f0a591ee2bda))
+
 # [1.7.0](https://github.com/maxgfr/ultraeval/compare/v1.6.0...v1.7.0) (2026-07-09)
 
 
