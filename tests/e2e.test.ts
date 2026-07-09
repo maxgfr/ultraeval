@@ -99,6 +99,31 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(run(["check"]).status).toBe(2);
   });
 
+  it("a bare no-command invocation is a usage error: help on stderr, exit 2 (FIX-012)", () => {
+    let status = 0;
+    let stdout = "";
+    let stderr = "";
+    try {
+      stdout = execFileSync("node", [BUNDLE], { encoding: "utf8", cwd: ROOT });
+    } catch (e) {
+      const err = e as { status?: number; stdout?: string; stderr?: string };
+      status = err.status ?? 1;
+      stdout = err.stdout ?? "";
+      stderr = err.stderr ?? "";
+    }
+    expect(status).toBe(2); // no subcommand is a usage error, not success
+    expect(stderr).toMatch(/Usage:/); // help goes to stderr for a usage error
+    expect(stdout).not.toMatch(/Usage:/); // and NOT to stdout
+  });
+
+  it("explicit --help / -h / help / version still print to stdout and exit 0 (FIX-012)", () => {
+    for (const a of [["--help"], ["-h"], ["help"], ["--version"], ["-v"], ["version"]]) {
+      const r = run(a);
+      expect(r.status, a.join(" ")).toBe(0);
+    }
+    expect(run(["--help"]).out).toMatch(/Usage:/);
+  });
+
   it("--help documents the sharded-verdict merge (--apply a,b,c)", () => {
     const help = run(["--help"]);
     expect(help.status).toBe(0);

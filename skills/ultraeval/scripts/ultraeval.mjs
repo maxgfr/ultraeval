@@ -3013,8 +3013,13 @@ function main() {
     console.log(VERSION);
     return;
   }
-  if (args.help || cmd === "help" || !cmd) {
+  if (args.help || cmd === "help") {
     console.log(HELP);
+    return;
+  }
+  if (!cmd) {
+    console.error(HELP);
+    process.exitCode = 2;
     return;
   }
   try {

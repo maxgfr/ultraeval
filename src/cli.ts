@@ -365,8 +365,16 @@ function main(): void {
     console.log(VERSION);
     return;
   }
-  if (args.help || cmd === "help" || !cmd) {
+  // Explicit help (`help`, `--help`, `-h`) is success: help on stdout, exit 0.
+  if (args.help || cmd === "help") {
     console.log(HELP);
+    return;
+  }
+  // A bare invocation with no subcommand is a usage error, not success: help on
+  // stderr, exit 2 (matches the documented "2 = usage or runtime error" contract).
+  if (!cmd) {
+    console.error(HELP);
+    process.exitCode = 2;
     return;
   }
   try {
