@@ -165,6 +165,31 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     expect(scoreRun(run).bar).toBe(80);
   });
 
+  it("stamps judgesIndependent: false when every judge line shares one author", () => {
+    const line = { dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } };
+    const run = scaffold([
+      { ...line, lens: "a", author: "sess-1" },
+      { ...line, lens: "b", author: "sess-1" },
+      { ...line, lens: "c", author: "sess-1" },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.judgesIndependent).toBe(false);
+    expect(formatScore(sc)).toMatch(/single-author|independen/i);
+  });
+
+  it("judgesIndependent is true with distinct authors and unset when authors are absent", () => {
+    const line = { dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } };
+    const distinct = scoreRun(
+      scaffold([
+        { ...line, author: "s1" },
+        { ...line, author: "s2" },
+      ]),
+    );
+    expect(distinct.judgesIndependent).toBe(true);
+    const anonymous = scoreRun(scaffold([{ ...line }, { ...line }]));
+    expect(anonymous.judgesIndependent).toBeUndefined();
+  });
+
   it("refuses to score without judges — no judges.jsonl or an empty panel errors instead of a silent 0/100", () => {
     const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
     rmSync(join(run, "judges.jsonl"));

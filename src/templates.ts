@@ -92,6 +92,13 @@ function liveScenarioFor(cfg: EvalConfig): LiveScenario {
   return (cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library) as LiveScenario;
 }
 
+// Diff-scoped eval (init --since <ref>): the contracts that produce/select
+// findings work ONLY on the changed set — PR gating, not a full re-audit.
+const diffScopeBlock = (cfg: EvalConfig): string =>
+  cfg.provenance?.sinceRef
+    ? `\n**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings — \`check\` warns on out-of-scope citations). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.\n`
+    : "";
+
 const liveScenarioBlock = (cfg: EvalConfig): string =>
   [
     `**Normed live scenario for this category** (full library: \`references/live-scenarios.md\` next to the engine):`,
@@ -249,7 +256,7 @@ The live rows MUST map to the category's normed scenario set (golden path, error
 Write \`${runDirAbs}/TEST-PLAN.md\` (a reviewable checklist with the rubric embedded). Be exhaustive about the CLI/behavior surface.
 `,
     executor: `# Contract: executor
-
+${diffScopeBlock(cfg)}
 You produce the raw evidence an eval stands on. Two MODES; do the one named in your prompt.
 
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
@@ -270,7 +277,7 @@ SAFETY:
 Record exact command lines and exit codes verbatim — later stages cite \`run:runs/core.md#Lnn\` as evidence, so line numbers matter.
 `,
     findings: `# Contract: findings
-
+${diffScopeBlock(cfg)}
 Consolidate the test-plan results and the run logs into \`${runDirAbs}/findings.json\` following \`${runDirAbs}/findings.schema.json\`.
 
 RULES (the grounding gate will enforce these):
@@ -299,7 +306,7 @@ You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS n
 
 Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0–5 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth — weight them.
 
-Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`.
+Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "author": "<your agent/session id>", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`. \`author\` matters: agreement is only meaningful across INDEPENDENT judges — a panel whose lines share one author is flagged.
 `,
     remediator: `# Contract: remediator
 
@@ -321,7 +328,7 @@ Produce deterministic signal for the brainstorm stage.
 Run \`node ${engineAbs} analyze --run ${runDirAbs}\` → writes \`analysis.json\` + \`ANALYSIS.md\` (size/complexity hotspots, import graph + cycles, git churn, test/doc gaps). Then read \`ANALYSIS.md\` and note the 5-8 highest-signal hotspots the brainstorm should anchor on. This stage is deterministic — do not invent metrics; report what the tool found.
 `,
     brainstormer: `# Contract: brainstormer
-
+${diffScopeBlock(cfg)}
 Discover grounded improvement leads (both internal health AND product/capability) — be divergent, then keep the grounded ones.
 
 1. \`node ${engineAbs} brainstorm --run ${runDirAbs}\` → emits \`BRAINSTORM.todo.md\` (lenses + hotspots).

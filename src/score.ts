@@ -44,6 +44,10 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
   const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
   const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : undefined;
   const calibrationVeto = judges.length > 0 && calibrated === 0;
+  // Agreement assumes an independent panel: when every line carries the same
+  // author, high agreement is self-consistency, not consensus — flag it.
+  const authors = judges.map((j) => j.author).filter((a): a is string => typeof a === "string" && a.length > 0);
+  const judgesIndependent = judges.length > 1 && authors.length === judges.length ? new Set(authors).size > 1 : undefined;
   const meetsBase = !liveP0 && !judgeSaysNo && !calibrationVeto;
   const meetsExpectations = meetsBase && overall >= bar;
 
@@ -76,6 +80,7 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
     reason,
     sensitivity,
     ...(judgesCalibrated ? { judgesCalibrated } : {}),
+    ...(judgesIndependent !== undefined ? { judgesIndependent } : {}),
   };
 }
 
@@ -140,6 +145,7 @@ export function formatScore(sc: Scorecard): string {
         : `  weights: verdict flips under a ±0.05 shift of ${sc.sensitivity.flips.join(", ")}`,
     );
   }
+  if (sc.judgesIndependent === false) lines.push("  panel: single-author — agreement is self-consistency, not independence");
   if (sc.provenance) {
     const p = sc.provenance;
     const sha = p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";

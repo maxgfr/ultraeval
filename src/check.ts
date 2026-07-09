@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { extractUnits, findingRefs, isCited } from "./citations.js";
 import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
@@ -165,6 +166,35 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       }
     } catch {
       errors.push("--semantic: VERIFY.json is not valid JSON");
+    }
+  }
+
+  // 4bis. Diff scope (init --since): a finding citing only files unchanged since
+  // the ref is out of scope for a PR-gating run — warn, never fail (guarded git).
+  const sinceRef = cfg.provenance?.sinceRef;
+  if (sinceRef) {
+    const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+    let changed: Set<string> | null = null;
+    try {
+      changed = new Set(
+        execFileSync("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean),
+      );
+    } catch {
+      warnings.push(`diff scope: could not resolve ${sinceRef} in the target — out-of-scope findings not checked`);
+    }
+    if (changed) {
+      for (const f of findings) {
+        if (f.status === "dismissed") continue;
+        const files = (f.evidence ?? [])
+          .map((e) => e.ref)
+          .filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r))
+          .map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
+        if (files.length && !files.some((x) => changed.has(x)))
+          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) — outside the diff scope of this run`);
+      }
     }
   }
 

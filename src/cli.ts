@@ -13,6 +13,7 @@ import { emitFixAgents, formatVerifyFix, verifyFix } from "./fix.js";
 import { rejudgeRun } from "./rejudge.js";
 import { render } from "./render.js";
 import { appendHistory, formatScore, scoreRun } from "./score.js";
+import { formatStatus, statusRun } from "./status.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
 import { exists, readJson, resolveTargetAbs } from "./util.js";
@@ -23,9 +24,10 @@ const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then gener
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
-  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>]
+  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>] [--since <ref>]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
              --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
+             --since <git-ref> diff-scopes the eval (PR gating): contracts target the changed set; check warns on out-of-scope findings.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
@@ -49,6 +51,8 @@ Commands:
   verify-fix --run <run> --task FIX-XXX
              Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
              + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+  status   --run <run> [--json]
+             Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
@@ -93,6 +97,51 @@ const VALUE_FLAGS = new Set([
 // Flags whose value is optional: `--history` alone means "use the default file".
 const OPTIONAL_VALUE_FLAGS = new Set(["--history"]);
 
+// Known flags per command. A typo'd gate flag must never be silently ignored —
+// `check --require-verfy` weakening the exit gate is exactly the failure mode.
+const COMMAND_FLAGS: Record<string, string[]> = {
+  init: ["target", "out", "kind", "category", "mode", "bar", "since"],
+  plan: ["run"],
+  analyze: ["run", "since", "json", "target", "out"],
+  brainstorm: ["run", "rank", "check"],
+  compare: ["run", "base", "json", "gate"],
+  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min"],
+  verify: ["run", "apply", "max-verify", "shards", "shard", "honeypots"],
+  backlog: ["run", "tdd", "out"],
+  fix: ["run", "task", "workflow"],
+  "verify-fix": ["run", "task"],
+  score: ["run", "json", "history"],
+  rejudge: ["run", "out"],
+  status: ["run", "json"],
+  render: ["run", "out", "no-html", "no-md", "sarif"],
+  clean: ["run", "all"],
+};
+
+// Smallest edit distance for the did-you-mean hint.
+function editDistance(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) (dp[0] as number[])[j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      (dp[i] as number[])[j] = Math.min(
+        ((dp[i - 1] as number[])[j] as number) + 1,
+        ((dp[i] as number[])[j - 1] as number) + 1,
+        ((dp[i - 1] as number[])[j - 1] as number) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+  return (dp[a.length] as number[])[b.length] as number;
+}
+
+function rejectUnknownFlags(cmd: string, args: Args): void {
+  const known = COMMAND_FLAGS[cmd];
+  if (!known) return;
+  for (const k of Object.keys(args)) {
+    if (k === "_" || k === "help" || k === "version" || known.includes(k)) continue;
+    const best = [...known].sort((x, y) => editDistance(k, x) - editDistance(k, y))[0];
+    const hint = best && editDistance(k, best) <= 3 ? ` (did you mean --${best}?)` : "";
+    throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
+  }
+}
+
 function parse(argv: string[]): Args {
   const args: Args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -131,6 +180,7 @@ function main(): void {
   }
   const run = str(args.run);
   try {
+    rejectUnknownFlags(cmd, args);
     switch (cmd) {
       case "init": {
         const target = str(args.target);
@@ -143,6 +193,7 @@ function main(): void {
           category: str(args.category),
           mode: str(args.mode) as Mode | undefined,
           bar: num(args.bar),
+          since: str(args.since),
         });
         console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
@@ -254,6 +305,12 @@ function main(): void {
         if (!run) throw new Error("backlog requires --run <run>");
         const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
         console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
+        return;
+      }
+      case "status": {
+        if (!run) throw new Error("status requires --run <run>");
+        const s = statusRun(run);
+        console.log(args.json ? JSON.stringify(s, null, 2) : formatStatus(s, run));
         return;
       }
       case "score": {

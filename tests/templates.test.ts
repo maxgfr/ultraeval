@@ -34,6 +34,32 @@ describe("templates — budget-aware generated workflow", () => {
   });
 });
 
+describe("templates — diff-scoped eval (init --since)", () => {
+  const prov = {
+    engineVersion: "1.5.0",
+    protocolVersion: "2",
+    rubricVersion: "1",
+    createdAt: "2026-07-09T00:00:00.000Z",
+    mode: "deep",
+    kind: "codebase",
+    category: "library",
+    dimensionsHash: "abc123def456",
+    sinceRef: "origin/main",
+  };
+
+  it("scopes the executor/findings/brainstormer contracts to the changed set when provenance carries sinceRef", () => {
+    const contracts = agentContracts(cfg({ provenance: prov } as never), "/run", "/engine.mjs");
+    for (const name of ["executor", "findings", "brainstormer"]) {
+      expect(contracts[name], `${name} contract is diff-scoped`).toMatch(/DIFF SCOPE/);
+      expect(contracts[name]).toContain("origin/main");
+    }
+  });
+
+  it("emits no diff-scope block without sinceRef", () => {
+    expect(agentContracts(cfg(), "/run", "/engine.mjs").executor).not.toMatch(/DIFF SCOPE/);
+  });
+});
+
 describe("templates — normed live-scenario library", () => {
   it("embeds the CLI scenario block in the executor contract for a CLI category", () => {
     const ex = agentContracts(cfg({ category: "CLI tool" }), "/run", "/engine.mjs").executor as string;

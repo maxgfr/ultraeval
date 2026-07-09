@@ -102,6 +102,7 @@ export interface Provenance {
   category: string;
   dimensionsHash: string; // sha256 (12 hex) of the dimensions at init
   targetGit?: { commit: string; branch?: string; dirty: boolean };
+  sinceRef?: string; // diff-scoped eval (PR gating): only behavior changed since this git ref is in scope
 }
 
 export interface EvalConfig {
@@ -246,6 +247,7 @@ export interface CheckResult {
 // One line of judges.jsonl, written by each judge subagent.
 export interface JudgeLine {
   lens?: string;
+  author?: string; // session/agent id — agreement only means something across INDEPENDENT judges
   dimensionScores?: { id: string; score: number; rationale?: string }[];
   overall?: number;
   meetsExpectations?: boolean;
@@ -269,6 +271,7 @@ export interface Scorecard {
   // like the score): flips lists the dimensions whose shift flips meetsExpectations.
   sensitivity?: { robust: boolean; flips: string[] };
   judgesCalibrated?: string; // "n/N" — judges whose calibration.passed is true
+  judgesIndependent?: boolean; // false = every judge line shares one author (agreement is not independence); unset when authors unknown
   provenance?: Provenance; // copied from eval.config.json when present
   scoredAt?: string; // ISO 8601, stamped by `score`
 }

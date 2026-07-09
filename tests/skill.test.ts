@@ -50,6 +50,17 @@ describe("SKILL.md packaging", () => {
     expect(gc).toMatch(/claimId/);
   });
 
+  it("SKILL.md procedure covers the protocol-v2 loop: honeypots, fix/verify-fix, history ledger, rejudge", () => {
+    for (const s of ["--honeypots", "fix --run", "verify-fix --run", "--history", "rejudge"]) {
+      expect(raw, `SKILL.md mentions ${s}`).toContain(s);
+    }
+  });
+
+  it("SKILL.md documents the diff-scoped PR recipe (init --since → compare --gate)", () => {
+    expect(raw).toContain("--since");
+    expect(raw).toMatch(/compare[^\n]*--gate/);
+  });
+
   it("ships the live-scenario library covering every category, and SKILL.md links it", () => {
     const p = join(SKILL_DIR, "references", "live-scenarios.md");
     expect(existsSync(p)).toBe(true);

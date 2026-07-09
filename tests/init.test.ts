@@ -41,6 +41,21 @@ describe("init — run provenance", () => {
     expect(typeof cfg.provenance?.targetGit?.dirty).toBe("boolean");
   });
 
+  it("--since stamps the diff-scope ref into provenance", () => {
+    const target = tmp();
+    execFileSync("git", ["init", "-q"], { cwd: target });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: target });
+    const { cfg } = initRun({ target, out: tmp(), since: "HEAD" });
+    expect(cfg.provenance?.sinceRef).toBe("HEAD");
+  });
+
+  it("--since rejects a ref the target repo does not know", () => {
+    const target = tmp();
+    execFileSync("git", ["init", "-q"], { cwd: target });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: target });
+    expect(() => initRun({ target, out: tmp(), since: "no-such-ref" })).toThrow(/no-such-ref/);
+  });
+
   it("omits targetGit for a non-git target and still writes full provenance", () => {
     const out = tmp();
     const { cfg, runDir } = initRun({ target: tmp(), out });
