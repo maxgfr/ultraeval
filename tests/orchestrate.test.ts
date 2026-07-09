@@ -95,3 +95,34 @@ describe("plan --eco — the sequential low-token path", () => {
     expect(existsSync(join(out, "eval.workflow.mjs"))).toBe(true);
   });
 });
+
+describe("plan/eco counterpart reconciliation", () => {
+  it("switching to --eco removes a previously emitted workflow (and vice versa)", () => {
+    const out = freshRun();
+    planRun(out, "/engine.mjs");
+    expect(existsSync(join(out, "eval.workflow.mjs"))).toBe(true);
+    planRun(out, "/engine.mjs", { eco: true });
+    expect(existsSync(join(out, "RUNBOOK.md"))).toBe(true);
+    expect(existsSync(join(out, "eval.workflow.mjs"))).toBe(false);
+    planRun(out, "/engine.mjs");
+    expect(existsSync(join(out, "eval.workflow.mjs"))).toBe(true);
+    expect(existsSync(join(out, "RUNBOOK.md"))).toBe(false);
+  });
+});
+
+describe("runbook mode parity beyond audit", () => {
+  it("an improve-mode runbook drops executor/findings and keeps analyzer/brainstormer, same as the workflow", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-orch-improve-"));
+    tmps.push(out);
+    initRun({ target: join(FIX, "target-lib"), out, kind: "codebase", mode: "improve" });
+    planRun(out, "/engine.mjs", { eco: true });
+    const rb = readFileSync(join(out, "RUNBOOK.md"), "utf8");
+    expect(rb).not.toContain("executor.md");
+    expect(rb).not.toContain("findings.md");
+    expect(rb).toContain("analyzer.md");
+    expect(rb).toContain("brainstormer.md");
+    const idx = (s: string) => rb.indexOf(s);
+    expect(idx("analyzer.md")).toBeLessThan(idx("brainstormer.md"));
+    expect(idx("brainstormer.md")).toBeLessThan(idx("gate.md"));
+  });
+});
