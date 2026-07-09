@@ -15,8 +15,22 @@ function load(dir: string): Side {
   return { findings, score, cfg };
 }
 
-// Findings are matched across runs by kind+title (ids differ between runs).
+// Findings are matched across runs by kind+title (ids differ between runs)…
 const key = (f: Finding) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+
+// …with a secondary evidence fingerprint (kind + sorted target refs, line spec
+// included) so a mere retitle is not miscounted as one resolved + one
+// introduced. Line-level precision matters: two different findings often share
+// a hotspot file; if lines shifted between runs the fingerprint just misses and
+// degrades safely to resolved+introduced.
+function targetRefOf(ref: string): string | null {
+  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
+  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
+}
+function fingerprint(f: Finding): string | null {
+  const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x): x is string => !!x))].sort();
+  return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
+}
 
 const provLine = (p?: Provenance): string =>
   p
@@ -44,8 +58,18 @@ export interface CompareResult {
   scoreDelta: number | null;
   resolved: Finding[]; // present-and-live in base, gone/dismissed in current
   introduced: Finding[]; // new in current
+  retitled: { from: Finding; to: Finding }[]; // same evidence fingerprint, new title
   warnings: string[]; // comparability caveats — surface them with the delta
   md: string;
+}
+
+// The CI regression gate: a comparison fails when quality regressed.
+export function gateFailures(r: CompareResult): string[] {
+  const fails: string[] = [];
+  if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
+  const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
+  if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
+  return fails;
 }
 
 export function compareRuns(baseDir: string, newDir: string): CompareResult {
@@ -55,8 +79,21 @@ export function compareRuns(baseDir: string, newDir: string): CompareResult {
   const liveCur = cur.findings.filter((f) => f.status !== "dismissed");
   const baseKeys = new Set(liveBase.map(key));
   const curKeys = new Set(liveCur.map(key));
-  const resolved = liveBase.filter((f) => !curKeys.has(key(f)));
-  const introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  let resolved = liveBase.filter((f) => !curKeys.has(key(f)));
+  let introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  const retitled: { from: Finding; to: Finding }[] = [];
+  const introducedLeft = [...introduced];
+  const resolvedLeft: Finding[] = [];
+  for (const f of resolved) {
+    const fp = fingerprint(f);
+    const match = fp ? introducedLeft.find((g) => fingerprint(g) === fp) : undefined;
+    if (match) {
+      retitled.push({ from: f, to: match });
+      introducedLeft.splice(introducedLeft.indexOf(match), 1);
+    } else resolvedLeft.push(f);
+  }
+  resolved = resolvedLeft;
+  introduced = introducedLeft;
   const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
   const warnings = comparabilityWarnings(base, cur);
 
@@ -80,8 +117,12 @@ ${resolved.map(line).join("\n") || "- none"}
 ## Introduced in current (${introduced.length})
 
 ${introduced.map(line).join("\n") || "- none"}
+
+## Retitled (same evidence, new title) (${retitled.length})
+
+${retitled.map((p) => `- ${p.from.title} → ${p.to.title}`).join("\n") || "- none"}
 `;
-  return { scoreDelta, resolved, introduced, warnings, md };
+  return { scoreDelta, resolved, introduced, retitled, warnings, md };
 }
 
 export function runCompare(baseDir: string, newDir: string, outDir: string): CompareResult {

@@ -4,7 +4,8 @@ import { changedFiles, runAnalyze } from "./analyze.js";
 import { buildBacklog } from "./backlog.js";
 import { rankBrainstorm, runBrainstorm } from "./brainstorm.js";
 import { checkRun, formatCheckReport } from "./check.js";
-import { runCompare } from "./compare.js";
+import { gateFailures, runCompare } from "./compare.js";
+import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
@@ -28,8 +29,9 @@ Commands:
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
   brainstorm --run <run> [--rank [--check]]
              Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (--check gates them).
-  compare  --run <new> --base <old>
-             Diff two eval runs -> COMPARE.md (score delta, resolved findings, newly introduced).
+  compare  --run <new> --base <old> [--json] [--gate]
+             Diff two eval runs -> COMPARE.md (score delta, resolved/introduced/retitled findings).
+             --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
@@ -38,8 +40,9 @@ Commands:
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   score    --run <run> [--json]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
-  render   --run <run> [--out <dir>] [--no-html] [--no-md]
+  render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
+             --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
@@ -172,10 +175,20 @@ function main(): void {
         const base = str(args.base);
         if (!base) throw new Error("compare requires --base <old-run>");
         const r = runCompare(base, run, run);
-        console.log(
-          `ultraeval compare: score Δ ${r.scoreDelta ?? "n/a"} · ${r.resolved.length} resolved · ${r.introduced.length} introduced -> ${run}/COMPARE.md`,
-        );
+        if (args.json) {
+          const { md: _md, ...rest } = r;
+          console.log(JSON.stringify(rest, null, 2));
+        } else {
+          console.log(
+            `ultraeval compare: score Δ ${r.scoreDelta ?? "n/a"} · ${r.resolved.length} resolved · ${r.introduced.length} introduced · ${r.retitled.length} retitled -> ${run}/COMPARE.md`,
+          );
+        }
         for (const w of r.warnings) console.log(`  ! ${w}`);
+        if (args.gate) {
+          const fails = gateFailures(r);
+          for (const f of fails) console.log(`  ✗ gate: ${f}`);
+          process.exitCode = fails.length ? 1 : 0;
+        }
         return;
       }
       case "check": {
@@ -219,6 +232,7 @@ function main(): void {
       case "render": {
         if (!run) throw new Error("render requires --run <run>");
         const written = render(run, { out: str(args.out), html: !args["no-html"], md: !args["no-md"] });
+        if (args.sarif) written.push(writeSarif(run, str(args.out)));
         console.log(`ultraeval render:\n${written.map((w) => `  ${w}`).join("\n")}`);
         return;
       }

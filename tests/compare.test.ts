@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { compareRuns } from "../src/compare.js";
+import { compareRuns, gateFailures } from "../src/compare.js";
 
 const tmps: string[] = [];
 
@@ -23,7 +23,7 @@ afterEach(() => {
   for (const t of tmps.splice(0)) rmSync(t, { recursive: true, force: true });
 });
 
-const f = (title: string) => ({ id: "F1", severity: "P1", title, statement: "s", evidence: [{ ref: "a:1" }], status: "confirmed" });
+const f = (title: string, ref = "a:1") => ({ id: "F1", severity: "P1", title, statement: "s", evidence: [{ ref }], status: "confirmed" });
 
 // biome-ignore lint/suspicious/noExplicitAny: test scaffolding
 function withConfig(dir: string, dimensions: any[], provenance?: any): string {
@@ -58,8 +58,8 @@ const prov = (over: Record<string, unknown> = {}) => ({
 
 describe("compare — two eval runs", () => {
   it("reports score delta, resolved and introduced findings", () => {
-    const base = runDir([f("bug A"), f("bug B")], 70);
-    const cur = runDir([f("bug B"), f("bug C")], 85);
+    const base = runDir([f("bug A", "a:1"), f("bug B", "a:2")], 70);
+    const cur = runDir([f("bug B", "a:2"), f("bug C", "a:3")], 85);
     const r = compareRuns(base, cur);
     expect(r.scoreDelta).toBe(15);
     expect(r.resolved.map((x) => x.title)).toEqual(["bug A"]);
@@ -68,6 +68,51 @@ describe("compare — two eval runs", () => {
 
   it("score delta is null when a scorecard is missing", () => {
     expect(compareRuns(runDir([]), runDir([], 90)).scoreDelta).toBeNull();
+  });
+});
+
+describe("compare — evidence fingerprint matching", () => {
+  it("a retitled finding with the same evidence files is reported as retitled, not resolved+introduced", () => {
+    const base = runDir([{ ...f("SQL injection in /u"), evidence: [{ ref: "src/app.js:3" }, { ref: "run:runs/core.md#L2" }] }], 70);
+    const cur = runDir([{ ...f("SQLi via req.query.id in /u"), evidence: [{ ref: "src/app.js:3" }] }], 75);
+    const r = compareRuns(base, cur);
+    expect(r.resolved).toEqual([]);
+    expect(r.introduced).toEqual([]);
+    expect(r.retitled.length).toBe(1);
+    expect(r.retitled[0]?.from.title).toBe("SQL injection in /u");
+    expect(r.retitled[0]?.to.title).toBe("SQLi via req.query.id in /u");
+    expect(r.md).toMatch(/Retitled/);
+  });
+
+  it("different evidence files still count as resolved + introduced", () => {
+    const base = runDir([{ ...f("bug A"), evidence: [{ ref: "src/a.js:1" }] }], 70);
+    const cur = runDir([{ ...f("bug B"), evidence: [{ ref: "src/b.js:1" }] }], 75);
+    const r = compareRuns(base, cur);
+    expect(r.resolved.length).toBe(1);
+    expect(r.introduced.length).toBe(1);
+    expect(r.retitled).toEqual([]);
+  });
+});
+
+describe("compare — CI regression gate", () => {
+  it("gate fails when the score drops", () => {
+    const base = runDir([f("a")], 80);
+    const cur = runDir([f("a")], 70);
+    const r = compareRuns(base, cur);
+    expect(gateFailures(r).join(" ")).toMatch(/score/);
+  });
+
+  it("gate fails when a new P0 defect is introduced", () => {
+    const base = runDir([], 80);
+    const cur = runDir([{ ...f("new disaster"), severity: "P0" }], 85);
+    const r = compareRuns(base, cur);
+    expect(gateFailures(r).join(" ")).toMatch(/P0/);
+  });
+
+  it("gate passes on an improved run with no new P0", () => {
+    const base = runDir([f("a")], 70);
+    const cur = runDir([], 85);
+    expect(gateFailures(compareRuns(base, cur))).toEqual([]);
   });
 });
 

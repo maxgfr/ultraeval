@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join13 } from "path";
+import { join as join14 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -844,6 +844,14 @@ function load(dir) {
   return { findings, score, cfg };
 }
 var key = (f) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+function targetRefOf(ref) {
+  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
+  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
+}
+function fingerprint(f) {
+  const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x) => !!x))].sort();
+  return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
+}
 var provLine = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "no provenance (legacy run)";
 function comparabilityWarnings(base, cur) {
   const warnings = [];
@@ -860,6 +868,13 @@ function comparabilityWarnings(base, cur) {
   }
   return warnings;
 }
+function gateFailures(r) {
+  const fails = [];
+  if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
+  const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
+  if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
+  return fails;
+}
 function compareRuns(baseDir, newDir) {
   const base = load(baseDir);
   const cur = load(newDir);
@@ -867,8 +882,21 @@ function compareRuns(baseDir, newDir) {
   const liveCur = cur.findings.filter((f) => f.status !== "dismissed");
   const baseKeys = new Set(liveBase.map(key));
   const curKeys = new Set(liveCur.map(key));
-  const resolved = liveBase.filter((f) => !curKeys.has(key(f)));
-  const introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  let resolved = liveBase.filter((f) => !curKeys.has(key(f)));
+  let introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  const retitled = [];
+  const introducedLeft = [...introduced];
+  const resolvedLeft = [];
+  for (const f of resolved) {
+    const fp = fingerprint(f);
+    const match = fp ? introducedLeft.find((g) => fingerprint(g) === fp) : void 0;
+    if (match) {
+      retitled.push({ from: f, to: match });
+      introducedLeft.splice(introducedLeft.indexOf(match), 1);
+    } else resolvedLeft.push(f);
+  }
+  resolved = resolvedLeft;
+  introduced = introducedLeft;
   const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
   const warnings = comparabilityWarnings(base, cur);
   const line = (f) => `- ${f.kind === "opportunity" ? "opp" : f.severity} \xB7 ${f.title}`;
@@ -890,8 +918,12 @@ ${resolved.map(line).join("\n") || "- none"}
 ## Introduced in current (${introduced.length})
 
 ${introduced.map(line).join("\n") || "- none"}
+
+## Retitled (same evidence, new title) (${retitled.length})
+
+${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "- none"}
 `;
-  return { scoreDelta, resolved, introduced, warnings, md };
+  return { scoreDelta, resolved, introduced, retitled, warnings, md };
 }
 function runCompare(baseDir, newDir, outDir) {
   const r = compareRuns(baseDir, newDir);
@@ -899,13 +931,70 @@ function runCompare(baseDir, newDir, outDir) {
   return r;
 }
 
+// src/sarif.ts
+import { join as join7, relative as relative3, sep } from "path";
+var LEVEL = { P0: "error", P1: "warning", P2: "note" };
+function buildSarif(cfg, doc, runDir) {
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
+  const ruleOf = (f) => `ultraeval/${f.dimension ?? f.kind ?? "defect"}`;
+  const results = live.map((f) => {
+    const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
+      physicalLocation: {
+        artifactLocation: {
+          uri: relative3(targetAbs, r.absPath).split(sep).join("/")
+        },
+        ...r.lineStart ? { region: { startLine: r.lineStart, ...r.lineEnd && r.lineEnd !== r.lineStart ? { endLine: r.lineEnd } : {} } } : {}
+      }
+    }));
+    return {
+      ruleId: ruleOf(f),
+      level: LEVEL[f.severity] ?? "warning",
+      message: { text: `${f.title} \u2014 ${f.statement}` },
+      ...locations.length ? { locations } : {},
+      properties: {
+        findingId: f.id,
+        severity: f.severity,
+        status: f.status,
+        ...f.kind ? { kind: f.kind } : {},
+        ...f.impact ? { impact: f.impact } : {},
+        ...f.effort ? { effort: f.effort } : {}
+      }
+    };
+  });
+  return {
+    $schema: "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "ultraeval",
+            version: cfg.version,
+            informationUri: "https://github.com/maxgfr/ultraeval",
+            rules: [...new Set(results.map((r) => r.ruleId))].map((id) => ({ id }))
+          }
+        },
+        results
+      }
+    ]
+  };
+}
+function writeSarif(runDir, out) {
+  const cfg = readJson(join7(runDir, "eval.config.json"));
+  const doc = readJson(join7(runDir, "findings.json"));
+  const p = join7(out ?? runDir, "eval.sarif");
+  writeJson(p, buildSarif(cfg, doc, runDir));
+  return p;
+}
+
 // src/clean.ts
 import { readdirSync as readdirSync3, rmSync } from "fs";
-import { join as join7 } from "path";
+import { join as join8 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md"];
 function clean(runDir, opts = {}) {
   const removed = [];
-  if (exists(runDir) && !exists(join7(runDir, "eval.config.json"))) {
+  if (exists(runDir) && !exists(join8(runDir, "eval.config.json"))) {
     throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
   }
   if (opts.all) {
@@ -916,7 +1005,7 @@ function clean(runDir, opts = {}) {
     return removed;
   }
   for (const name of DERIVED) {
-    const p = join7(runDir, name);
+    const p = join8(runDir, name);
     if (exists(p)) {
       rmSync(p, { force: true });
       removed.push(p);
@@ -925,12 +1014,12 @@ function clean(runDir, opts = {}) {
   if (exists(runDir)) {
     for (const e of readdirSync3(runDir)) {
       if (/^VERIFY\.(todo\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync(join7(runDir, e), { force: true });
-        removed.push(join7(runDir, e));
+        rmSync(join8(runDir, e), { force: true });
+        removed.push(join8(runDir, e));
       }
     }
   }
-  const fixes = join7(runDir, "fixes");
+  const fixes = join8(runDir, "fixes");
   if (exists(fixes)) {
     rmSync(fixes, { recursive: true, force: true });
     removed.push(fixes);
@@ -941,7 +1030,7 @@ function clean(runDir, opts = {}) {
 // src/init.ts
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { join as join8, resolve as resolve2 } from "path";
+import { join as join9, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
 var iso25010 = (ref, note) => ({ standard: "ISO/IEC 25010:2023", ref, ...note ? { note } : {} });
@@ -1162,8 +1251,8 @@ function defaultDimensions(kind, category = "") {
 
 // src/init.ts
 function detectKind(targetAbs) {
-  if (exists(join8(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join8(targetAbs, "skills");
+  if (exists(join9(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join9(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
@@ -1217,14 +1306,14 @@ function initRun(opts) {
     provenance
   };
   const runDir = resolve2(process.cwd(), opts.out);
-  ensureDir(join8(runDir, "runs"));
-  ensureDir(join8(runDir, "research"));
-  writeJson(join8(runDir, "eval.config.json"), cfg);
+  ensureDir(join9(runDir, "runs"));
+  ensureDir(join9(runDir, "research"));
+  writeJson(join9(runDir, "eval.config.json"), cfg);
   return { cfg, runDir };
 }
 
 // src/plan.ts
-import { join as join9 } from "path";
+import { join as join10 } from "path";
 
 // src/templates.ts
 var anchorText = (d) => d.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "";
@@ -1440,7 +1529,7 @@ ${dims}
 }
 function findingsSchema() {
   return {
-    $schema: "informal",
+    $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     required: ["findings"],
     properties: {
@@ -1451,6 +1540,7 @@ function findingsSchema() {
           required: ["id", "severity", "title", "statement", "evidence", "status"],
           properties: {
             id: { type: "string", pattern: "^F\\d+$" },
+            kind: { enum: ["defect", "opportunity"], description: "defect (default) or opportunity \u2014 the gate requires impact+effort for opportunities" },
             dimension: { type: "string" },
             severity: {
               enum: [...VALID_SEVERITIES],
@@ -1458,6 +1548,8 @@ function findingsSchema() {
                 (s) => `${s} \u2014 ${SEVERITY_DEFS[s].label} (${SEVERITY_DEFS[s].cvssBand}): ${SEVERITY_DEFS[s].meaning}; gate: ${SEVERITY_DEFS[s].gateEffect}`
               ).join(" | ")
             },
+            impact: { enum: ["high", "med", "low"], description: "opportunities: value axis" },
+            effort: { enum: ["S", "M", "L"], description: "opportunities: cost axis" },
             title: { type: "string" },
             statement: { type: "string" },
             evidence: {
@@ -1472,7 +1564,13 @@ function findingsSchema() {
             failureScenario: { type: "string" },
             recommendation: { type: "string" },
             status: { enum: ["open", "confirmed", "dismissed"] }
-          }
+          },
+          allOf: [
+            {
+              if: { properties: { kind: { const: "opportunity" } }, required: ["kind"] },
+              then: { required: ["impact", "effort"] }
+            }
+          ]
         }
       }
     }
@@ -1481,10 +1579,10 @@ function findingsSchema() {
 
 // src/plan.ts
 function planRun(runDir, engineAbs) {
-  const cfg = readJson(join9(runDir, "eval.config.json"));
+  const cfg = readJson(join10(runDir, "eval.config.json"));
   const written = [];
   const w = (rel, content) => {
-    const p = join9(runDir, rel);
+    const p = join10(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
@@ -1499,18 +1597,18 @@ function planRun(runDir, engineAbs) {
 }
 
 // src/render.ts
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
-  const cfg = readJson(join10(runDir, "eval.config.json"));
-  const doc = readJson(join10(runDir, "findings.json"));
-  const verify = exists(join10(runDir, "VERIFY.json")) ? readJson(join10(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join10(runDir, "BACKLOG.json")) ? readJson(join10(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join10(runDir, "scorecard.json")) ? readJson(join10(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join11(runDir, "eval.config.json"));
+  const doc = readJson(join11(runDir, "findings.json"));
+  const verify = exists(join11(runDir, "VERIFY.json")) ? readJson(join11(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join11(runDir, "BACKLOG.json")) ? readJson(join11(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join11(runDir, "scorecard.json")) ? readJson(join11(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -1518,12 +1616,12 @@ function render(runDir, opts = {}) {
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join10(out, "index.md");
+    const p = join11(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join10(out, "index.html");
+    const p = join11(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -1623,9 +1721,9 @@ function esc(s) {
 }
 
 // src/score.ts
-import { join as join11 } from "path";
+import { join as join12 } from "path";
 function readJudges(runDir) {
-  const p = join11(runDir, "judges.jsonl");
+  const p = join12(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -1652,12 +1750,12 @@ function computeScore(cfg, judges, doc) {
   return { overall, maxScore: 100, meetsExpectations, dimensions, judges: judges.length, reason };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join11(runDir, "eval.config.json"));
-  const doc = exists(join11(runDir, "findings.json")) ? readJson(join11(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join12(runDir, "eval.config.json"));
+  const doc = exists(join12(runDir, "findings.json")) ? readJson(join12(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join11(runDir, "scorecard.json"), sc);
+  writeJson(join12(runDir, "scorecard.json"), sc);
   return sc;
 }
 function formatScore(sc) {
@@ -1672,11 +1770,11 @@ function formatScore(sc) {
 }
 
 // src/verify.ts
-import { isAbsolute as isAbsolute2, join as join12, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join13, resolve as resolve3 } from "path";
 var SEV_ORDER2 = { P0: 0, P1: 1, P2: 2 };
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join12(runDir, "eval.config.json"));
-  const doc = readJson(join12(runDir, "findings.json"));
+  const cfg = readJson(join13(runDir, "eval.config.json"));
+  const doc = readJson(join13(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER2[a.severity] ?? 9) - (SEV_ORDER2[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -1697,8 +1795,8 @@ function runVerify(runDir, opts = {}) {
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i) => i % opts.shards === opts.shard);
   const out = { run: runDir, pairs };
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
-  writeJson(join12(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join12(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join13(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join13(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function renderWorklistMd(todo) {
@@ -1758,9 +1856,9 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join12(runDir, "findings.json"));
+  const doc = readJson(join13(runDir, "findings.json"));
   const result = reduceVerdicts(loadVerdicts(runDir, spec), doc.findings ?? []);
-  writeJson(join12(runDir, "VERIFY.json"), result);
+  writeJson(join13(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -1786,8 +1884,9 @@ Commands:
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
   brainstorm --run <run> [--rank [--check]]
              Emit BRAINSTORM.todo.md (divergent lenses); --rank folds opportunities.json into findings.json (--check gates them).
-  compare  --run <new> --base <old>
-             Diff two eval runs -> COMPARE.md (score delta, resolved findings, newly introduced).
+  compare  --run <new> --base <old> [--json] [--gate]
+             Diff two eval runs -> COMPARE.md (score delta, resolved/introduced/retitled findings).
+             --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
   verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
@@ -1796,8 +1895,9 @@ Commands:
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   score    --run <run> [--json]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
-  render   --run <run> [--out <dir>] [--no-html] [--no-md]
+  render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
+             --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
@@ -1883,7 +1983,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         let targetAbs;
         let out;
         if (run) {
-          const cfg = readJson(join13(run, "eval.config.json"));
+          const cfg = readJson(join14(run, "eval.config.json"));
           targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
           out = run;
         } else {
@@ -1923,10 +2023,20 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         const base = str(args.base);
         if (!base) throw new Error("compare requires --base <old-run>");
         const r = runCompare(base, run, run);
-        console.log(
-          `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced -> ${run}/COMPARE.md`
-        );
+        if (args.json) {
+          const { md: _md, ...rest } = r;
+          console.log(JSON.stringify(rest, null, 2));
+        } else {
+          console.log(
+            `ultraeval compare: score \u0394 ${r.scoreDelta ?? "n/a"} \xB7 ${r.resolved.length} resolved \xB7 ${r.introduced.length} introduced \xB7 ${r.retitled.length} retitled -> ${run}/COMPARE.md`
+          );
+        }
         for (const w of r.warnings) console.log(`  ! ${w}`);
+        if (args.gate) {
+          const fails = gateFailures(r);
+          for (const f of fails) console.log(`  \u2717 gate: ${f}`);
+          process.exitCode = fails.length ? 1 : 0;
+        }
         return;
       }
       case "check": {
@@ -1970,6 +2080,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
       case "render": {
         if (!run) throw new Error("render requires --run <run>");
         const written = render(run, { out: str(args.out), html: !args["no-html"], md: !args["no-md"] });
+        if (args.sarif) written.push(writeSarif(run, str(args.out)));
         console.log(`ultraeval render:
 ${written.map((w) => `  ${w}`).join("\n")}`);
         return;

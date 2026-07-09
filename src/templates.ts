@@ -233,7 +233,7 @@ ${dims}
 
 export function findingsSchema(): unknown {
   return {
-    $schema: "informal",
+    $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
     required: ["findings"],
     properties: {
@@ -244,6 +244,7 @@ export function findingsSchema(): unknown {
           required: ["id", "severity", "title", "statement", "evidence", "status"],
           properties: {
             id: { type: "string", pattern: "^F\\d+$" },
+            kind: { enum: ["defect", "opportunity"], description: "defect (default) or opportunity — the gate requires impact+effort for opportunities" },
             dimension: { type: "string" },
             severity: {
               enum: [...VALID_SEVERITIES],
@@ -251,6 +252,8 @@ export function findingsSchema(): unknown {
                 (s) => `${s} — ${SEVERITY_DEFS[s].label} (${SEVERITY_DEFS[s].cvssBand}): ${SEVERITY_DEFS[s].meaning}; gate: ${SEVERITY_DEFS[s].gateEffect}`,
               ).join(" | "),
             },
+            impact: { enum: ["high", "med", "low"], description: "opportunities: value axis" },
+            effort: { enum: ["S", "M", "L"], description: "opportunities: cost axis" },
             title: { type: "string" },
             statement: { type: "string" },
             evidence: {
@@ -266,6 +269,12 @@ export function findingsSchema(): unknown {
             recommendation: { type: "string" },
             status: { enum: ["open", "confirmed", "dismissed"] },
           },
+          allOf: [
+            {
+              if: { properties: { kind: { const: "opportunity" } }, required: ["kind"] },
+              then: { required: ["impact", "effort"] },
+            },
+          ],
         },
       },
     },
