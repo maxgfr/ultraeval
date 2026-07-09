@@ -10,7 +10,7 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
     {
       "id": "F1",                       // F<number>, unique
       "dimension": "security",           // optional; one of the run's dimension ids
-      "severity": "P0",                  // P0 trust/correctness/data-loss · P1 fidelity/coverage · P2 polish
+      "severity": "P0",                  // P0 Critical · P1 Major · P2 Minor — normative definitions in references/protocol.md (SEVERITY_DEFS)
       "title": "SQL injection in /u",
       "statement": "req.query.id flows unsanitized into a SELECT string.",
       "evidence": [                       // >= 1 resolvable ref REQUIRED

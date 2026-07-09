@@ -48,6 +48,24 @@ verdict banner + dimension table.
 +accessibility/auth; research/RAG → faithfulness/retrieval; requirements → ISO/IEC/IEEE 29148. Weights
 need not sum to 1 — `score` normalizes.
 
+## The normed process
+
+The evaluation is standardized end to end (normative text: `skills/ultraeval/references/protocol.md`):
+
+- **Anchored rubrics** — every dimension carries machine-readable `anchors[]` tracing it to the clause of
+  an external referential (ISO/IEC 25010:2023 for codebases, the *ultraeval skill referential v1* — an
+  ISO 25010/25059 composite — for skills, 29148/WCAG/OWASP/RAGAS per category). The contracts,
+  `dimensions.json` and the rendered dashboard all surface them; research may refine an anchor with cited
+  justification, never silently drop it.
+- **Codified severities** — `SEVERITY_DEFS` (`src/types.ts`) is the single machine-readable source for what
+  P0/P1/P2 mean (CVSS-v4-aligned bands, meaning, gate effect); the findings contract,
+  `findings.schema.json` and `REMEDIATION.md` all derive from it.
+- **Provenance & comparability** — `init` stamps every run with engine/protocol/rubric versions, an
+  ISO-8601 timestamp, a dimensions hash and the target git SHA (+ dirty flag); `score` copies it into
+  `scorecard.json` with `scoredAt`; `compare` prints both sides' provenance and warns when
+  protocol/rubric versions or dimension ids/weights differ — a rubric change must never silently read as
+  a quality delta.
+
 ## Analysis & opportunities (improve / deep modes)
 
 Beyond defects, ultraeval discovers grounded improvement **opportunities**:
