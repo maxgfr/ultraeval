@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
 import { agentContracts, workflowScript } from "../src/templates.js";
 import type { EvalConfig } from "../src/types.js";
+
+const tmps: string[] = [];
+
+afterEach(() => {
+  for (const t of tmps.splice(0)) rmSync(t, { recursive: true, force: true });
+});
+
+function emitWorkflow(config: EvalConfig): string {
+  const dir = mkdtempSync(join(tmpdir(), "ue-tpl-"));
+  tmps.push(dir);
+  const p = join(dir, "eval.workflow.mjs");
+  writeFileSync(p, workflowScript(config, "/run", "/engine.mjs"));
+  return p;
+}
 
 const cfg = (over: Partial<EvalConfig> = {}): EvalConfig =>
   ({
@@ -31,6 +50,44 @@ describe("templates — budget-aware generated workflow", () => {
 
   it("the generated workflow says how to launch it — Workflow harness, not plain node", () => {
     expect(workflowScript(cfg(), "/run", "/engine.mjs")).toMatch(/Workflow\(\{ scriptPath/);
+  });
+});
+
+describe("templates — the generated workflow is not a plain Node script", () => {
+  it("plain `node eval.workflow.mjs` exits 2 with launch guidance, not an opaque SyntaxError", () => {
+    const p = emitWorkflow(cfg());
+    const r = spawnSync("node", [p], { encoding: "utf8" });
+    const out = `${r.stdout}${r.stderr}`;
+    expect(out).not.toMatch(/SyntaxError/); // the old top-level return died with "Illegal return statement"
+    expect(r.status).toBe(2);
+    expect(out).toMatch(/Workflow\(\{ scriptPath/); // names the correct launcher
+    expect(out).toMatch(/agents\//); // and the by-hand fallback
+  });
+
+  it("stays valid inside the Workflow harness (globals provided → runs to the completion log)", async () => {
+    const p = emitWorkflow(cfg({ mode: "audit" }));
+    const calls: string[] = [];
+    const logs: string[] = [];
+    const g = globalThis as Record<string, unknown>;
+    g.phase = (t: string) => calls.push(`phase:${t}`);
+    g.log = (m: string) => logs.push(m);
+    g.agent = async () => {
+      calls.push("agent");
+      return "";
+    };
+    g.parallel = async (thunks: (() => Promise<unknown>)[]) => Promise.all(thunks.map((t) => t()));
+    try {
+      const mod = await import(pathToFileURL(p).href);
+      expect(mod.meta.name).toBe("ultraeval-codebase");
+      expect(calls).toContain("phase:Research");
+      expect(calls).toContain("phase:Results");
+      expect(logs.join("\n")).toMatch(/eval complete/); // the completion log replaces the old top-level return
+    } finally {
+      delete g.phase;
+      delete g.log;
+      delete g.agent;
+      delete g.parallel;
+    }
   });
 });
 
