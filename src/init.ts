@@ -13,6 +13,7 @@ export interface InitOpts {
   category?: string;
   mode?: Mode;
   bar?: number; // category-calibrated meets-expectations bar
+  since?: string; // diff-scope the eval to changes since this git ref (PR gating)
 }
 
 // A target is a "skill" if it exposes a SKILL.md (at root or under skills/<x>/).
@@ -54,6 +55,15 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
   const mode = opts.mode ?? "audit";
   const dimensions = defaultDimensions(kind, category);
   const targetGit = gitInfo(targetAbs);
+  // --since must be a ref the TARGET repo can resolve — a typo'd ref would
+  // silently scope the eval to nothing.
+  if (opts.since) {
+    try {
+      execFileSync("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
+    } catch {
+      throw new Error(`--since ${opts.since}: not a resolvable git ref in ${targetAbs}`);
+    }
+  }
   const provenance: Provenance = {
     engineVersion: VERSION,
     protocolVersion: PROTOCOL_VERSION,
@@ -64,6 +74,7 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
     category,
     dimensionsHash: dimensionsHash(dimensions),
     ...(targetGit ? { targetGit } : {}),
+    ...(opts.since ? { sinceRef: opts.since } : {}),
   };
   const cfg: EvalConfig = {
     target: opts.target,

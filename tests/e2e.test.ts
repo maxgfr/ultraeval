@@ -88,6 +88,7 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
       "verify-fix",
       "score",
       "rejudge",
+      "status",
       "render",
       "clean",
     ]) {
@@ -135,6 +136,8 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
   it("check on a nonexistent run dir exits 2 (usage), not 1 (gate verdict)", () => {
     expect(run(["check", "--run", "/nonexistent-ultraeval-run"]).status).toBe(2);
   });
+
+  // unknown-flag rejection and `status` are covered in depth by tests/cli.test.ts
 
   it("check fails (exit 1) on a doctored citation", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-bad-"));

@@ -18,7 +18,7 @@ No `npm install`, no API keys — the engine is a single committed `.mjs` bundle
 ## What it does
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → score → render
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify(+honeypots) → backlog(TDD) → fix → verify-fix → score(+history) → render
 ```
 
 - **`plan`** generates `eval.workflow.mjs` — a ready-to-launch multi-agent Workflow parameterized to your target — plus `agents/*.md` dispatch contracts. This is the "generate the workflow and subagents" part.
@@ -49,7 +49,8 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 
 ```bash
 ENGINE=node scripts/ultraeval.mjs
-$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep
+$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep   # add --since origin/main for a diff-scoped PR-gating run
+$ENGINE status --run /tmp/eval                      # pipeline checklist + the exact next command
 $ENGINE plan --run /tmp/eval                       # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
 $ENGINE analyze --run /tmp/eval [--since <ref>] [--json]   # deterministic hotspots/deps/churn/test-gaps -> analysis.json
 $ENGINE brainstorm --run /tmp/eval                  # divergent lenses -> BRAINSTORM.todo.md

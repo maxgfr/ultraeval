@@ -1,0 +1,70 @@
+import { execFileSync } from "node:child_process";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, describe, expect, it } from "vitest";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const BUNDLE = join(ROOT, "scripts", "ultraeval.mjs");
+const FIX = join(ROOT, "tests", "fixtures");
+const tmps: string[] = [];
+
+function run(args: string[]): { status: number; out: string } {
+  try {
+    return { status: 0, out: execFileSync("node", [BUNDLE, ...args], { encoding: "utf8", cwd: ROOT }) };
+  } catch (e) {
+    const err = e as { status?: number; stdout?: string; stderr?: string };
+    return { status: err.status ?? 1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+  }
+}
+
+function sampleRun(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ue-cli-"));
+  tmps.push(dir);
+  cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+  return dir;
+}
+
+afterAll(() => {
+  for (const t of tmps.splice(0)) rmSync(t, { recursive: true, force: true });
+});
+
+describe("cli — unknown flags are rejected, never silently ignored", () => {
+  it("a misspelled gate flag exits 2 with a did-you-mean hint", () => {
+    const r = run(["check", "--run", sampleRun(), "--semantic", "--require-verfy"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/unknown flag --require-verfy/);
+    expect(r.out).toMatch(/--require-verify/);
+  });
+
+  it("an unknown flag with no close match still names the command", () => {
+    const r = run(["score", "--run", sampleRun(), "--frobnicate"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/unknown flag --frobnicate for score/);
+  });
+
+  it("every documented flag still passes (no false rejection)", () => {
+    const dir = sampleRun();
+    expect(run(["check", "--run", dir, "--semantic", "--strict", "--min-findings", "1"]).status).not.toBe(2);
+    expect(run(["verify", "--run", dir, "--max-verify", "10", "--honeypots", "1"]).status).toBe(0);
+  });
+});
+
+describe("cli — status names the pipeline state and the next command", () => {
+  it("prints the artifact checklist and a next: hint", () => {
+    const r = run(["status", "--run", sampleRun()]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/eval\.config\.json/);
+    expect(r.out).toMatch(/findings\.json/);
+    expect(r.out).toMatch(/next:/);
+  });
+
+  it("--json emits the machine-readable shape", () => {
+    const r = run(["status", "--run", sampleRun(), "--json"]);
+    expect(r.status).toBe(0);
+    const s = JSON.parse(r.out);
+    expect(Array.isArray(s.steps)).toBe(true);
+    expect(typeof s.next).toBe("string");
+  });
+});

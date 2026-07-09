@@ -16,7 +16,7 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 | Findings | run logs | `findings.json` schema-valid; every non-dismissed finding carries ≥1 resolvable evidence ref |
 | Analyze → Brainstorm (improve/deep only) | `analysis.json` | ranked opportunities folded into `findings.json` as `kind:"opportunity"`, each grounded |
 | Gate | `findings.json` | `check` exit 0 → `verify` fully adjudicated → `check --semantic --require-verify` exit 0 |
-| Judge | gate green | `judges.jsonl`: every dimension scored 0–5 by every lens (≥3 independent lenses SHOULD be used), each rationale grounded in a path the judge read; every judge MUST first score the golden fixture `references/calibration-run.json` and report `calibration:{scores,passed}` in its line |
+| Judge | gate green | `judges.jsonl`: every dimension scored 0–5 by every lens (≥3 independent lenses SHOULD be used), each rationale grounded in a path the judge read; every judge MUST first score the golden fixture `references/calibration-run.json` and report `calibration:{scores,passed}` in its line; each line SHOULD carry an `author` (agent/session id) — agreement assumes an independent panel, and a single-author panel is flagged `judgesIndependent: false` |
 | Results | `judges.jsonl` | `scorecard.json`, `RESULTS.md`, `SUMMARY.md`, `BACKLOG.json`, `fixes/`, `index.md`/`index.html`; final `check --semantic` exit 0 |
 
 ## Gate thresholds (normative constants)

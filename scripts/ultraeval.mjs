@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join17 } from "path";
+import { join as join18 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -685,6 +685,7 @@ function rankBrainstorm(runDir) {
 }
 
 // src/check.ts
+import { execFileSync as execFileSync2 } from "child_process";
 import { join as join5 } from "path";
 
 // src/citations.ts
@@ -876,6 +877,26 @@ function checkRun(runDir, opts = {}) {
       }
     } catch {
       errors.push("--semantic: VERIFY.json is not valid JSON");
+    }
+  }
+  const sinceRef = cfg.provenance?.sinceRef;
+  if (sinceRef) {
+    const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+    let changed = null;
+    try {
+      changed = new Set(
+        execFileSync2("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").map((l) => l.trim()).filter(Boolean)
+      );
+    } catch {
+      warnings.push(`diff scope: could not resolve ${sinceRef} in the target \u2014 out-of-scope findings not checked`);
+    }
+    if (changed) {
+      for (const f of findings) {
+        if (f.status === "dismissed") continue;
+        const files = (f.evidence ?? []).map((e) => e.ref).filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r)).map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
+        if (files.length && !files.some((x) => changed.has(x)))
+          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`);
+      }
     }
   }
   for (const f of findings) {
@@ -1107,7 +1128,7 @@ function clean(runDir, opts = {}) {
 }
 
 // src/init.ts
-import { execFileSync as execFileSync2 } from "child_process";
+import { execFileSync as execFileSync3 } from "child_process";
 import { createHash } from "crypto";
 import { join as join9, resolve as resolve2 } from "path";
 
@@ -1338,7 +1359,7 @@ function detectKind(targetAbs) {
   return "codebase";
 }
 function gitInfo(targetAbs) {
-  const git = (args) => execFileSync2("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  const git = (args) => execFileSync3("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   try {
     const commit = git(["rev-parse", "HEAD"]);
     const dirty = git(["status", "--porcelain"]).length > 0;
@@ -1362,6 +1383,13 @@ function initRun(opts) {
   const mode = opts.mode ?? "audit";
   const dimensions = defaultDimensions(kind, category);
   const targetGit = gitInfo(targetAbs);
+  if (opts.since) {
+    try {
+      execFileSync3("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
+    } catch {
+      throw new Error(`--since ${opts.since}: not a resolvable git ref in ${targetAbs}`);
+    }
+  }
   const provenance = {
     engineVersion: VERSION,
     protocolVersion: PROTOCOL_VERSION,
@@ -1371,7 +1399,8 @@ function initRun(opts) {
     kind,
     category,
     dimensionsHash: dimensionsHash(dimensions),
-    ...targetGit ? { targetGit } : {}
+    ...targetGit ? { targetGit } : {},
+    ...opts.since ? { sinceRef: opts.since } : {}
   };
   const cfg = {
     target: opts.target,
@@ -1466,6 +1495,9 @@ function liveScenarioFor(cfg) {
   if (/\bcli\b|command.?line|terminal/.test(cat)) return LIVE_SCENARIOS.cli;
   return cfg.kind === "skill" ? LIVE_SCENARIOS["agent skill"] : LIVE_SCENARIOS.library;
 }
+var diffScopeBlock = (cfg) => cfg.provenance?.sinceRef ? `
+**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings \u2014 \`check\` warns on out-of-scope citations). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.
+` : "";
 var liveScenarioBlock = (cfg) => [
   `**Normed live scenario for this category** (full library: \`references/live-scenarios.md\` next to the engine):`,
   `- Golden path: ${liveScenarioFor(cfg).golden}.`,
@@ -1605,7 +1637,7 @@ The live rows MUST map to the category's normed scenario set (golden path, error
 Write \`${runDirAbs}/TEST-PLAN.md\` (a reviewable checklist with the rubric embedded). Be exhaustive about the CLI/behavior surface.
 `,
     executor: `# Contract: executor
-
+${diffScopeBlock(cfg)}
 You produce the raw evidence an eval stands on. Two MODES; do the one named in your prompt.
 
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
@@ -1626,7 +1658,7 @@ SAFETY:
 Record exact command lines and exit codes verbatim \u2014 later stages cite \`run:runs/core.md#Lnn\` as evidence, so line numbers matter.
 `,
     findings: `# Contract: findings
-
+${diffScopeBlock(cfg)}
 Consolidate the test-plan results and the run logs into \`${runDirAbs}/findings.json\` following \`${runDirAbs}/findings.schema.json\`.
 
 RULES (the grounding gate will enforce these):
@@ -1655,7 +1687,7 @@ You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS n
 
 Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0\u20135 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth \u2014 weight them.
 
-Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`.
+Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "author": "<your agent/session id>", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [], "calibration": { "scores": {"<fixture-dim>": n}, "passed": bool } }\`. \`author\` matters: agreement is only meaningful across INDEPENDENT judges \u2014 a panel whose lines share one author is flagged.
 `,
     remediator: `# Contract: remediator
 
@@ -1677,7 +1709,7 @@ Produce deterministic signal for the brainstorm stage.
 Run \`node ${engineAbs} analyze --run ${runDirAbs}\` \u2192 writes \`analysis.json\` + \`ANALYSIS.md\` (size/complexity hotspots, import graph + cycles, git churn, test/doc gaps). Then read \`ANALYSIS.md\` and note the 5-8 highest-signal hotspots the brainstorm should anchor on. This stage is deterministic \u2014 do not invent metrics; report what the tool found.
 `,
     brainstormer: `# Contract: brainstormer
-
+${diffScopeBlock(cfg)}
 Discover grounded improvement leads (both internal health AND product/capability) \u2014 be divergent, then keep the grounded ones.
 
 1. \`node ${engineAbs} brainstorm --run ${runDirAbs}\` \u2192 emits \`BRAINSTORM.todo.md\` (lenses + hotspots).
@@ -2132,6 +2164,8 @@ function computeScore(cfg, judges, doc) {
   const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
   const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : void 0;
   const calibrationVeto = judges.length > 0 && calibrated === 0;
+  const authors = judges.map((j) => j.author).filter((a) => typeof a === "string" && a.length > 0);
+  const judgesIndependent = judges.length > 1 && authors.length === judges.length ? new Set(authors).size > 1 : void 0;
   const meetsBase = !liveP0 && !judgeSaysNo && !calibrationVeto;
   const meetsExpectations = meetsBase && overall >= bar;
   const overallWith = (dimId, delta) => {
@@ -2152,7 +2186,8 @@ function computeScore(cfg, judges, doc) {
     agreement,
     reason,
     sensitivity,
-    ...judgesCalibrated ? { judgesCalibrated } : {}
+    ...judgesCalibrated ? { judgesCalibrated } : {},
+    ...judgesIndependent !== void 0 ? { judgesIndependent } : {}
   };
 }
 function scoreRun(runDir) {
@@ -2200,6 +2235,7 @@ function formatScore(sc) {
       sc.sensitivity.robust ? "  weights: verdict robust to \xB10.05 shifts" : `  weights: verdict flips under a \xB10.05 shift of ${sc.sensitivity.flips.join(", ")}`
     );
   }
+  if (sc.judgesIndependent === false) lines.push("  panel: single-author \u2014 agreement is self-consistency, not independence");
   if (sc.provenance) {
     const p = sc.provenance;
     const sha = p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";
@@ -2208,9 +2244,49 @@ function formatScore(sc) {
   return lines.join("\n");
 }
 
+// src/status.ts
+import { join as join16 } from "path";
+function statusRun(runDir) {
+  const has = (rel) => exists(join16(runDir, rel));
+  const judgesPresent = has("judges.jsonl") && readText(join16(runDir, "judges.jsonl")).trim().length > 0;
+  const steps = [
+    { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
+    { artifact: "agents/", present: has("agents"), stage: "plan" },
+    { artifact: "eval.workflow.mjs", present: has("eval.workflow.mjs"), stage: "plan" },
+    { artifact: "TEST-PLAN.md", present: has("TEST-PLAN.md"), stage: "testplan" },
+    { artifact: "findings.json", present: has("findings.json"), stage: "findings" },
+    { artifact: "VERIFY.json", present: has("VERIFY.json"), stage: "verify" },
+    { artifact: "judges.jsonl", present: judgesPresent, stage: "judge" },
+    { artifact: "scorecard.json", present: has("scorecard.json"), stage: "score" },
+    { artifact: "BACKLOG.json", present: has("BACKLOG.json"), stage: "backlog" },
+    { artifact: "index.html", present: has("index.html"), stage: "render" }
+  ];
+  return { steps, next: nextHint(steps, runDir) };
+}
+function nextHint(steps, runDir) {
+  const missing = (stage) => steps.some((s) => s.stage === stage && !s.present);
+  if (missing("init")) return `init --target <target> --out ${runDir}`;
+  if (missing("plan")) return `plan --run ${runDir}`;
+  if (missing("testplan") || missing("findings"))
+    return `launch the generated workflow \u2014 Workflow({ scriptPath: "${runDir}/eval.workflow.mjs" }) \u2014 or run the stages by hand via agents/*.md`;
+  if (missing("verify"))
+    return `check --run ${runDir} && verify --run ${runDir} --honeypots 3, fill verdicts, then verify --apply and check --semantic --require-verify`;
+  if (missing("judge")) return `dispatch the judge panel (agents/judge.md) to append judges.jsonl`;
+  if (missing("score")) return `score --run ${runDir} --history`;
+  if (missing("backlog")) return `backlog --run ${runDir} --tdd`;
+  if (missing("render")) return `render --run ${runDir} \u2014 then fix --run ${runDir} [--workflow] and verify-fix per task`;
+  return `done \u2014 drive remediation: fix --run ${runDir} [--workflow], then verify-fix --run ${runDir} --task FIX-XXX`;
+}
+function formatStatus(s, runDir) {
+  const lines = [`status  ${runDir}`];
+  for (const st of s.steps) lines.push(`  ${st.present ? "\u2713" : "\xB7"} ${st.artifact}  (${st.stage})`);
+  lines.push(`  next: ${s.next}`);
+  return lines.join("\n");
+}
+
 // src/verify.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { isAbsolute as isAbsolute3, join as join16, resolve as resolve4 } from "path";
+import { isAbsolute as isAbsolute3, join as join17, resolve as resolve4 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -2221,8 +2297,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join16(runDir, "eval.config.json"));
-  const doc = readJson(join16(runDir, "findings.json"));
+  const cfg = readJson(join17(runDir, "eval.config.json"));
+  const doc = readJson(join17(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -2244,14 +2320,14 @@ function runVerify(runDir, opts = {}) {
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
   if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
   const out = { run: runDir, pairs };
-  writeJson(join16(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join16(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join17(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join17(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return pairs;
-  const cfg = readJson(join16(runDir, "eval.config.json"));
-  const doc = readJson(join16(runDir, "findings.json"));
+  const cfg = readJson(join17(runDir, "eval.config.json"));
+  const doc = readJson(join17(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -2275,7 +2351,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   const mixed = [...pairs];
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-  writeJson(join16(runDir, truthName), {
+  writeJson(join17(runDir, truthName), {
     note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
     claimIds: traps.map((t) => t.claimId)
   });
@@ -2283,9 +2359,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join16(runDir, "VERIFY.honeypots.json")];
+  const files = [join17(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join16(runDir, e));
+    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join17(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -2351,7 +2427,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join16(runDir, "findings.json"));
+  const doc = readJson(join17(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -2366,7 +2442,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
     if (failed.length) result.ok = false;
   }
-  writeJson(join16(runDir, "VERIFY.json"), result);
+  writeJson(join17(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -2386,9 +2462,10 @@ var HELP = `ultraeval v${VERSION} \u2014 evaluate a skill or codebase, then gene
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
-  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>]
+  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>] [--since <ref>]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
              --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
+             --since <git-ref> diff-scopes the eval (PR gating): contracts target the changed set; check warns on out-of-scope findings.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
@@ -2412,6 +2489,8 @@ Commands:
   verify-fix --run <run> --task FIX-XXX
              Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
              + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+  status   --run <run> [--json]
+             Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
@@ -2447,6 +2526,45 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--task"
 ]);
 var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
+var COMMAND_FLAGS = {
+  init: ["target", "out", "kind", "category", "mode", "bar", "since"],
+  plan: ["run"],
+  analyze: ["run", "since", "json", "target", "out"],
+  brainstorm: ["run", "rank", "check"],
+  compare: ["run", "base", "json", "gate"],
+  check: ["run", "semantic", "require-verify", "strict", "min-findings", "coverage-min"],
+  verify: ["run", "apply", "max-verify", "shards", "shard", "honeypots"],
+  backlog: ["run", "tdd", "out"],
+  fix: ["run", "task", "workflow"],
+  "verify-fix": ["run", "task"],
+  score: ["run", "json", "history"],
+  rejudge: ["run", "out"],
+  status: ["run", "json"],
+  render: ["run", "out", "no-html", "no-md", "sarif"],
+  clean: ["run", "all"]
+};
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+  return dp[a.length][b.length];
+}
+function rejectUnknownFlags(cmd, args) {
+  const known = COMMAND_FLAGS[cmd];
+  if (!known) return;
+  for (const k of Object.keys(args)) {
+    if (k === "_" || k === "help" || k === "version" || known.includes(k)) continue;
+    const best = [...known].sort((x, y) => editDistance(k, x) - editDistance(k, y))[0];
+    const hint = best && editDistance(k, best) <= 3 ? ` (did you mean --${best}?)` : "";
+    throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
+  }
+}
 function parse(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -2483,6 +2601,7 @@ function main() {
   }
   const run = str(args.run);
   try {
+    rejectUnknownFlags(cmd, args);
     switch (cmd) {
       case "init": {
         const target = str(args.target);
@@ -2494,7 +2613,8 @@ function main() {
           kind: str(args.kind),
           category: str(args.category),
           mode: str(args.mode),
-          bar: num(args.bar)
+          bar: num(args.bar),
+          since: str(args.since)
         });
         console.log(`ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
@@ -2514,7 +2634,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         let targetAbs;
         let out;
         if (run) {
-          const cfg = readJson(join17(run, "eval.config.json"));
+          const cfg = readJson(join18(run, "eval.config.json"));
           targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
           out = run;
         } else {
@@ -2573,7 +2693,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
       }
       case "check": {
         if (!run) throw new Error("check requires --run <run>");
-        if (!exists(join17(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+        if (!exists(join18(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
         const r = checkRun(run, {
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],
@@ -2609,12 +2729,18 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
         return;
       }
+      case "status": {
+        if (!run) throw new Error("status requires --run <run>");
+        const s = statusRun(run);
+        console.log(args.json ? JSON.stringify(s, null, 2) : formatStatus(s, run));
+        return;
+      }
       case "score": {
         if (!run) throw new Error("score requires --run <run>");
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join17(process.cwd(), "evals", "history.jsonl");
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join18(process.cwd(), "evals", "history.jsonl");
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }

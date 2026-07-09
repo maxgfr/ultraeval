@@ -21,7 +21,7 @@ Not for: a quick one-file code review (just read it); running the target's own t
 ## The loop
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → score → render
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify(+honeypots) → backlog(TDD) → fix → verify-fix → score(+history) → render
 ```
 
 Everything is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Fanning out subagents is an optimization the generated workflow encodes — never a requirement.
@@ -66,12 +66,12 @@ Fix `findings.json` until it exits 0 — **repair or delete ungrounded findings;
 
 **5. Verify (adversarial exit gate).**
 ```
-node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN>          # writes VERIFY.todo.json
+node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --honeypots 3   # writes VERIFY.todo.json incl. 3 trap pairs
 # fill each verdict: supported | partial | refuted | unsupported (use skeptic subagents; --shards N --shard i to parallelize)
 node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --apply <verdicts.json>
 node <skill-dir>/scripts/ultraeval.mjs check --run <RUN> --semantic --require-verify   # exit gate — never present before this passes
 ```
-A `refuted` finding must be set `dismissed`. A `supported`/`partial` one survives.
+`--honeypots n` guards the guard: it plants n trap pairs (one finding's claim glued to another finding's evidence; ground truth in `VERIFY.honeypots.json` — **never paste that file into a skeptic prompt**). A trap graded `supported` means the skeptic rubber-stamped: `--apply` exits 1 and the exit gate stays red until a fresh skeptic re-verifies. A `refuted` finding must be set `dismissed`. A `supported`/`partial` one survives.
 
 **6. Remediate — the deliverable.**
 ```
@@ -81,14 +81,21 @@ Emits `BACKLOG.json` (a machine-readable, priority-ordered task list a downstrea
 
 **7. Score + render + present.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs score --run <RUN>           # judges.jsonl + dimensions -> scorecard.json (0-100 + meets-expectations)
+node <skill-dir>/scripts/ultraeval.mjs score --run <RUN> --history # judges.jsonl + dimensions -> scorecard.json + one committed ledger line (evals/history.jsonl)
 node <skill-dir>/scripts/ultraeval.mjs render --run <RUN>          # index.html + index.md dashboard (shows the verdict)
 ```
-`score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, or a score below the bar) caps meets-expectations at false. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
+`score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, a panel with zero passed calibrations, or a score below the bar) caps meets-expectations at false. The scorecard also carries `sensitivity` (does a ±0.05 weight shift flip the verdict?) and `judgesCalibrated`. To measure verdict stability, `rejudge --run <RUN> --out <RUN2>` re-judges the same artifacts with a fresh panel and `compare` prints a Stability line at constant target commit. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
 
 Exit codes across the CLI: **0** ok / gate passed · **1** gate failed (`check`/`verify`) · **2** usage or runtime error.
 
-**8. (optional) Drive the fixes.** Hand each `fixes/FIX-*.md` to a build agent to implement TDD — the card is written so it can go red→green→refactor without re-deriving the problem.
+**8. Drive the fixes (the closed loop).**
+```
+node <skill-dir>/scripts/ultraeval.mjs fix --run <RUN> [--task FIX-XXX] [--workflow]   # one autonomous fix-agent contract per task (fixes/agents/FIX-*.agent.md)
+node <skill-dir>/scripts/ultraeval.mjs verify-fix --run <RUN> --task FIX-XXX           # replay the task's verify command; stamps status done + verifiedAt
+```
+Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `dependsOn`; `--workflow` emits a sequential `fix.workflow.mjs`). The contract embeds the TDD card, absolute paths, the target's invariants and a no-gate-weakening rule. `verify-fix` closes the loop: it re-runs the task's verify command (timeboxed) and requires the RED test file before marking the task `done` in `BACKLOG.json`.
+
+**PR gating (diff-scoped runs).** `init --target <repo> --out <RUN> --since origin/main` scopes the eval to the changed set: the executor/findings/brainstormer contracts work only on changed behavior and `check` warns on findings citing unchanged files. Gate the PR with `compare --run <RUN> --base <previous-run> --gate` (exit 1 on score drop or a new P0).
 
 ## The grounding contract
 
