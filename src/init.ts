@@ -45,7 +45,10 @@ function gitInfo(targetAbs: string): Provenance["targetGit"] {
   }
 }
 
-const dimensionsHash = (dims: Dimension[]): string => createHash("sha256").update(JSON.stringify(dims)).digest("hex").slice(0, 12);
+// sha256 (first 12 hex) of the dimensions at init — stamped into provenance so a
+// consumer (check) can detect a rubric refined after init. Exported so the
+// recompute lives next to the definition and cannot drift from it.
+export const dimensionsHash = (dims: Dimension[]): string => createHash("sha256").update(JSON.stringify(dims)).digest("hex").slice(0, 12);
 
 export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
   const targetAbs = resolve(process.cwd(), opts.target);

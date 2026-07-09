@@ -706,8 +706,8 @@ function rankBrainstorm(runDir) {
 }
 
 // src/check.ts
-import { execFileSync as execFileSync2 } from "child_process";
-import { join as join5 } from "path";
+import { execFileSync as execFileSync3 } from "child_process";
+import { join as join6 } from "path";
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -765,392 +765,10 @@ function findingRefs(md) {
   return [...ids];
 }
 
-// src/check.ts
-var HARD_FILES = ["RESULTS.md"];
-var SOFT_FILES = ["SUMMARY.md"];
-function checkRun(runDir, opts = {}) {
-  const errors = [];
-  const warnings = [];
-  const cfgPath = join5(runDir, "eval.config.json");
-  if (!exists(cfgPath)) {
-    errors.push("no eval.config.json \u2014 run `ultraeval init` first");
-    return { ok: false, errors, warnings };
-  }
-  let cfg;
-  try {
-    cfg = readJson(cfgPath);
-  } catch {
-    errors.push("eval.config.json is not valid JSON");
-    return { ok: false, errors, warnings };
-  }
-  const findingsPath = join5(runDir, "findings.json");
-  if (!exists(findingsPath)) {
-    errors.push("no findings.json \u2014 the eval produced no findings record");
-    return { ok: false, errors, warnings };
-  }
-  let doc;
-  try {
-    doc = readJson(findingsPath);
-  } catch {
-    errors.push("findings.json is not valid JSON");
-    return { ok: false, errors, warnings };
-  }
-  const findings = Array.isArray(doc.findings) ? doc.findings : [];
-  const ids = new Set(findings.map((f) => f.id));
-  const STATUSES = ["open", "confirmed", "dismissed"];
-  const seenIds = /* @__PURE__ */ new Set();
-  for (const f of findings) {
-    const fid = typeof f.id === "string" ? f.id : "?";
-    if (!/^F\d+$/.test(fid)) errors.push(`finding id "${fid}" must match F<number>`);
-    else if (seenIds.has(fid)) errors.push(`duplicate finding id ${fid}`);
-    seenIds.add(fid);
-    if (!VALID_SEVERITIES.includes(f.severity)) errors.push(`${fid} has invalid severity "${f.severity}" (expected P0|P1|P2)`);
-    if (!STATUSES.includes(f.status)) errors.push(`${fid} has invalid status "${f.status}" (expected open|confirmed|dismissed)`);
-    if (!f.title || !f.statement) errors.push(`${fid} is missing a title or statement`);
-    if (!Array.isArray(f.evidence)) errors.push(`${fid} has no evidence array`);
-    if (f.kind !== void 0 && f.kind !== "defect" && f.kind !== "opportunity")
-      errors.push(`${fid} has invalid kind "${f.kind}" (expected defect|opportunity)`);
-    if (f.kind === "opportunity") {
-      if (!VALID_IMPACT.includes(f.impact)) errors.push(`${fid} (opportunity) needs impact high|med|low`);
-      if (!VALID_EFFORT.includes(f.effort)) errors.push(`${fid} (opportunity) needs effort S|M|L`);
-    }
-  }
-  if (opts.minFindings && findings.length < opts.minFindings) {
-    errors.push(`only ${findings.length} finding(s) recorded; --min-findings ${opts.minFindings} required`);
-  }
-  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
-  for (const f of findings) {
-    if (f.status === "dismissed") continue;
-    const ev = Array.isArray(f.evidence) ? f.evidence : [];
-    let anyResolved = false;
-    let anyTargetAnchored = false;
-    for (const e of ev) {
-      const r = resolveEvidence(e.ref, resolveOpts);
-      if (r.gradeable && !r.resolved) errors.push(`${f.id} cites ${e.ref}: ${r.reason}`);
-      if (r.resolved) anyResolved = true;
-      if (r.resolved && r.kind === "file") anyTargetAnchored = true;
-    }
-    if (!anyResolved) errors.push(`${f.id} has no resolvable evidence \u2014 a finding must point at a real file:line (or run: artifact)`);
-    else if (!anyTargetAnchored)
-      errors.push(`${f.id} is grounded only in the run's own artifacts \u2014 cite at least one target file[:line] alongside the run: log`);
-  }
-  const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
-  for (const file of [...HARD_FILES, ...SOFT_FILES]) {
-    const p = join5(runDir, file);
-    if (!exists(p)) continue;
-    const md = readText(p);
-    for (const id of findingRefs(md)) if (!ids.has(id)) errors.push(`${file} cites ${id} but no such finding exists (dangling citation)`);
-    if (HARD_FILES.includes(file)) {
-      const units = extractUnits(md);
-      if (units.length) {
-        const cited = units.filter((u) => isCited(u.text)).length;
-        const ratio = cited / units.length;
-        if (ratio < coverageMin)
-          errors.push(
-            `${file} citation coverage ${(ratio * 100).toFixed(0)}% < ${(coverageMin * 100).toFixed(0)}% \u2014 cite findings [F#]/[file:line] or flag narrative with [M]`
-          );
-      }
-    }
-  }
-  const backlogPath = join5(runDir, "BACKLOG.json");
-  if (exists(backlogPath)) {
-    try {
-      const bl = readJson(backlogPath);
-      for (const t of bl.tasks ?? []) {
-        const f = findings.find((x) => x.id === t.findingId);
-        if (!f) errors.push(`BACKLOG ${t.id} references ${t.findingId} which is not a finding`);
-        else if (f.status === "dismissed") errors.push(`BACKLOG ${t.id} references dismissed finding ${t.findingId}`);
-        else if (t.status === "done" && f.status === "open")
-          warnings.push(`BACKLOG ${t.id} is done but finding ${t.findingId} is still open \u2014 adjudicate the finding or reopen the task`);
-      }
-    } catch {
-      errors.push("BACKLOG.json is not valid JSON");
-    }
-  }
-  const verifyPath = join5(runDir, "VERIFY.json");
-  if (opts.requireVerify) {
-    if (!exists(verifyPath)) errors.push("--require-verify: no VERIFY.json \u2014 run `ultraeval verify --apply <verdicts>`");
-    else {
-      try {
-        const v = readJson(verifyPath);
-        if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
-        if (v.honeypots?.failed?.length)
-          errors.push(
-            `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) \u2014 the skeptic rubber-stamped; re-verify with a fresh skeptic`
-          );
-        const pending = (v.unadjudicated ?? []).filter((fid) => {
-          const f = findings.find((x) => x.id === fid);
-          return f && f.status !== "dismissed";
-        });
-        if (pending.length) errors.push(`--require-verify: ${pending.length} finding(s) still unadjudicated (${pending.join(", ")}) \u2014 grade every verify pair`);
-      } catch {
-        errors.push("--require-verify: VERIFY.json is not valid JSON");
-      }
-    }
-  }
-  if (opts.semantic && exists(verifyPath)) {
-    try {
-      const v = readJson(verifyPath);
-      for (const fid of v.failures ?? []) {
-        const f = findings.find((x) => x.id === fid);
-        if (f && f.status !== "dismissed")
-          errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" \u2014 dismiss it or fix the claim`);
-      }
-    } catch {
-      errors.push("--semantic: VERIFY.json is not valid JSON");
-    }
-  }
-  const sinceRef = cfg.provenance?.sinceRef;
-  if (sinceRef) {
-    const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-    let changed = null;
-    try {
-      changed = new Set(
-        execFileSync2("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").map((l) => l.trim()).filter(Boolean)
-      );
-    } catch {
-      warnings.push(`diff scope: could not resolve ${sinceRef} in the target \u2014 out-of-scope findings not checked`);
-    }
-    if (changed) {
-      for (const f of findings) {
-        if (f.status === "dismissed") continue;
-        const files = (f.evidence ?? []).map((e) => e.ref).filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r)).map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
-        if (files.length && !files.some((x) => changed.has(x)))
-          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`);
-      }
-    }
-  }
-  for (const f of findings) {
-    if (f.status === "dismissed") continue;
-    if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
-    if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
-  }
-  if (exists(join5(runDir, "RESULTS.md")) && !exists(join5(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
-  if (exists(join5(runDir, "runs", "budget.md"))) {
-    const summaryPath = join5(runDir, "SUMMARY.md");
-    if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
-      warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
-  }
-  if (!cfg.provenance) warnings.push("legacy run (pre-protocol) \u2014 no provenance recorded; re-init to stamp engine/protocol/rubric versions");
-  return { ok: errors.length === 0, errors, warnings };
-}
-function formatCheckReport(r, runDir) {
-  const lines = [r.ok ? `PASS  ${runDir}` : `FAIL  ${runDir}`];
-  for (const e of r.errors) lines.push(`  \u2717 ${e}`);
-  for (const w of r.warnings) lines.push(`  ! ${w}`);
-  if (r.ok && !r.warnings.length) lines.push("  every finding is grounded in the target.");
-  return lines.join("\n");
-}
-
-// src/compare.ts
-import { join as join6 } from "path";
-function load(dir) {
-  const findings = exists(join6(dir, "findings.json")) ? readJson(join6(dir, "findings.json")).findings ?? [] : [];
-  const score = exists(join6(dir, "scorecard.json")) ? readJson(join6(dir, "scorecard.json")) : null;
-  const cfg = exists(join6(dir, "eval.config.json")) ? readJson(join6(dir, "eval.config.json")) : null;
-  return { findings, score, cfg };
-}
-var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
-function targetRefOf(ref) {
-  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
-  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
-}
-function fingerprint(f) {
-  const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x) => !!x))].sort();
-  return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
-}
-function comparabilityWarnings(base, cur) {
-  const warnings = [];
-  if (!base.cfg || !cur.cfg) return warnings;
-  const rubric = (cfg) => JSON.stringify((cfg.dimensions ?? []).map((d) => [d.id, d.weight]));
-  if (rubric(base.cfg) !== rubric(cur.cfg)) warnings.push("rubrics differ (dimension ids/weights) \u2014 scores are not directly comparable");
-  const bp = base.cfg.provenance;
-  const cp = cur.cfg.provenance;
-  if (bp && cp) {
-    if (bp.protocolVersion !== cp.protocolVersion)
-      warnings.push(`protocol versions differ (${bp.protocolVersion} \u2192 ${cp.protocolVersion}) \u2014 score delta is not comparable across protocol versions`);
-    if (bp.rubricVersion !== cp.rubricVersion)
-      warnings.push(`rubric versions differ (${bp.rubricVersion} \u2192 ${cp.rubricVersion}) \u2014 score delta is not comparable across rubric versions`);
-  }
-  return warnings;
-}
-function gateFailures(r) {
-  const fails = [];
-  if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
-  const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
-  if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
-  return fails;
-}
-function compareRuns(baseDir, newDir) {
-  const base = load(baseDir);
-  const cur = load(newDir);
-  const liveBase = base.findings.filter((f) => f.status !== "dismissed");
-  const liveCur = cur.findings.filter((f) => f.status !== "dismissed");
-  const baseKeys = new Set(liveBase.map(key));
-  const curKeys = new Set(liveCur.map(key));
-  let resolved = liveBase.filter((f) => !curKeys.has(key(f)));
-  let introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
-  const retitled = [];
-  const introducedLeft = [...introduced];
-  const resolvedLeft = [];
-  for (const f of resolved) {
-    const fp = fingerprint(f);
-    const match = fp ? introducedLeft.find((g) => fingerprint(g) === fp) : void 0;
-    if (match) {
-      retitled.push({ from: f, to: match });
-      introducedLeft.splice(introducedLeft.indexOf(match), 1);
-    } else resolvedLeft.push(f);
-  }
-  resolved = resolvedLeft;
-  introduced = introducedLeft;
-  const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
-  const warnings = comparabilityWarnings(base, cur);
-  const line = (f) => `- ${f.kind === "opportunity" ? "opp" : f.severity} \xB7 ${f.title}`;
-  const scoreLine = base.score && cur.score ? `Score: ${base.score.overall} \u2192 ${cur.score.overall} (${(scoreDelta ?? 0) >= 0 ? "+" : ""}${scoreDelta}) \xB7 meets-expectations ${base.score.meetsExpectations} \u2192 ${cur.score.meetsExpectations}` : "Score: (one or both runs have no scorecard.json)";
-  const warningBlock = warnings.length ? `
-${warnings.map((w) => `> **\u26A0 ${w}**`).join("\n")}
-` : "";
-  const baseCommit = base.cfg?.provenance?.targetGit?.commit;
-  const curCommit = cur.cfg?.provenance?.targetGit?.commit;
-  const stabilityLine = base.score && cur.score && baseCommit && curCommit && baseCommit === curCommit ? `
-Stability (same target commit ${baseCommit.slice(0, 7)}): |\u0394overall| = ${Math.abs(scoreDelta ?? 0)} \xB7 agreement ${base.score.agreement ?? "\u2014"} \u2192 ${cur.score.agreement ?? "\u2014"}` : "";
-  const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
-
-- base: ${provLine(base.cfg?.provenance, "no provenance (legacy run)")}
-- current: ${provLine(cur.cfg?.provenance, "no provenance (legacy run)")}
-
-${scoreLine}${stabilityLine}
-${warningBlock}
-## Resolved since base (${resolved.length})
-
-${resolved.map(line).join("\n") || "- none"}
-
-## Introduced in current (${introduced.length})
-
-${introduced.map(line).join("\n") || "- none"}
-
-## Retitled (same evidence, new title) (${retitled.length})
-
-${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "- none"}
-`;
-  return { scoreDelta, resolved, introduced, retitled, warnings, md };
-}
-function runCompare(baseDir, newDir, outDir) {
-  const r = compareRuns(baseDir, newDir);
-  writeText(join6(outDir, "COMPARE.md"), r.md);
-  return r;
-}
-
-// src/sarif.ts
-import { join as join7, relative as relative3, sep } from "path";
-var LEVEL = { P0: "error", P1: "warning", P2: "note" };
-function buildSarif(cfg, doc, runDir) {
-  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-  const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
-  const ruleOf = (f) => `ultraeval/${f.dimension ?? f.kind ?? "defect"}`;
-  const results = live.map((f) => {
-    const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
-      physicalLocation: {
-        artifactLocation: {
-          uri: relative3(targetAbs, r.absPath).split(sep).join("/")
-        },
-        ...r.lineStart ? { region: { startLine: r.lineStart, ...r.lineEnd && r.lineEnd !== r.lineStart ? { endLine: r.lineEnd } : {} } } : {}
-      }
-    }));
-    return {
-      ruleId: ruleOf(f),
-      level: LEVEL[f.severity] ?? "warning",
-      message: { text: `${f.title} \u2014 ${f.statement}` },
-      ...locations.length ? { locations } : {},
-      properties: {
-        findingId: f.id,
-        severity: f.severity,
-        status: f.status,
-        ...f.kind ? { kind: f.kind } : {},
-        ...f.impact ? { impact: f.impact } : {},
-        ...f.effort ? { effort: f.effort } : {}
-      }
-    };
-  });
-  return {
-    $schema: "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
-    version: "2.1.0",
-    runs: [
-      {
-        tool: {
-          driver: {
-            name: "ultraeval",
-            version: cfg.version,
-            informationUri: "https://github.com/maxgfr/ultraeval",
-            rules: [...new Set(results.map((r) => r.ruleId))].map((id) => ({ id }))
-          }
-        },
-        results
-      }
-    ]
-  };
-}
-function writeSarif(runDir, out) {
-  const cfg = readJson(join7(runDir, "eval.config.json"));
-  const doc = readJson(join7(runDir, "findings.json"));
-  const p = join7(out ?? runDir, "eval.sarif");
-  writeJson(p, buildSarif(cfg, doc, runDir));
-  return p;
-}
-
-// src/clean.ts
-import { readdirSync as readdirSync3, rmSync as rmSync2 } from "fs";
-import { join as join8 } from "path";
-var DERIVED = [
-  "VERIFY.todo.json",
-  "VERIFY.md",
-  "VERIFY.json",
-  "VERIFY.honeypots.json",
-  "index.html",
-  "index.md",
-  "BACKLOG.json",
-  "REMEDIATION.md",
-  "eval.sarif"
-];
-function clean(runDir, opts = {}) {
-  const removed = [];
-  if (exists(runDir) && !exists(join8(runDir, "eval.config.json"))) {
-    throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
-  }
-  if (opts.all) {
-    if (exists(runDir)) {
-      rmSync2(runDir, { recursive: true, force: true });
-      removed.push(runDir);
-    }
-    return removed;
-  }
-  for (const name of DERIVED) {
-    const p = join8(runDir, name);
-    if (exists(p)) {
-      rmSync2(p, { force: true });
-      removed.push(p);
-    }
-  }
-  if (exists(runDir)) {
-    for (const e of readdirSync3(runDir)) {
-      if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync2(join8(runDir, e), { force: true });
-        removed.push(join8(runDir, e));
-      }
-    }
-  }
-  const fixes = join8(runDir, "fixes");
-  if (exists(fixes)) {
-    rmSync2(fixes, { recursive: true, force: true });
-    removed.push(fixes);
-  }
-  return removed;
-}
-
 // src/init.ts
-import { execFileSync as execFileSync3 } from "child_process";
+import { execFileSync as execFileSync2 } from "child_process";
 import { createHash } from "crypto";
-import { join as join9, resolve as resolve2 } from "path";
+import { join as join5, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
 var iso25010 = (ref, note) => ({ standard: "ISO/IEC 25010:2023", ref, ...note ? { note } : {} });
@@ -1371,15 +989,15 @@ function defaultDimensions(kind, category = "") {
 
 // src/init.ts
 function detectKind(targetAbs) {
-  if (exists(join9(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join9(targetAbs, "skills");
+  if (exists(join5(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join5(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
   return "codebase";
 }
 function gitInfo(targetAbs) {
-  const git = (args) => execFileSync3("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  const git = (args) => execFileSync2("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   try {
     const commit = git(["rev-parse", "HEAD"]);
     const dirty = git(["status", "--porcelain"]).length > 0;
@@ -1405,7 +1023,7 @@ function initRun(opts) {
   const targetGit = gitInfo(targetAbs);
   if (opts.since) {
     try {
-      execFileSync3("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
+      execFileSync2("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
     } catch {
       throw new Error(`--since ${opts.since}: not a resolvable git ref in ${targetAbs}`);
     }
@@ -1435,10 +1053,400 @@ function initRun(opts) {
     ...opts.bar !== void 0 && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}
   };
   const runDir = resolve2(process.cwd(), opts.out);
-  ensureDir(join9(runDir, "runs"));
-  ensureDir(join9(runDir, "research"));
-  writeJson(join9(runDir, "eval.config.json"), cfg);
+  ensureDir(join5(runDir, "runs"));
+  ensureDir(join5(runDir, "research"));
+  writeJson(join5(runDir, "eval.config.json"), cfg);
   return { cfg, runDir };
+}
+
+// src/check.ts
+var HARD_FILES = ["RESULTS.md"];
+var SOFT_FILES = ["SUMMARY.md"];
+function checkRun(runDir, opts = {}) {
+  const errors = [];
+  const warnings = [];
+  const cfgPath = join6(runDir, "eval.config.json");
+  if (!exists(cfgPath)) {
+    errors.push("no eval.config.json \u2014 run `ultraeval init` first");
+    return { ok: false, errors, warnings };
+  }
+  let cfg;
+  try {
+    cfg = readJson(cfgPath);
+  } catch {
+    errors.push("eval.config.json is not valid JSON");
+    return { ok: false, errors, warnings };
+  }
+  const findingsPath = join6(runDir, "findings.json");
+  if (!exists(findingsPath)) {
+    errors.push("no findings.json \u2014 the eval produced no findings record");
+    return { ok: false, errors, warnings };
+  }
+  let doc;
+  try {
+    doc = readJson(findingsPath);
+  } catch {
+    errors.push("findings.json is not valid JSON");
+    return { ok: false, errors, warnings };
+  }
+  const findings = Array.isArray(doc.findings) ? doc.findings : [];
+  const ids = new Set(findings.map((f) => f.id));
+  const STATUSES = ["open", "confirmed", "dismissed"];
+  const seenIds = /* @__PURE__ */ new Set();
+  for (const f of findings) {
+    const fid = typeof f.id === "string" ? f.id : "?";
+    if (!/^F\d+$/.test(fid)) errors.push(`finding id "${fid}" must match F<number>`);
+    else if (seenIds.has(fid)) errors.push(`duplicate finding id ${fid}`);
+    seenIds.add(fid);
+    if (!VALID_SEVERITIES.includes(f.severity)) errors.push(`${fid} has invalid severity "${f.severity}" (expected P0|P1|P2)`);
+    if (!STATUSES.includes(f.status)) errors.push(`${fid} has invalid status "${f.status}" (expected open|confirmed|dismissed)`);
+    if (!f.title || !f.statement) errors.push(`${fid} is missing a title or statement`);
+    if (!Array.isArray(f.evidence)) errors.push(`${fid} has no evidence array`);
+    if (f.kind !== void 0 && f.kind !== "defect" && f.kind !== "opportunity")
+      errors.push(`${fid} has invalid kind "${f.kind}" (expected defect|opportunity)`);
+    if (f.kind === "opportunity") {
+      if (!VALID_IMPACT.includes(f.impact)) errors.push(`${fid} (opportunity) needs impact high|med|low`);
+      if (!VALID_EFFORT.includes(f.effort)) errors.push(`${fid} (opportunity) needs effort S|M|L`);
+    }
+  }
+  if (opts.minFindings && findings.length < opts.minFindings) {
+    errors.push(`only ${findings.length} finding(s) recorded; --min-findings ${opts.minFindings} required`);
+  }
+  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
+  for (const f of findings) {
+    if (f.status === "dismissed") continue;
+    const ev = Array.isArray(f.evidence) ? f.evidence : [];
+    let anyResolved = false;
+    let anyTargetAnchored = false;
+    for (const e of ev) {
+      const r = resolveEvidence(e.ref, resolveOpts);
+      if (r.gradeable && !r.resolved) errors.push(`${f.id} cites ${e.ref}: ${r.reason}`);
+      if (r.resolved) anyResolved = true;
+      if (r.resolved && r.kind === "file") anyTargetAnchored = true;
+    }
+    if (!anyResolved) errors.push(`${f.id} has no resolvable evidence \u2014 a finding must point at a real file:line (or run: artifact)`);
+    else if (!anyTargetAnchored)
+      errors.push(`${f.id} is grounded only in the run's own artifacts \u2014 cite at least one target file[:line] alongside the run: log`);
+  }
+  const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
+  for (const file of [...HARD_FILES, ...SOFT_FILES]) {
+    const p = join6(runDir, file);
+    if (!exists(p)) continue;
+    const md = readText(p);
+    for (const id of findingRefs(md)) if (!ids.has(id)) errors.push(`${file} cites ${id} but no such finding exists (dangling citation)`);
+    if (HARD_FILES.includes(file)) {
+      const units = extractUnits(md);
+      if (units.length) {
+        const cited = units.filter((u) => isCited(u.text)).length;
+        const ratio = cited / units.length;
+        if (ratio < coverageMin)
+          errors.push(
+            `${file} citation coverage ${(ratio * 100).toFixed(0)}% < ${(coverageMin * 100).toFixed(0)}% \u2014 cite findings [F#]/[file:line] or flag narrative with [M]`
+          );
+      }
+    }
+  }
+  const backlogPath = join6(runDir, "BACKLOG.json");
+  if (exists(backlogPath)) {
+    try {
+      const bl = readJson(backlogPath);
+      for (const t of bl.tasks ?? []) {
+        const f = findings.find((x) => x.id === t.findingId);
+        if (!f) errors.push(`BACKLOG ${t.id} references ${t.findingId} which is not a finding`);
+        else if (f.status === "dismissed") errors.push(`BACKLOG ${t.id} references dismissed finding ${t.findingId}`);
+        else if (t.status === "done" && f.status === "open")
+          warnings.push(`BACKLOG ${t.id} is done but finding ${t.findingId} is still open \u2014 adjudicate the finding or reopen the task`);
+      }
+    } catch {
+      errors.push("BACKLOG.json is not valid JSON");
+    }
+  }
+  const verifyPath = join6(runDir, "VERIFY.json");
+  if (opts.requireVerify) {
+    if (!exists(verifyPath)) errors.push("--require-verify: no VERIFY.json \u2014 run `ultraeval verify --apply <verdicts>`");
+    else {
+      try {
+        const v = readJson(verifyPath);
+        if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (v.honeypots?.failed?.length)
+          errors.push(
+            `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) \u2014 the skeptic rubber-stamped; re-verify with a fresh skeptic`
+          );
+        const pending = (v.unadjudicated ?? []).filter((fid) => {
+          const f = findings.find((x) => x.id === fid);
+          return f && f.status !== "dismissed";
+        });
+        if (pending.length) errors.push(`--require-verify: ${pending.length} finding(s) still unadjudicated (${pending.join(", ")}) \u2014 grade every verify pair`);
+      } catch {
+        errors.push("--require-verify: VERIFY.json is not valid JSON");
+      }
+    }
+  }
+  if (opts.semantic && exists(verifyPath)) {
+    try {
+      const v = readJson(verifyPath);
+      for (const fid of v.failures ?? []) {
+        const f = findings.find((x) => x.id === fid);
+        if (f && f.status !== "dismissed")
+          errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" \u2014 dismiss it or fix the claim`);
+      }
+    } catch {
+      errors.push("--semantic: VERIFY.json is not valid JSON");
+    }
+  }
+  const sinceRef = cfg.provenance?.sinceRef;
+  if (sinceRef) {
+    const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+    let changed = null;
+    try {
+      changed = new Set(
+        execFileSync3("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").map((l) => l.trim()).filter(Boolean)
+      );
+    } catch {
+      warnings.push(`diff scope: could not resolve ${sinceRef} in the target \u2014 out-of-scope findings not checked`);
+    }
+    if (changed) {
+      for (const f of findings) {
+        if (f.status === "dismissed") continue;
+        const files = (f.evidence ?? []).map((e) => e.ref).filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r)).map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
+        if (files.length && !files.some((x) => changed.has(x)))
+          warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`);
+      }
+    }
+  }
+  for (const f of findings) {
+    if (f.status === "dismissed") continue;
+    if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
+    if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
+  }
+  if (exists(join6(runDir, "RESULTS.md")) && !exists(join6(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (exists(join6(runDir, "runs", "budget.md"))) {
+    const summaryPath = join6(runDir, "SUMMARY.md");
+    if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
+      warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
+  }
+  if (!cfg.provenance) warnings.push("legacy run (pre-protocol) \u2014 no provenance recorded; re-init to stamp engine/protocol/rubric versions");
+  const stampedHash = cfg.provenance?.dimensionsHash;
+  if (stampedHash) {
+    const currentHash = dimensionsHash(cfg.dimensions ?? []);
+    if (currentHash !== stampedHash)
+      warnings.push(
+        `dimensions changed since init (recorded hash ${stampedHash} \u2192 current ${currentHash}) \u2014 the rubric was refined after init; expected per protocol, recorded here for the audit trail`
+      );
+  }
+  return { ok: errors.length === 0, errors, warnings };
+}
+function formatCheckReport(r, runDir) {
+  const lines = [r.ok ? `PASS  ${runDir}` : `FAIL  ${runDir}`];
+  for (const e of r.errors) lines.push(`  \u2717 ${e}`);
+  for (const w of r.warnings) lines.push(`  ! ${w}`);
+  if (r.ok && !r.warnings.length) lines.push("  every finding is grounded in the target.");
+  return lines.join("\n");
+}
+
+// src/compare.ts
+import { join as join7 } from "path";
+function load(dir) {
+  const findings = exists(join7(dir, "findings.json")) ? readJson(join7(dir, "findings.json")).findings ?? [] : [];
+  const score = exists(join7(dir, "scorecard.json")) ? readJson(join7(dir, "scorecard.json")) : null;
+  const cfg = exists(join7(dir, "eval.config.json")) ? readJson(join7(dir, "eval.config.json")) : null;
+  return { findings, score, cfg };
+}
+var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
+function targetRefOf(ref) {
+  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
+  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
+}
+function fingerprint(f) {
+  const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x) => !!x))].sort();
+  return refs.length ? `${f.kind ?? "defect"}:${refs.join(",")}` : null;
+}
+function comparabilityWarnings(base, cur) {
+  const warnings = [];
+  if (!base.cfg || !cur.cfg) return warnings;
+  const rubric = (cfg) => JSON.stringify((cfg.dimensions ?? []).map((d) => [d.id, d.weight]));
+  if (rubric(base.cfg) !== rubric(cur.cfg)) warnings.push("rubrics differ (dimension ids/weights) \u2014 scores are not directly comparable");
+  const bp = base.cfg.provenance;
+  const cp = cur.cfg.provenance;
+  if (bp && cp) {
+    if (bp.protocolVersion !== cp.protocolVersion)
+      warnings.push(`protocol versions differ (${bp.protocolVersion} \u2192 ${cp.protocolVersion}) \u2014 score delta is not comparable across protocol versions`);
+    if (bp.rubricVersion !== cp.rubricVersion)
+      warnings.push(`rubric versions differ (${bp.rubricVersion} \u2192 ${cp.rubricVersion}) \u2014 score delta is not comparable across rubric versions`);
+  }
+  return warnings;
+}
+function gateFailures(r) {
+  const fails = [];
+  if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
+  const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
+  if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
+  return fails;
+}
+function compareRuns(baseDir, newDir) {
+  const base = load(baseDir);
+  const cur = load(newDir);
+  const liveBase = base.findings.filter((f) => f.status !== "dismissed");
+  const liveCur = cur.findings.filter((f) => f.status !== "dismissed");
+  const baseKeys = new Set(liveBase.map(key));
+  const curKeys = new Set(liveCur.map(key));
+  let resolved = liveBase.filter((f) => !curKeys.has(key(f)));
+  let introduced = liveCur.filter((f) => !baseKeys.has(key(f)));
+  const retitled = [];
+  const introducedLeft = [...introduced];
+  const resolvedLeft = [];
+  for (const f of resolved) {
+    const fp = fingerprint(f);
+    const match = fp ? introducedLeft.find((g) => fingerprint(g) === fp) : void 0;
+    if (match) {
+      retitled.push({ from: f, to: match });
+      introducedLeft.splice(introducedLeft.indexOf(match), 1);
+    } else resolvedLeft.push(f);
+  }
+  resolved = resolvedLeft;
+  introduced = introducedLeft;
+  const scoreDelta = base.score && cur.score ? cur.score.overall - base.score.overall : null;
+  const warnings = comparabilityWarnings(base, cur);
+  const line = (f) => `- ${f.kind === "opportunity" ? "opp" : f.severity} \xB7 ${f.title}`;
+  const scoreLine = base.score && cur.score ? `Score: ${base.score.overall} \u2192 ${cur.score.overall} (${(scoreDelta ?? 0) >= 0 ? "+" : ""}${scoreDelta}) \xB7 meets-expectations ${base.score.meetsExpectations} \u2192 ${cur.score.meetsExpectations}` : "Score: (one or both runs have no scorecard.json)";
+  const warningBlock = warnings.length ? `
+${warnings.map((w) => `> **\u26A0 ${w}**`).join("\n")}
+` : "";
+  const baseCommit = base.cfg?.provenance?.targetGit?.commit;
+  const curCommit = cur.cfg?.provenance?.targetGit?.commit;
+  const stabilityLine = base.score && cur.score && baseCommit && curCommit && baseCommit === curCommit ? `
+Stability (same target commit ${baseCommit.slice(0, 7)}): |\u0394overall| = ${Math.abs(scoreDelta ?? 0)} \xB7 agreement ${base.score.agreement ?? "\u2014"} \u2192 ${cur.score.agreement ?? "\u2014"}` : "";
+  const md = `# Comparison \u2014 base \`${baseDir}\` \u2192 current \`${newDir}\`
+
+- base: ${provLine(base.cfg?.provenance, "no provenance (legacy run)")}
+- current: ${provLine(cur.cfg?.provenance, "no provenance (legacy run)")}
+
+${scoreLine}${stabilityLine}
+${warningBlock}
+## Resolved since base (${resolved.length})
+
+${resolved.map(line).join("\n") || "- none"}
+
+## Introduced in current (${introduced.length})
+
+${introduced.map(line).join("\n") || "- none"}
+
+## Retitled (same evidence, new title) (${retitled.length})
+
+${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "- none"}
+`;
+  return { scoreDelta, resolved, introduced, retitled, warnings, md };
+}
+function runCompare(baseDir, newDir, outDir) {
+  const r = compareRuns(baseDir, newDir);
+  writeText(join7(outDir, "COMPARE.md"), r.md);
+  return r;
+}
+
+// src/sarif.ts
+import { join as join8, relative as relative3, sep } from "path";
+var LEVEL = { P0: "error", P1: "warning", P2: "note" };
+function buildSarif(cfg, doc, runDir) {
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
+  const ruleOf = (f) => `ultraeval/${f.dimension ?? f.kind ?? "defect"}`;
+  const results = live.map((f) => {
+    const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
+      physicalLocation: {
+        artifactLocation: {
+          uri: relative3(targetAbs, r.absPath).split(sep).join("/")
+        },
+        ...r.lineStart ? { region: { startLine: r.lineStart, ...r.lineEnd && r.lineEnd !== r.lineStart ? { endLine: r.lineEnd } : {} } } : {}
+      }
+    }));
+    return {
+      ruleId: ruleOf(f),
+      level: LEVEL[f.severity] ?? "warning",
+      message: { text: `${f.title} \u2014 ${f.statement}` },
+      ...locations.length ? { locations } : {},
+      properties: {
+        findingId: f.id,
+        severity: f.severity,
+        status: f.status,
+        ...f.kind ? { kind: f.kind } : {},
+        ...f.impact ? { impact: f.impact } : {},
+        ...f.effort ? { effort: f.effort } : {}
+      }
+    };
+  });
+  return {
+    $schema: "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "ultraeval",
+            version: cfg.version,
+            informationUri: "https://github.com/maxgfr/ultraeval",
+            rules: [...new Set(results.map((r) => r.ruleId))].map((id) => ({ id }))
+          }
+        },
+        results
+      }
+    ]
+  };
+}
+function writeSarif(runDir, out) {
+  const cfg = readJson(join8(runDir, "eval.config.json"));
+  const doc = readJson(join8(runDir, "findings.json"));
+  const p = join8(out ?? runDir, "eval.sarif");
+  writeJson(p, buildSarif(cfg, doc, runDir));
+  return p;
+}
+
+// src/clean.ts
+import { readdirSync as readdirSync3, rmSync as rmSync2 } from "fs";
+import { join as join9 } from "path";
+var DERIVED = [
+  "VERIFY.todo.json",
+  "VERIFY.md",
+  "VERIFY.json",
+  "VERIFY.honeypots.json",
+  "index.html",
+  "index.md",
+  "BACKLOG.json",
+  "REMEDIATION.md",
+  "eval.sarif"
+];
+function clean(runDir, opts = {}) {
+  const removed = [];
+  if (exists(runDir) && !exists(join9(runDir, "eval.config.json"))) {
+    throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
+  }
+  if (opts.all) {
+    if (exists(runDir)) {
+      rmSync2(runDir, { recursive: true, force: true });
+      removed.push(runDir);
+    }
+    return removed;
+  }
+  for (const name of DERIVED) {
+    const p = join9(runDir, name);
+    if (exists(p)) {
+      rmSync2(p, { force: true });
+      removed.push(p);
+    }
+  }
+  if (exists(runDir)) {
+    for (const e of readdirSync3(runDir)) {
+      if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
+        rmSync2(join9(runDir, e), { force: true });
+        removed.push(join9(runDir, e));
+      }
+    }
+  }
+  const fixes = join9(runDir, "fixes");
+  if (exists(fixes)) {
+    rmSync2(fixes, { recursive: true, force: true });
+    removed.push(fixes);
+  }
+  return removed;
 }
 
 // src/plan.ts

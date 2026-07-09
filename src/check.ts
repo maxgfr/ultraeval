@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { extractUnits, findingRefs, isCited } from "./citations.js";
+import { dimensionsHash } from "./init.js";
 import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
 import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, VerifyResult } from "./types.js";
 import { exists, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
@@ -213,6 +214,19 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them — report every cut in the summary");
   }
   if (!cfg.provenance) warnings.push("legacy run (pre-protocol) — no provenance recorded; re-init to stamp engine/protocol/rubric versions");
+  // The dimensionsHash is stamped at init but was never re-validated by any
+  // consumer. Recompute it from the live dimensions; a mismatch means the rubric
+  // was refined after init. This is only ever a WARNING — the protocol EXPECTS
+  // the research stage to refine dimensions — but it makes that refinement
+  // visible in the audit trail. Skipped on a legacy run (no hash recorded).
+  const stampedHash = cfg.provenance?.dimensionsHash;
+  if (stampedHash) {
+    const currentHash = dimensionsHash(cfg.dimensions ?? []);
+    if (currentHash !== stampedHash)
+      warnings.push(
+        `dimensions changed since init (recorded hash ${stampedHash} → current ${currentHash}) — the rubric was refined after init; expected per protocol, recorded here for the audit trail`,
+      );
+  }
 
   return { ok: errors.length === 0, errors, warnings };
 }

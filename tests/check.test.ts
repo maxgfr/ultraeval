@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkRun } from "../src/check.js";
+import { dimensionsHash } from "../src/init.js";
 
 const tmps: string[] = [];
 
@@ -333,5 +334,48 @@ describe("check — grounding gate", () => {
     writeFileSync(cfgPath, JSON.stringify(cfg));
     const r = checkRun(run);
     expect(r.warnings.join(" ")).not.toMatch(/provenance/);
+  });
+});
+
+describe("check — dimensionsHash re-validation (FIX-009)", () => {
+  const dims = [{ id: "correctness", name: "Correctness", weight: 1, whatPerfectLooksLike: "x" }];
+  function stamp(run: string, dimensions: unknown[], hash: string): void {
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.dimensions = dimensions;
+    cfg.provenance = {
+      engineVersion: "1.0.0",
+      protocolVersion: "1",
+      rubricVersion: "1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      mode: "audit",
+      kind: "codebase",
+      category: "library",
+      dimensionsHash: hash,
+    };
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+  }
+
+  it("does not warn when the recorded hash matches the live dimensions", () => {
+    const run = scaffold([genuine]);
+    stamp(run, dims, dimensionsHash(dims));
+    const r = checkRun(run);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).not.toMatch(/dimensions changed since init/);
+  });
+
+  it("warns (never fails) when the dimensions were refined after init (hash mismatch)", () => {
+    const run = scaffold([genuine]);
+    const mutated = [...dims, { id: "extra", name: "Extra", weight: 1, whatPerfectLooksLike: "y" }];
+    stamp(run, mutated, dimensionsHash(dims)); // hash recorded from the ORIGINAL dims
+    const r = checkRun(run);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/dimensions changed since init/);
+  });
+
+  it("does not warn or crash on a legacy run with no provenance/hash", () => {
+    const r = checkRun(scaffold([genuine])); // scaffold stamps no provenance
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).not.toMatch(/dimensions changed since init/);
   });
 });
