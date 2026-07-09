@@ -118,11 +118,13 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   const backlogPath = join(runDir, "BACKLOG.json");
   if (exists(backlogPath)) {
     try {
-      const bl = readJson<{ tasks?: { id: string; findingId: string }[] }>(backlogPath);
+      const bl = readJson<{ tasks?: { id: string; findingId: string; status?: string }[] }>(backlogPath);
       for (const t of bl.tasks ?? []) {
         const f = findings.find((x) => x.id === t.findingId);
         if (!f) errors.push(`BACKLOG ${t.id} references ${t.findingId} which is not a finding`);
         else if (f.status === "dismissed") errors.push(`BACKLOG ${t.id} references dismissed finding ${t.findingId}`);
+        else if (t.status === "done" && f.status === "open")
+          warnings.push(`BACKLOG ${t.id} is done but finding ${t.findingId} is still open — adjudicate the finding or reopen the task`);
       }
     } catch {
       errors.push("BACKLOG.json is not valid JSON");

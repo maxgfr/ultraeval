@@ -227,6 +227,8 @@ export interface FixTask {
   green: { change: string }; // the minimal change to make it pass
   verify: { command: string }; // how to confirm green
   dependsOn: string[];
+  status?: "todo" | "done"; // stamped by `verify-fix` when the loop closes
+  verifiedAt?: string; // ISO 8601, stamped alongside status: "done"
 }
 export interface Backlog {
   target: string;

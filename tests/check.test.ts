@@ -199,6 +199,18 @@ describe("check — grounding gate", () => {
     expect(r.errors.join(" ")).toMatch(/unadjudicated/);
   });
 
+  it("warns when a BACKLOG task is done but its finding is still open", () => {
+    const run = scaffold([{ ...genuine, status: "open" }], {
+      "BACKLOG.json": JSON.stringify({
+        target: "/t",
+        generatedFrom: "r",
+        tasks: [{ id: "FIX-001", findingId: "F1", status: "done", verifiedAt: "2026-07-09T00:00:00.000Z" }],
+      }),
+    });
+    const r = checkRun(run);
+    expect(r.warnings.join(" ")).toMatch(/done but finding/i);
+  });
+
   it("warns (not fails) when runs/budget.md records cuts but SUMMARY.md does not mention them", () => {
     const run = scaffold([genuine], {
       "runs/budget.md": "# Budget coverage cuts\n- judges: 3 lenses -> 2\n",

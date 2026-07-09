@@ -9,6 +9,7 @@ import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
+import { emitFixAgents, formatVerifyFix, verifyFix } from "./fix.js";
 import { rejudgeRun } from "./rejudge.js";
 import { render } from "./render.js";
 import { appendHistory, formatScore, scoreRun } from "./score.js";
@@ -42,6 +43,12 @@ Commands:
              a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
+  fix      --run <run> [--task FIX-XXX] [--workflow]
+             Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
+             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
+  verify-fix --run <run> --task FIX-XXX
+             Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
+             + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
@@ -80,6 +87,7 @@ const VALUE_FLAGS = new Set([
   "--shard",
   "--bar",
   "--honeypots",
+  "--task",
 ]);
 
 // Flags whose value is optional: `--history` alone means "use the default file".
@@ -256,6 +264,21 @@ function main(): void {
           // keep --json stdout pure JSON — the ledger notice goes to stderr there
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "fix": {
+        if (!run) throw new Error("fix requires --run <run>");
+        const engine = fileURLToPath(import.meta.url);
+        const written = emitFixAgents(run, engine, { task: str(args.task), workflow: !!args.workflow });
+        console.log(`ultraeval fix: ${written.length} file(s) -> ${run}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
+        return;
+      }
+      case "verify-fix": {
+        const task = str(args.task);
+        if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
+        const res = verifyFix(run, task);
+        console.log(formatVerifyFix(res));
+        process.exitCode = res.ok ? 0 : 1;
         return;
       }
       case "rejudge": {

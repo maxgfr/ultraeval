@@ -75,7 +75,22 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
   it("cli characterization: help lists every command, unknown command and missing --run exit 2", () => {
     const help = run(["--help"]);
     expect(help.status).toBe(0);
-    for (const c of ["init", "plan", "analyze", "brainstorm", "compare", "check", "verify", "backlog", "score", "rejudge", "render", "clean"]) {
+    for (const c of [
+      "init",
+      "plan",
+      "analyze",
+      "brainstorm",
+      "compare",
+      "check",
+      "verify",
+      "backlog",
+      "fix",
+      "verify-fix",
+      "score",
+      "rejudge",
+      "render",
+      "clean",
+    ]) {
       expect(help.out).toMatch(new RegExp(`^  ${c} `, "m"));
     }
     expect(run(["frobnicate"]).status).toBe(2);

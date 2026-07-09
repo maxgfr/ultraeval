@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { join as join16 } from "path";
+import { join as join17 } from "path";
 import { fileURLToPath } from "url";
 
 // src/analyze.ts
@@ -824,6 +824,8 @@ function checkRun(runDir, opts = {}) {
         const f = findings.find((x) => x.id === t.findingId);
         if (!f) errors.push(`BACKLOG ${t.id} references ${t.findingId} which is not a finding`);
         else if (f.status === "dismissed") errors.push(`BACKLOG ${t.id} references dismissed finding ${t.findingId}`);
+        else if (t.status === "done" && f.status === "open")
+          warnings.push(`BACKLOG ${t.id} is done but finding ${t.findingId} is still open \u2014 adjudicate the finding or reopen the task`);
       }
     } catch {
       errors.push("BACKLOG.json is not valid JSON");
@@ -1765,29 +1767,155 @@ function planRun(runDir, engineAbs) {
   return written;
 }
 
+// src/fix.ts
+import { spawnSync } from "child_process";
+import { isAbsolute as isAbsolute2, join as join12, resolve as resolve3 } from "path";
+function loadBacklog(runDir) {
+  const blPath = join12(runDir, "BACKLOG.json");
+  if (!exists(blPath)) throw new Error("no BACKLOG.json \u2014 run `backlog --run <run> --tdd` first, then fix");
+  return { cfg: readJson(join12(runDir, "eval.config.json")), backlog: readJson(blPath) };
+}
+function targetInvariants(targetAbs) {
+  const lines = [];
+  const pkgPath = join12(targetAbs, "package.json");
+  if (exists(pkgPath)) {
+    const pkg = readJson(pkgPath);
+    if (pkg.scripts?.test) lines.push(`- Full test suite green before committing: run the target's \`test\` script (\`${pkg.scripts.test}\`).`);
+    if (pkg.scripts?.build) lines.push(`- The target ships a build step: run its \`build\` script and include the rebuilt artifacts in the commit.`);
+  }
+  lines.push("- One conventional commit (fix:/feat:/test:) scoped to THIS task only.");
+  return lines;
+}
+function agentContract(t, cfg, runDir, engineAbs) {
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const absTargets = t.targets.map((x) => isAbsolute2(x) ? x : join12(targetAbs, x));
+  const redFile = isAbsolute2(t.red.testFile) ? t.red.testFile : join12(targetAbs, t.red.testFile);
+  const deps = t.dependsOn.length ? `
+Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join12(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
+  return `# Fix agent: ${t.id} \u2014 ${t.title}  (${t.priority} \xB7 ${t.kind})
+
+You are an AUTONOMOUS fix agent. Fix exactly ONE task in the target repo, test-first. Do not widen scope; do not stop early.
+
+Target repo (absolute): \`${targetAbs}\`
+Eval run (absolute): \`${runDir}\`
+Task: ${t.id} (finding ${t.findingId})${deps}
+
+## Why
+${t.rationale}
+
+## RED \u2014 write the failing test FIRST
+Test file (absolute): \`${redFile}\`
+${t.red.description}
+Run it and watch it FAIL for the expected reason BEFORE touching any implementation.
+
+## GREEN \u2014 minimal change
+${t.green.change}
+Touch only: ${absTargets.map((x) => `\`${x}\``).join(", ") || "the relevant module"}
+
+## VERIFY
+\`${t.verify.command}\`
+The RED test now passes and nothing regresses. Then close the loop:
+\`node ${engineAbs} verify-fix --run ${runDir} --task ${t.id}\`
+(replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json \u2014 exit 1 otherwise).
+
+## Invariants (non-negotiable)
+- TDD: no implementation before the RED test is seen failing.
+- NEVER weaken a gate or test to go green \u2014 no skipped/deleted tests, no loosened assertions, no lowered thresholds.
+${targetInvariants(targetAbs).join("\n")}
+`;
+}
+function emitFixAgents(runDir, engineAbs, opts = {}) {
+  const { cfg, backlog } = loadBacklog(runDir);
+  let tasks = backlog.tasks;
+  if (opts.task) {
+    const t = tasks.find((x) => x.id === opts.task);
+    if (!t) throw new Error(`no such task ${opts.task} in BACKLOG.json (${tasks.length} task(s): ${tasks.map((x) => x.id).join(", ")})`);
+    tasks = [t];
+  }
+  const written = [];
+  for (const t of tasks) {
+    const p = join12(runDir, "fixes", "agents", `${t.id}.agent.md`);
+    writeText(p, agentContract(t, cfg, runDir, engineAbs));
+    written.push(p);
+  }
+  if (opts.workflow) {
+    const p = join12(runDir, "fix.workflow.mjs");
+    writeText(p, fixWorkflow(tasks, runDir, engineAbs));
+    written.push(p);
+  }
+  return written;
+}
+function fixWorkflow(tasks, runDir, engineAbs) {
+  const meta = {
+    name: "ultraeval-fix",
+    description: `Dispatch ${tasks.length} fix agent(s) over the TDD backlog, verify-fix after each`,
+    phases: [{ title: "Fix" }]
+  };
+  return [
+    `export const meta = ${JSON.stringify(meta)}`,
+    ``,
+    `const ENGINE = ${JSON.stringify(engineAbs)}`,
+    `const RUN = ${JSON.stringify(runDir)}`,
+    `const TASKS = ${JSON.stringify(tasks.map((t) => t.id))}`,
+    `const ISOLATION = undefined // set to 'worktree' to isolate each fix agent`,
+    ``,
+    `phase('Fix')`,
+    `for (const id of TASKS) {`,
+    `  await agent('Read and follow the fix-agent contract at ' + RUN + '/fixes/agents/' + id + '.agent.md VERBATIM.', { label: id, phase: 'Fix', agentType: 'general-purpose', ...(ISOLATION ? { isolation: ISOLATION } : {}) })`,
+    `  await agent('Run \`node ' + ENGINE + ' verify-fix --run ' + RUN + ' --task ' + id + '\` and report its exit code and output verbatim.', { label: 'verify:' + id, phase: 'Fix', agentType: 'general-purpose' })`,
+    `}`,
+    `log('fix loop complete \u2014 ' + TASKS.length + ' task(s) dispatched; BACKLOG.json carries status/verifiedAt')`,
+    ``
+  ].join("\n");
+}
+function verifyFix(runDir, taskId, opts = {}) {
+  const { cfg, backlog } = loadBacklog(runDir);
+  const task = backlog.tasks.find((t) => t.id === taskId);
+  if (!task) throw new Error(`no such task ${taskId} in BACKLOG.json`);
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
+  const redFile = isAbsolute2(task.red.testFile) ? task.red.testFile : resolve3(targetAbs, task.red.testFile);
+  const redTestExists = exists(redFile);
+  const proc = spawnSync(task.verify.command, { shell: true, cwd: targetAbs, encoding: "utf8", timeout: opts.timeoutMs ?? 6e5 });
+  const exitCode = proc.status;
+  const ok = exitCode === 0 && redTestExists;
+  const result = { ok, taskId, exitCode, redTestExists };
+  if (!redTestExists) result.reason = `RED test file missing: ${redFile} \u2014 the fix was not test-first`;
+  else if (exitCode !== 0) result.reason = `verify command exited ${exitCode ?? "null (timeout/kill)"}: ${task.verify.command}`;
+  if (ok) {
+    task.status = "done";
+    task.verifiedAt = (/* @__PURE__ */ new Date()).toISOString();
+    result.verifiedAt = task.verifiedAt;
+    writeJson(join12(runDir, "BACKLOG.json"), backlog);
+  }
+  return result;
+}
+function formatVerifyFix(r) {
+  return r.ok ? `PASS  ${r.taskId} verified \u2014 status: done (${r.verifiedAt})` : `FAIL  ${r.taskId} \u2014 ${r.reason ?? "verification failed"}`;
+}
+
 // src/rejudge.ts
 import { cpSync, mkdirSync as mkdirSync2 } from "fs";
-import { join as join12 } from "path";
+import { join as join13 } from "path";
 var COPY_FILES = ["eval.config.json", "dimensions.json", "findings.json", "RESULTS.md", "SUMMARY.md", "TEST-PLAN.md", "VERIFY.json"];
 var COPY_DIRS = ["research", "runs"];
 function rejudgeRun(runDir, outDir, engineAbs) {
-  if (!exists(join12(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
-  const cfg = readJson(join12(runDir, "eval.config.json"));
+  if (!exists(join13(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
+  const cfg = readJson(join13(runDir, "eval.config.json"));
   mkdirSync2(outDir, { recursive: true });
   const copied = [];
   for (const f of COPY_FILES) {
-    if (!exists(join12(runDir, f))) continue;
-    cpSync(join12(runDir, f), join12(outDir, f));
+    if (!exists(join13(runDir, f))) continue;
+    cpSync(join13(runDir, f), join13(outDir, f));
     copied.push(f);
   }
   for (const d of COPY_DIRS) {
-    if (!exists(join12(runDir, d))) continue;
-    cpSync(join12(runDir, d), join12(outDir, d), { recursive: true });
+    if (!exists(join13(runDir, d))) continue;
+    cpSync(join13(runDir, d), join13(outDir, d), { recursive: true });
     copied.push(`${d}/`);
   }
-  writeText(join12(outDir, "judges.jsonl"), "");
-  writeText(join12(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
-  writeText(join12(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
+  writeText(join13(outDir, "judges.jsonl"), "");
+  writeText(join13(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
+  writeText(join13(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
   return copied;
 }
 function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
@@ -1827,18 +1955,18 @@ function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
 }
 
 // src/render.ts
-import { join as join13 } from "path";
+import { join as join14 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 var provLine2 = (p) => p ? `engine ${p.engineVersion} \xB7 protocol ${p.protocolVersion} \xB7 rubric ${p.rubricVersion}${p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : ""}` : "";
 function load2(runDir) {
-  const cfg = readJson(join13(runDir, "eval.config.json"));
-  const doc = readJson(join13(runDir, "findings.json"));
-  const verify = exists(join13(runDir, "VERIFY.json")) ? readJson(join13(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join13(runDir, "BACKLOG.json")) ? readJson(join13(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join13(runDir, "scorecard.json")) ? readJson(join13(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join14(runDir, "eval.config.json"));
+  const doc = readJson(join14(runDir, "findings.json"));
+  const verify = exists(join14(runDir, "VERIFY.json")) ? readJson(join14(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join14(runDir, "BACKLOG.json")) ? readJson(join14(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join14(runDir, "scorecard.json")) ? readJson(join14(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -1846,12 +1974,12 @@ function render(runDir, opts = {}) {
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join13(out, "index.md");
+    const p = join14(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join13(out, "index.html");
+    const p = join14(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -1956,9 +2084,9 @@ function esc(s) {
 
 // src/score.ts
 import { appendFileSync, mkdirSync as mkdirSync3 } from "fs";
-import { dirname as dirname3, join as join14 } from "path";
+import { dirname as dirname3, join as join15 } from "path";
 function readJudges(runDir) {
-  const p = join14(runDir, "judges.jsonl");
+  const p = join15(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -2011,19 +2139,19 @@ function computeScore(cfg, judges, doc) {
   };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join14(runDir, "eval.config.json"));
-  const doc = exists(join14(runDir, "findings.json")) ? readJson(join14(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join15(runDir, "eval.config.json"));
+  const doc = exists(join15(runDir, "findings.json")) ? readJson(join15(runDir, "findings.json")) : { findings: [] };
   const sc = computeScore(cfg, readJudges(runDir), doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join14(runDir, "scorecard.json"), sc);
+  writeJson(join15(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join14(runDir, "scorecard.json");
+  const scPath = join15(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join14(runDir, "findings.json")) ? readJson(join14(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join15(runDir, "findings.json")) ? readJson(join15(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const entry = {
@@ -2063,7 +2191,7 @@ function formatScore(sc) {
 
 // src/verify.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { isAbsolute as isAbsolute2, join as join15, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute3, join as join16, resolve as resolve4 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -2074,8 +2202,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join15(runDir, "eval.config.json"));
-  const doc = readJson(join15(runDir, "findings.json"));
+  const cfg = readJson(join16(runDir, "eval.config.json"));
+  const doc = readJson(join16(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
@@ -2097,14 +2225,14 @@ function runVerify(runDir, opts = {}) {
   const sh = opts.shards !== void 0 && opts.shard !== void 0;
   if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
   const out = { run: runDir, pairs };
-  writeJson(join15(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join15(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join16(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join16(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return pairs;
-  const cfg = readJson(join15(runDir, "eval.config.json"));
-  const doc = readJson(join15(runDir, "findings.json"));
+  const cfg = readJson(join16(runDir, "eval.config.json"));
+  const doc = readJson(join16(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -2127,7 +2255,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   const mixed = [...pairs];
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-  writeJson(join15(runDir, truthName), {
+  writeJson(join16(runDir, truthName), {
     note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
     claimIds: traps.map((t) => t.claimId)
   });
@@ -2135,9 +2263,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join15(runDir, "VERIFY.honeypots.json")];
+  const files = [join16(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join15(runDir, e));
+    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join16(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -2194,7 +2322,7 @@ function loadVerdicts(runDir, spec) {
   const files = spec.includes(",") ? spec.split(",").map((s) => s.trim()) : [spec];
   const merged = /* @__PURE__ */ new Map();
   for (const f of files) {
-    const p = exists(f) ? f : isAbsolute2(f) ? f : resolve3(runDir, f);
+    const p = exists(f) ? f : isAbsolute3(f) ? f : resolve4(runDir, f);
     const data = readJson(p);
     const items = Array.isArray(data) ? data : data.pairs ?? [];
     for (const v of items) merged.set(`${v.claimId}\u241F${v.evidenceRef ?? ""}`, v);
@@ -2202,7 +2330,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join15(runDir, "findings.json"));
+  const doc = readJson(join16(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -2217,7 +2345,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
     if (failed.length) result.ok = false;
   }
-  writeJson(join15(runDir, "VERIFY.json"), result);
+  writeJson(join16(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -2257,6 +2385,12 @@ Commands:
              a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
+  fix      --run <run> [--task FIX-XXX] [--workflow]
+             Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
+             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
+  verify-fix --run <run> --task FIX-XXX
+             Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
+             + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
   score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
              --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
@@ -2288,7 +2422,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--shards",
   "--shard",
   "--bar",
-  "--honeypots"
+  "--honeypots",
+  "--task"
 ]);
 var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
 function parse(argv) {
@@ -2358,7 +2493,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         let targetAbs;
         let out;
         if (run) {
-          const cfg = readJson(join16(run, "eval.config.json"));
+          const cfg = readJson(join17(run, "eval.config.json"));
           targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
           out = run;
         } else {
@@ -2457,10 +2592,25 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
         if (args.history !== void 0) {
-          const file = typeof args.history === "string" && args.history !== "" ? args.history : join16(process.cwd(), "evals", "history.jsonl");
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join17(process.cwd(), "evals", "history.jsonl");
           appendHistory(run, file);
           (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
         }
+        return;
+      }
+      case "fix": {
+        if (!run) throw new Error("fix requires --run <run>");
+        const engine = fileURLToPath(import.meta.url);
+        const written = emitFixAgents(run, engine, { task: str(args.task), workflow: !!args.workflow });
+        console.log(`ultraeval fix: ${written.length} file(s) -> ${run}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
+        return;
+      }
+      case "verify-fix": {
+        const task = str(args.task);
+        if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
+        const res = verifyFix(run, task);
+        console.log(formatVerifyFix(res));
+        process.exitCode = res.ok ? 0 : 1;
         return;
       }
       case "rejudge": {
