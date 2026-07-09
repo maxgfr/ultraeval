@@ -130,6 +130,19 @@ describe("backlog — TDD fix cards", () => {
     expect(bl.tasks[0]?.green.change).toBe("fix it");
   });
 
+  it("targets exclude run:/url: refs and strip the analysis: prefix (FIX-012)", () => {
+    const f = {
+      ...mk("F1", "P1", "confirmed"),
+      evidence: [{ ref: "analysis:app.js:2" }, { ref: "src/lib.ts:4" }, { ref: "run:runs/core.md#L1" }, { ref: "url:https://x.example" }],
+    };
+    const bl = buildBacklog(scaffold([f]));
+    const targets = bl.tasks[0]?.targets ?? [];
+    expect(targets).toContain("app.js"); // analysis: prefix stripped (the fix)
+    expect(targets).toContain("src/lib.ts");
+    expect(targets.some((t) => t.startsWith("analysis:"))).toBe(false);
+    expect(targets.some((t) => t.startsWith("run:") || t.startsWith("url:"))).toBe(false);
+  });
+
   it("labels an opportunity task and bands it by impact (high -> P1)", () => {
     const opp = {
       id: "F1",

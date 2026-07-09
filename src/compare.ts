@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { EvalConfig, Finding, FindingsDoc, Scorecard } from "./types.js";
-import { exists, provLine, readJson, titleKey, writeText } from "./util.js";
+import { exists, parseEvidenceRef, provLine, readJson, titleKey, writeText } from "./util.js";
 
 interface Side {
   findings: Finding[];
@@ -24,8 +24,10 @@ const key = (f: Finding) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
 // a hotspot file; if lines shifted between runs the fingerprint just misses and
 // degrades safely to resolved+introduced.
 function targetRefOf(ref: string): string | null {
-  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
-  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
+  const p = parseEvidenceRef(ref);
+  // Keep the :line (pathWithLine) — line precision is what makes the fingerprint
+  // distinguish two findings that share a hotspot file.
+  return p.isTargetRef ? p.pathWithLine : null;
 }
 function fingerprint(f: Finding): string | null {
   const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x): x is string => !!x))].sort();

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Provenance } from "../src/types.js";
-import { extractContext, type LineCache, provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
+import { extractContext, type LineCache, parseEvidenceRef, provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -30,6 +30,50 @@ describe("shared ranking/identity helpers", () => {
     expect(SEV_ORDER.P1).toBe(1);
     expect(SEV_ORDER.P2).toBe(2);
     expect(titleKey("  Quick Win ")).toBe("quick win");
+  });
+});
+
+describe("parseEvidenceRef — canonical ref→path parser (FIX-012)", () => {
+  it("classifies a plain target path:line", () => {
+    const p = parseEvidenceRef("app.js:3");
+    expect(p.kind).toBe("path");
+    expect(p.gradeable).toBe(true);
+    expect(p.isTargetRef).toBe(true);
+    expect(p.path).toBe("app.js"); // :line stripped
+    expect(p.pathWithLine).toBe("app.js:3"); // :line kept
+    expect(p.rawPath).toBe("app.js");
+  });
+
+  it("keeps a start-end line range intact in pathWithLine", () => {
+    const p = parseEvidenceRef("src/x.ts:10-20");
+    expect(p.path).toBe("src/x.ts");
+    expect(p.pathWithLine).toBe("src/x.ts:10-20");
+  });
+
+  it("a file-scoped ref (no line) is unchanged across all shapes", () => {
+    const p = parseEvidenceRef("src/x.ts");
+    expect(p.path).toBe("src/x.ts");
+    expect(p.pathWithLine).toBe("src/x.ts");
+    expect(p.rawPath).toBe("src/x.ts");
+  });
+
+  it("strips the analysis: prefix for target-path shapes but not the whole-ref key", () => {
+    const p = parseEvidenceRef("analysis:src/x.ts:10");
+    expect(p.kind).toBe("analysis");
+    expect(p.isTargetRef).toBe(true);
+    expect(p.path).toBe("src/x.ts"); // backlog/check: prefix + line stripped
+    expect(p.pathWithLine).toBe("src/x.ts:10"); // compare: prefix stripped, line kept
+    expect(p.rawPath).toBe("analysis:src/x.ts"); // verify pathOf: scheme intact
+  });
+
+  it("treats run: refs as non-target, gradeable, with the whole-ref key preserved", () => {
+    expect(parseEvidenceRef("run:runs/core.md#L2")).toMatchObject({ kind: "run", gradeable: true, isTargetRef: false, rawPath: "run:runs/core.md#L2" });
+    expect(parseEvidenceRef("run:core.md:5").rawPath).toBe("run:core.md"); // verify pathOf strips the trailing :line only
+  });
+
+  it("treats url: and bare http(s) refs as non-target and not gradeable", () => {
+    expect(parseEvidenceRef("url:https://x.example")).toMatchObject({ kind: "url", gradeable: false, isTargetRef: false });
+    expect(parseEvidenceRef("https://x.example/y")).toMatchObject({ kind: "url", gradeable: false, isTargetRef: false });
   });
 });
 

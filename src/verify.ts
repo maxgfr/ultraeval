@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { CAPS, VALID_VERDICTS } from "./types.js";
 import type { EvalConfig, Finding, FindingsDoc, Verdict, VerdictItem, VerdictsFile, VerifyPair, VerifyResult, VerifyTodo } from "./types.js";
-import { exists, extractContext, readJson, resolveEvidence, resolveTargetAbs, SEV_ORDER, writeJson, writeText } from "./util.js";
+import { exists, extractContext, parseEvidenceRef, readJson, resolveEvidence, resolveTargetAbs, SEV_ORDER, writeJson, writeText } from "./util.js";
 
 export interface VerifyOpts {
   maxVerify?: number;
@@ -80,7 +80,9 @@ function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: 
     if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
   }
   const offset = (shard ?? 0) * n;
-  const pathOf = (ref: string) => (/:\d/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref);
+  // Whole-ref path key (scheme intact, :line stripped) — two pairs share a file
+  // when these match; a trap prefers a different file. See parseEvidenceRef.
+  const pathOf = (ref: string) => parseEvidenceRef(ref).rawPath;
   const real = [...pairs];
   const traps: VerifyPair[] = [];
   for (let k = 0; k < n; k++) {

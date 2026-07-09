@@ -232,6 +232,47 @@ export function extractContext(absPath: string, start?: number, end?: number, pa
     .join("\n");
 }
 
+// ---- canonical evidence-ref path parser ----------------------------------
+// A finding cites evidence via a `ref` string ("path:line" | "path:start-end" |
+// "run:relpath[#Lnn]" | "url:..." | "analysis:path[:line]"). Several call sites
+// each re-derived "which file does this ref name" with subtly different regexes
+// (verify honeypot pooling, backlog targets, compare fingerprints, check diff
+// scope). This is the ONE source for that extraction. It does NOT touch the
+// filesystem — resolveEvidence does the actual resolution/range-checking.
+//
+// The crude line strip (`/:\d/` + lastIndexOf) intentionally matches what those
+// sites used, so the refactor is byte-for-byte behavior-preserving; the fields
+// expose the three historical shapes callers need.
+const stripLineSuffix = (s: string): string => (/:\d/.test(s) ? s.slice(0, s.lastIndexOf(":")) : s);
+
+export interface ParsedEvidenceRef {
+  kind: "run" | "url" | "analysis" | "path";
+  gradeable: boolean; // checkable offline in principle — everything except url
+  isTargetRef: boolean; // names a TARGET-repo path (path|analysis), not a run:/url: artifact
+  path: string; // target file path with the :line suffix AND an `analysis:` prefix removed
+  pathWithLine: string; // `analysis:` prefix removed but the :line KEPT (line-precise fingerprints)
+  rawPath: string; // :line stripped, scheme left intact (whole-ref path key; verify honeypot pooling)
+}
+
+export function parseEvidenceRef(ref: string): ParsedEvidenceRef {
+  const kind: ParsedEvidenceRef["kind"] = ref.startsWith("run:")
+    ? "run"
+    : ref.startsWith("url:") || /^https?:/.test(ref)
+      ? "url"
+      : ref.startsWith("analysis:")
+        ? "analysis"
+        : "path";
+  const rawPath = stripLineSuffix(ref);
+  return {
+    kind,
+    gradeable: kind !== "url",
+    isTargetRef: kind === "path" || kind === "analysis",
+    path: rawPath.replace(/^analysis:/, ""),
+    pathWithLine: ref.replace(/^analysis:/, ""),
+    rawPath,
+  };
+}
+
 // ---- shared ranking / identity helpers ------------------------------------
 // Single copies of the severity ordering and the title identity key (previously
 // duplicated across verify/backlog and compare/brainstorm).

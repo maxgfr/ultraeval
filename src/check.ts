@@ -4,7 +4,7 @@ import { extractUnits, findingRefs, isCited } from "./citations.js";
 import { dimensionsHash } from "./init.js";
 import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
 import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, VerifyResult } from "./types.js";
-import { exists, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
+import { exists, parseEvidenceRef, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
 
 export interface CheckOpts {
   semantic?: boolean;
@@ -191,9 +191,9 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       for (const f of findings) {
         if (f.status === "dismissed") continue;
         const files = (f.evidence ?? [])
-          .map((e) => e.ref)
-          .filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r))
-          .map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
+          .map((e) => parseEvidenceRef(e.ref))
+          .filter((p) => p.isTargetRef) // only target-repo paths — run:/url: refs are out of diff scope
+          .map((p) => p.path);
         if (files.length && !files.some((x) => changed.has(x)))
           warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) — outside the diff scope of this run`);
       }

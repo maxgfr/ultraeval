@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, Severity, VerifyResult } from "./types.js";
 import { SEVERITY_DEFS } from "./types.js";
-import { exists, opportunityPriority, opportunityValue, readJson, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
+import { exists, opportunityPriority, opportunityValue, parseEvidenceRef, readJson, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
 
 export interface BacklogOpts {
   out?: string;
@@ -11,10 +11,9 @@ export interface BacklogOpts {
 function targetsOf(f: Finding): string[] {
   const set = new Set<string>();
   for (const e of f.evidence ?? []) {
-    const ref = e.ref;
-    if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) continue;
-    const path = /:\d+/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref;
-    set.add(path);
+    const p = parseEvidenceRef(e.ref);
+    if (!p.isTargetRef) continue; // skip run:/url: refs — they are not fixable target files
+    set.add(p.path); // FIX-012: p.path strips a leading `analysis:` (the old inline parser did not)
   }
   return [...set];
 }

@@ -159,6 +159,19 @@ function extractContext(absPath, start, end, pad = 2, cache) {
   const to = Math.min(lines.length, (end ?? start) + pad);
   return lines.slice(from, to).map((l, i) => `${from + i + 1}: ${l}`).join("\n");
 }
+var stripLineSuffix = (s) => /:\d/.test(s) ? s.slice(0, s.lastIndexOf(":")) : s;
+function parseEvidenceRef(ref) {
+  const kind = ref.startsWith("run:") ? "run" : ref.startsWith("url:") || /^https?:/.test(ref) ? "url" : ref.startsWith("analysis:") ? "analysis" : "path";
+  const rawPath = stripLineSuffix(ref);
+  return {
+    kind,
+    gradeable: kind !== "url",
+    isTargetRef: kind === "path" || kind === "analysis",
+    path: rawPath.replace(/^analysis:/, ""),
+    pathWithLine: ref.replace(/^analysis:/, ""),
+    rawPath
+  };
+}
 var SEV_ORDER = { P0: 0, P1: 1, P2: 2 };
 var titleKey = (title) => title.toLowerCase().trim();
 function provLine(p, emptyText = "") {
@@ -467,10 +480,9 @@ var MEETS_BAR = 80;
 function targetsOf(f) {
   const set = /* @__PURE__ */ new Set();
   for (const e of f.evidence ?? []) {
-    const ref = e.ref;
-    if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) continue;
-    const path = /:\d+/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref;
-    set.add(path);
+    const p = parseEvidenceRef(e.ref);
+    if (!p.isTargetRef) continue;
+    set.add(p.path);
   }
   return [...set];
 }
@@ -1217,7 +1229,7 @@ function checkRun(runDir, opts = {}) {
     if (changed) {
       for (const f of findings) {
         if (f.status === "dismissed") continue;
-        const files = (f.evidence ?? []).map((e) => e.ref).filter((r) => !r.startsWith("run:") && !r.startsWith("url:") && !/^https?:/.test(r)).map((r) => (/:\d/.test(r) ? r.slice(0, r.lastIndexOf(":")) : r).replace(/^analysis:/, ""));
+        const files = (f.evidence ?? []).map((e) => parseEvidenceRef(e.ref)).filter((p) => p.isTargetRef).map((p) => p.path);
         if (files.length && !files.some((x) => changed.has(x)))
           warnings.push(`${f.id} cites only files unchanged since ${sinceRef} (${files.join(", ")}) \u2014 outside the diff scope of this run`);
       }
@@ -1263,8 +1275,8 @@ function load(dir) {
 }
 var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
 function targetRefOf(ref) {
-  if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
-  return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
+  const p = parseEvidenceRef(ref);
+  return p.isTargetRef ? p.pathWithLine : null;
 }
 function fingerprint(f) {
   const refs = [...new Set((f.evidence ?? []).map((e) => targetRefOf(e.ref)).filter((x) => !!x))].sort();
@@ -2435,7 +2447,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
     if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
   }
   const offset = (shard ?? 0) * n;
-  const pathOf = (ref) => /:\d/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref;
+  const pathOf = (ref) => parseEvidenceRef(ref).rawPath;
   const real = [...pairs];
   const traps = [];
   for (let k = 0; k < n; k++) {
