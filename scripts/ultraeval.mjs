@@ -503,6 +503,16 @@ function buildBacklog(runDir, opts = {}) {
       dependsOn: []
     };
   });
+  const lastByFile = /* @__PURE__ */ new Map();
+  for (const t of tasks) {
+    const deps = /* @__PURE__ */ new Set();
+    for (const file of t.targets) {
+      const prev = lastByFile.get(file);
+      if (prev) deps.add(prev);
+    }
+    t.dependsOn = [...deps];
+    for (const file of t.targets) lastByFile.set(file, t.id);
+  }
   const out = opts.out ?? runDir;
   const backlog = { target: cfg.targetAbs, generatedFrom: runDir, tasks };
   writeJson(join3(out, "BACKLOG.json"), backlog);
@@ -1688,6 +1698,10 @@ function buildMd(cfg, doc, verify, backlog, scorecard) {
       `## Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100`,
       ``,
       `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
+      ...scorecard.sensitivity ? [
+        ``,
+        scorecard.sensitivity.robust ? `_Weight sensitivity: verdict robust to \xB10.05 shifts._` : `_Weight sensitivity: verdict flips under a \xB10.05 shift of ${scorecard.sensitivity.flips.join(", ")}._`
+      ] : [],
       ``,
       `| dimension | score | weight | anchored to |`,
       `|-----------|-------|--------|-------------|`,
@@ -1733,7 +1747,7 @@ h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}t
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}th,td{border-color:#333}code{background:#222}.meta{color:#999}}`;
 function buildHtml(cfg, doc, verify, backlog, scorecard) {
   const c = counts(doc);
-  const verdict = scorecard ? `<h2>Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>` : "";
+  const verdict = scorecard ? `<h2>Verdict \u2014 ${scorecard.meetsExpectations ? "\u2705 MEETS" : "\u274C BELOW"} expectations \xB7 ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p>${scorecard.sensitivity ? `<p class="meta">Weight sensitivity: ${scorecard.sensitivity.robust ? "verdict robust to \xB10.05 shifts" : `verdict flips under a \xB10.05 shift of ${esc(scorecard.sensitivity.flips.join(", "))}`}</p>` : ""}<table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>` : "";
   const rows = doc.findings.filter((f) => f.status !== "dismissed" && f.kind !== "opportunity").map(
     (f) => `<tr><td>${f.id}</td><td class="${f.severity.toLowerCase()}">${f.severity}</td><td>${esc(f.title)}</td><td>${f.status}</td><td>${(f.evidence ?? []).map((e) => `<code>${esc(e.ref)}</code>`).join(" ")}</td></tr>`
   ).join("");
@@ -1756,7 +1770,8 @@ function esc(s) {
 }
 
 // src/score.ts
-import { join as join12 } from "path";
+import { appendFileSync, mkdirSync as mkdirSync2 } from "fs";
+import { dirname as dirname2, join as join12 } from "path";
 function readJudges(runDir) {
   const p = join12(runDir, "judges.jsonl");
   if (!exists(p)) return [];
@@ -1785,8 +1800,15 @@ function computeScore(cfg, judges, doc) {
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
   const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
+  const overallWith = (dimId, delta) => {
+    const ws = dimensions.map((x) => ({ w: Math.max(0, x.weight + (x.id === dimId ? delta : 0)), s: x.score }));
+    const tot = ws.reduce((a, b) => a + b.w, 0) || 1;
+    return Math.round(ws.reduce((a, b) => a + b.s / 5 * b.w, 0) / tot * 100);
+  };
+  const flips = dimensions.filter((d) => [0.05, -0.05].some((delta) => (!liveP0 && !judgeSaysNo && overallWith(d.id, delta) >= bar) !== meetsExpectations)).map((d) => d.id);
+  const sensitivity = { robust: flips.length === 0, flips };
   const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : overall < bar ? `weighted score ${overall} is below the ${bar} bar` : `no P0, judges agree, score ${overall} >= ${bar}`;
-  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason };
+  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason, sensitivity };
 }
 function scoreRun(runDir) {
   const cfg = readJson(join12(runDir, "eval.config.json"));
@@ -1797,9 +1819,40 @@ function scoreRun(runDir) {
   writeJson(join12(runDir, "scorecard.json"), sc);
   return sc;
 }
+function appendHistory(runDir, file) {
+  const scPath = join12(runDir, "scorecard.json");
+  if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
+  const sc = readJson(scPath);
+  const doc = exists(join12(runDir, "findings.json")) ? readJson(join12(runDir, "findings.json")) : { findings: [] };
+  const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
+  const commit = sc.provenance?.targetGit?.commit;
+  const entry = {
+    scoredAt: sc.scoredAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+    ...commit ? { commit } : {},
+    overall: sc.overall,
+    meetsExpectations: sc.meetsExpectations,
+    bar: sc.bar,
+    agreement: sc.agreement,
+    counts: {
+      p0: live.filter((f) => f.kind !== "opportunity" && f.severity === "P0").length,
+      p1: live.filter((f) => f.kind !== "opportunity" && f.severity === "P1").length,
+      p2: live.filter((f) => f.kind !== "opportunity" && f.severity === "P2").length,
+      opps: live.filter((f) => f.kind === "opportunity").length
+    }
+  };
+  mkdirSync2(dirname2(file), { recursive: true });
+  appendFileSync(file, `${JSON.stringify(entry)}
+`);
+  return entry;
+}
 function formatScore(sc) {
   const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations \u2014 ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
   const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
+  if (sc.sensitivity) {
+    lines.push(
+      sc.sensitivity.robust ? "  weights: verdict robust to \xB10.05 shifts" : `  weights: verdict flips under a \xB10.05 shift of ${sc.sensitivity.flips.join(", ")}`
+    );
+  }
   if (sc.provenance) {
     const p = sc.provenance;
     const sha = p.targetGit ? ` \xB7 target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";
@@ -1932,8 +1985,9 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
-  score    --run <run> [--json]
+  score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
+             --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
@@ -1960,6 +2014,7 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--shard",
   "--bar"
 ]);
+var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
 function parse(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -1969,7 +2024,10 @@ function parse(argv) {
     else if (a === "-v") args.version = true;
     else if (a.startsWith("--")) {
       if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
-      else args[a.slice(2)] = true;
+      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
+        const next = argv[i + 1];
+        args[a.slice(2)] = next !== void 0 && !next.startsWith("--") ? argv[++i] : "";
+      } else args[a.slice(2)] = true;
     } else args._.push(a);
   }
   return args;
@@ -2120,6 +2178,11 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         if (!run) throw new Error("score requires --run <run>");
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
+        if (args.history !== void 0) {
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join14(process.cwd(), "evals", "history.jsonl");
+          appendHistory(run, file);
+          (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
+        }
         return;
       }
       case "render": {

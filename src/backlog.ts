@@ -92,6 +92,20 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
     };
   });
 
+  // Two tasks touching the same file must not run in parallel: chain each task
+  // to the previous holder of each of its target files. Backward-only edges in
+  // priority order — a cycle is impossible by construction.
+  const lastByFile = new Map<string, string>();
+  for (const t of tasks) {
+    const deps = new Set<string>();
+    for (const file of t.targets) {
+      const prev = lastByFile.get(file);
+      if (prev) deps.add(prev);
+    }
+    t.dependsOn = [...deps];
+    for (const file of t.targets) lastByFile.set(file, t.id);
+  }
+
   const out = opts.out ?? runDir;
   const backlog: Backlog = { target: cfg.targetAbs, generatedFrom: runDir, tasks };
   writeJson(join(out, "BACKLOG.json"), backlog);

@@ -10,7 +10,7 @@ import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
 import { render } from "./render.js";
-import { formatScore, scoreRun } from "./score.js";
+import { appendHistory, formatScore, scoreRun } from "./score.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
 import { readJson, resolveTargetAbs } from "./util.js";
@@ -39,8 +39,9 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
-  score    --run <run> [--json]
+  score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
+             --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
@@ -74,6 +75,9 @@ const VALUE_FLAGS = new Set([
   "--bar",
 ]);
 
+// Flags whose value is optional: `--history` alone means "use the default file".
+const OPTIONAL_VALUE_FLAGS = new Set(["--history"]);
+
 function parse(argv: string[]): Args {
   const args: Args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -83,7 +87,10 @@ function parse(argv: string[]): Args {
     else if (a === "-v") args.version = true;
     else if (a.startsWith("--")) {
       if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
-      else args[a.slice(2)] = true;
+      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
+        const next = argv[i + 1];
+        args[a.slice(2)] = next !== undefined && !next.startsWith("--") ? (argv[++i] as string) : "";
+      } else args[a.slice(2)] = true;
     } else args._.push(a);
   }
   return args;
@@ -234,6 +241,12 @@ function main(): void {
         if (!run) throw new Error("score requires --run <run>");
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
+        if (args.history !== undefined) {
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join(process.cwd(), "evals", "history.jsonl");
+          appendHistory(run, file);
+          // keep --json stdout pure JSON — the ledger notice goes to stderr there
+          (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
+        }
         return;
       }
       case "render": {

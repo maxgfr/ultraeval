@@ -50,6 +50,12 @@ describe("SKILL.md packaging", () => {
     expect(gc).toMatch(/claimId/);
   });
 
+  it("protocol.md records the committed score-history ledger rule", () => {
+    const proto = readFileSync(join(SKILL_DIR, "references", "protocol.md"), "utf8");
+    expect(proto).toMatch(/SHOULD append/);
+    expect(proto).toMatch(/history/i);
+  });
+
   it("gate-contract.md documents the sharded worklist filename verify --shards writes", () => {
     const gc = readFileSync(join(SKILL_DIR, "references", "gate-contract.md"), "utf8");
     expect(gc).toMatch(/VERIFY\.todo\.<i>\.json/);

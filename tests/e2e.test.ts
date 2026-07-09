@@ -82,6 +82,17 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(run(["check"]).status).toBe(2);
   });
 
+  it("score --history without a value appends to evals/history.jsonl under the cwd", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-hist-"));
+    tmps.push(dir);
+    cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+    const out = execFileSync("node", [BUNDLE, "score", "--run", dir, "--history", "--json"], { encoding: "utf8", cwd: dir });
+    expect(out.trimStart().startsWith("{")).toBe(true); // --json output stays pure JSON
+    const ledger = join(dir, "evals", "history.jsonl");
+    expect(existsSync(ledger)).toBe(true);
+    expect(readFileSync(ledger, "utf8").trim().split("\n").length).toBe(1);
+  });
+
   it("sharded verify names the shard worklist it actually wrote", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-shard-"));
     tmps.push(dir);

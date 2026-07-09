@@ -79,6 +79,14 @@ function buildMd(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null,
       `## Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100`,
       ``,
       `_${scorecard.reason} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})_`,
+      ...(scorecard.sensitivity
+        ? [
+            ``,
+            scorecard.sensitivity.robust
+              ? `_Weight sensitivity: verdict robust to ±0.05 shifts._`
+              : `_Weight sensitivity: verdict flips under a ±0.05 shift of ${scorecard.sensitivity.flips.join(", ")}._`,
+          ]
+        : []),
       ``,
       `| dimension | score | weight | anchored to |`,
       `|-----------|-------|--------|-------------|`,
@@ -131,7 +139,7 @@ h1{margin-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0}t
 function buildHtml(cfg: EvalConfig, doc: FindingsDoc, verify: VerifyResult | null, backlog: Backlog | null, scorecard: Scorecard | null): string {
   const c = counts(doc);
   const verdict = scorecard
-    ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p><table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>`
+    ? `<h2>Verdict — ${scorecard.meetsExpectations ? "✅ MEETS" : "❌ BELOW"} expectations · ${scorecard.overall}/100</h2><p class="meta">${esc(scorecard.reason)} (${scorecard.judges} judge${scorecard.judges === 1 ? "" : "s"})</p>${scorecard.sensitivity ? `<p class="meta">Weight sensitivity: ${scorecard.sensitivity.robust ? "verdict robust to ±0.05 shifts" : `verdict flips under a ±0.05 shift of ${esc(scorecard.sensitivity.flips.join(", "))}`}</p>` : ""}<table><tr><th>dimension</th><th>score</th><th>weight</th><th>anchored to</th></tr>${scorecard.dimensions.map((d) => `<tr><td>${esc(d.name)}</td><td>${d.score.toFixed(1)}/5</td><td>${d.weight}</td><td>${esc(anchorFor(cfg, d.id))}</td></tr>`).join("")}</table>`
     : "";
   const rows = doc.findings
     .filter((f) => f.status !== "dismissed" && f.kind !== "opportunity")

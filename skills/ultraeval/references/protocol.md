@@ -51,6 +51,7 @@ Opportunities are rated **impact × effort**, not severity; a live opportunity M
 - `score` MUST copy the provenance into `scorecard.json` and stamp `scoredAt`.
 - Two runs are directly comparable ONLY when their `protocolVersion`, `rubricVersion`, and dimension ids/weights all match; `compare` MUST surface a warning otherwise and MUST print both sides' provenance in `COMPARE.md`.
 - A run without provenance is a *legacy run*: `check` emits a warning (never an error).
+- Run directories are typically gitignored; the committed history ledger is where the score trend survives. A release self-eval SHOULD append its verdict: `score --run <RUN> --history [file]` (default `evals/history.jsonl` under the working directory).
 
 ## Self-evaluation constraint
 

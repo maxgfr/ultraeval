@@ -19,11 +19,13 @@
       "red":   { "testFile": "tests/app.test.js", "description": "Write a failing test that reproduces: …" },
       "green": { "change": "Use a parameterized query for the id." },
       "verify":{ "command": "run the new test (must pass) + the full suite (nothing regresses)" },
-      "dependsOn": []
+      "dependsOn": []                   // derived: tasks sharing a target file chain to the previous holder
     }
   ]
 }
 ```
+
+`dependsOn` is derived from shared `targets` files: when two tasks touch the same file, the later (lower-priority) one depends on the earlier — respect it before dispatching fix agents in parallel.
 
 A downstream agent (or a `to-issues`-style skill) consumes `tasks[]` directly: one issue/PR per task, priority-ordered.
 

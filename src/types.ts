@@ -253,6 +253,9 @@ export interface Scorecard {
   judges: number;
   agreement?: number; // 1 - avgSpread/5 — 1.0 = full consensus, lower = judges split
   reason: string;
+  // Verdict stability under ±0.05 per-dimension weight perturbation (renormalized
+  // like the score): flips lists the dimensions whose shift flips meetsExpectations.
+  sensitivity?: { robust: boolean; flips: string[] };
   provenance?: Provenance; // copied from eval.config.json when present
   scoredAt?: string; // ISO 8601, stamped by `score`
 }
