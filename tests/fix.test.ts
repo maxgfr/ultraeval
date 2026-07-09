@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,6 +103,18 @@ describe("fix — dispatchable fix-agent contracts", () => {
     const { run } = scaffold();
     rmSync(join(run, "BACKLOG.json"));
     expect(() => emitFixAgents(run, "/abs/engine.mjs")).toThrow(/no BACKLOG\.json/);
+  });
+
+  it("plain `node fix.workflow.mjs` exits 2 with launch guidance, not a raw ReferenceError", () => {
+    const { run } = scaffold();
+    emitFixAgents(run, "/abs/engine.mjs", { workflow: true });
+    const p = join(run, "fix.workflow.mjs");
+    const r = spawnSync("node", [p], { encoding: "utf8" });
+    const out = `${r.stdout}${r.stderr}`;
+    expect(out).not.toMatch(/ReferenceError/); // no raw stack trace from an undefined harness global
+    expect(out).not.toMatch(/SyntaxError/); // no illegal top-level return
+    expect(r.status).toBe(2); // usage error, NOT 1 (gate-failed) — a CI wrapper must not misread it
+    expect(out).toMatch(/Workflow\(\{ scriptPath/); // names the correct launcher
   });
 });
 

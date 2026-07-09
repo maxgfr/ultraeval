@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -90,5 +91,17 @@ describe("rejudge — test-retest verdict stability scaffolding", () => {
       delete g.agent;
       delete g.parallel;
     }
+  });
+
+  it("plain `node rejudge.workflow.mjs` exits 2 with launch guidance, not a raw ReferenceError", () => {
+    const run = scaffold();
+    const out = join(run, "..", "rejudge");
+    rejudgeRun(run, out, "/abs/engine.mjs");
+    const r = spawnSync("node", [join(out, "rejudge.workflow.mjs")], { encoding: "utf8" });
+    const output = `${r.stdout}${r.stderr}`;
+    expect(output).not.toMatch(/ReferenceError/); // no raw stack trace from an undefined harness global
+    expect(output).not.toMatch(/SyntaxError/); // no illegal top-level return
+    expect(r.status).toBe(2); // usage error, NOT 1 (gate-failed)
+    expect(output).toMatch(/Workflow\(\{ scriptPath/); // names the correct launcher
   });
 });
