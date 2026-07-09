@@ -98,6 +98,18 @@ describe("cli — a malformed core artifact is a usage error, not a gate verdict
   });
 });
 
+describe("cli — a malformed config in a non-check loader names the file (FIX-014)", () => {
+  it("score on an unparseable eval.config.json names the file, not raw JSON.parse text", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-badcfg2-"));
+    tmps.push(dir);
+    writeFileSync(join(dir, "eval.config.json"), "{ broken ]");
+    const r = run(["score", "--run", dir]);
+    expect(r.status).toBe(2); // usage/runtime error
+    expect(r.out).toMatch(/eval\.config\.json is not valid JSON/i); // names the offending file
+    expect(r.out).not.toMatch(/Expected property name|position \d+/); // not the raw V8 parser text
+  });
+});
+
 describe("cli — check --json emits the machine-readable CheckResult for CI", () => {
   it("prints parseable JSON on a passing check and keeps exit 0", () => {
     const r = run(["check", "--run", sampleRun(), "--json"]);

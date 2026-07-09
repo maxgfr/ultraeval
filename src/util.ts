@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Effort, Impact, Provenance } from "./types.js";
 
 // ---- fs helpers ----------------------------------------------------------
@@ -34,7 +34,16 @@ export function writeText(p: string, s: string): void {
 }
 
 export function readJson<T = unknown>(p: string): T {
-  return JSON.parse(readFileSync(p, "utf8")) as T;
+  // Read outside the try so a missing-file error stays an ENOENT (not misreported
+  // as a parse error). On a parse failure, name the offending file rather than
+  // forwarding the raw V8 phrasing ("Expected property name … at position 2"),
+  // which reaches the operator with a byte offset but no filename.
+  const raw = readFileSync(p, "utf8");
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(`${basename(p)} is not valid JSON: ${p}`);
+  }
 }
 
 export function writeJson(p: string, data: unknown): void {

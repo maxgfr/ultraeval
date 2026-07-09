@@ -12,7 +12,7 @@ import { extname, join as join2, relative as relative2 } from "path";
 
 // src/util.ts
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
-import { dirname, isAbsolute, join, relative, resolve } from "path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
 function exists(p) {
   return existsSync(p);
 }
@@ -35,7 +35,12 @@ function writeText(p, s) {
   }
 }
 function readJson(p) {
-  return JSON.parse(readFileSync(p, "utf8"));
+  const raw = readFileSync(p, "utf8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`${basename(p)} is not valid JSON: ${p}`);
+  }
 }
 function writeJson(p, data) {
   writeText(p, `${JSON.stringify(data, null, 2)}
