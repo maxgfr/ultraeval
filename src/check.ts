@@ -75,8 +75,9 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   }
 
   // 1. Resolve every non-dismissed finding's evidence against the target/run.
-  //    This is the core anti-hallucination guarantee.
-  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
+  //    This is the core anti-hallucination guarantee. A run-scoped line cache
+  //    reads each cited file once even when many findings cite the same hotspot.
+  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: new Map() };
   for (const f of findings) {
     if (f.status === "dismissed") continue;
     const ev = Array.isArray(f.evidence) ? f.evidence : [];

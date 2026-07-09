@@ -60,6 +60,16 @@ function resolveTargetAbs(targetAbs, target, runDir) {
   if (targetAbs && existsSync(targetAbs)) return targetAbs;
   return resolve(runDir, target);
 }
+function readFileCached(absPath, cache) {
+  const hit = cache?.get(absPath);
+  if (hit) return hit;
+  const raw = readFileSync(absPath, "utf8");
+  const lines = raw.split("\n");
+  const count = raw === "" ? 0 : raw.endsWith("\n") ? lines.length - 1 : lines.length;
+  const entry = { count, lines };
+  cache?.set(absPath, entry);
+  return entry;
+}
 function parseLineSpec(spec) {
   const m = spec.match(/^(\d+)(?:-(\d+))?$/);
   if (!m) return null;
@@ -67,11 +77,8 @@ function parseLineSpec(spec) {
   const end = m[2] ? Number(m[2]) : start;
   return { start, end };
 }
-function lineCount(absPath) {
-  const raw = readFileSync(absPath, "utf8");
-  if (raw === "") return 0;
-  const n = raw.split("\n").length;
-  return raw.endsWith("\n") ? n - 1 : n;
+function lineCount(absPath, cache) {
+  return readFileCached(absPath, cache).count;
 }
 function resolveEvidence(ref, opts) {
   let raw = String(ref ?? "").trim();
@@ -91,7 +98,7 @@ function resolveEvidence(ref, opts) {
     const line = anchor?.match(/^L(\d+)$/);
     if (line) {
       const n = Number(line[1]);
-      const total = lineCount(absPath2);
+      const total = lineCount(absPath2, opts.lineCache);
       if (n < 1 || n > total)
         return { raw, kind: "run", gradeable: true, resolved: false, reason: `line ${n} out of range (1-${total})`, absPath: absPath2, lineStart: n, lineEnd: n };
       return { raw, kind: "run", gradeable: true, resolved: true, absPath: absPath2, lineStart: n, lineEnd: n };
@@ -127,7 +134,7 @@ function resolveEvidence(ref, opts) {
     };
   }
   if (lineSpec) {
-    const total = lineCount(absPath);
+    const total = lineCount(absPath, opts.lineCache);
     if (lineSpec.start < 1 || lineSpec.end < lineSpec.start || lineSpec.end > total) {
       return {
         raw,
@@ -144,9 +151,9 @@ function resolveEvidence(ref, opts) {
   }
   return { raw, kind: "file", gradeable: true, resolved: true, absPath };
 }
-function extractContext(absPath, start, end, pad = 2) {
+function extractContext(absPath, start, end, pad = 2, cache) {
   if (!existsSync(absPath)) return "";
-  const lines = readFileSync(absPath, "utf8").split("\n");
+  const { lines } = readFileCached(absPath, cache);
   if (start === void 0) return lines.slice(0, 12).join("\n");
   const from = Math.max(0, start - 1 - pad);
   const to = Math.min(lines.length, (end ?? start) + pad);
@@ -811,7 +818,7 @@ function checkRun(runDir, opts = {}) {
   if (opts.minFindings && findings.length < opts.minFindings) {
     errors.push(`only ${findings.length} finding(s) recorded; --min-findings ${opts.minFindings} required`);
   }
-  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
+  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
   for (const f of findings) {
     if (f.status === "dismissed") continue;
     const ev = Array.isArray(f.evidence) ? f.evidence : [];
@@ -2370,13 +2377,13 @@ function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
   const doc = readJson(join17(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
-  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
+  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
   for (const f of findings) {
     for (const e of f.evidence ?? []) {
       if (pairs.length >= maxVerify) break;
       const r = resolveEvidence(e.ref, resolveOpts);
       if (!r.gradeable) continue;
-      const digest = r.resolved && r.absPath ? extractContext(r.absPath, r.lineStart, r.lineEnd) : `(unresolved: ${r.reason})`;
+      const digest = r.resolved && r.absPath ? extractContext(r.absPath, r.lineStart, r.lineEnd, 2, resolveOpts.lineCache) : `(unresolved: ${r.reason})`;
       pairs.push({ claimId: f.id, evidenceRef: e.ref, claim: f.statement, digest, verdict: null, note: "" });
     }
   }

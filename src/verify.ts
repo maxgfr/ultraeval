@@ -29,13 +29,15 @@ export function buildWorklist(runDir: string, maxVerify: number = CAPS.maxVerify
   const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs: VerifyPair[] = [];
-  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
+  // One run-scoped read cache shared by resolveEvidence (range-check) and
+  // extractContext (digest) so each cited file is read once per worklist build.
+  const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: new Map() };
   for (const f of findings) {
     for (const e of f.evidence ?? []) {
       if (pairs.length >= maxVerify) break;
       const r = resolveEvidence(e.ref, resolveOpts);
       if (!r.gradeable) continue; // url/external refs are not adversarially graded offline
-      const digest = r.resolved && r.absPath ? extractContext(r.absPath, r.lineStart, r.lineEnd) : `(unresolved: ${r.reason})`;
+      const digest = r.resolved && r.absPath ? extractContext(r.absPath, r.lineStart, r.lineEnd, 2, resolveOpts.lineCache) : `(unresolved: ${r.reason})`;
       pairs.push({ claimId: f.id, evidenceRef: e.ref, claim: f.statement, digest, verdict: null, note: "" });
     }
   }

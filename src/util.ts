@@ -91,9 +91,33 @@ export interface ResolvedEvidence {
   lineEnd?: number;
 }
 
+// A per-invocation memo of `readFileSync(absPath).split("\n")` + the derived
+// line count. A finding hotspot is routinely cited by many refs; without this
+// each ref re-read and re-split the same file (gate time scaled as refs × file
+// size). SCOPE IT PER checkRun/buildWorklist CALL — never process-lifetime:
+// files may change between CLI invocations, so a run-scoped Map is safe but a
+// global cache would serve stale content.
+export type LineCache = Map<string, { count: number; lines: string[] }>;
+
+function readFileCached(absPath: string, cache?: LineCache): { count: number; lines: string[] } {
+  const hit = cache?.get(absPath);
+  if (hit) return hit;
+  const raw = readFileSync(absPath, "utf8");
+  const lines = raw.split("\n");
+  // A trailing newline does not add a line; "a\nb\n" is 2 lines. (Identical to
+  // the previous lineCount logic — behavior-preserving.)
+  const count = raw === "" ? 0 : raw.endsWith("\n") ? lines.length - 1 : lines.length;
+  const entry = { count, lines };
+  cache?.set(absPath, entry);
+  return entry;
+}
+
 export interface ResolveOpts {
   targetAbs: string;
   runDir: string;
+  // Optional per-invocation read cache; when present a file cited by K refs is
+  // read once, not K times. Callers scope it to a single checkRun/buildWorklist.
+  lineCache?: LineCache;
 }
 
 function parseLineSpec(spec: string): { start: number; end: number } | null {
@@ -104,12 +128,8 @@ function parseLineSpec(spec: string): { start: number; end: number } | null {
   return { start, end };
 }
 
-function lineCount(absPath: string): number {
-  const raw = readFileSync(absPath, "utf8");
-  if (raw === "") return 0;
-  // A trailing newline does not add a line; "a\nb\n" is 2 lines.
-  const n = raw.split("\n").length;
-  return raw.endsWith("\n") ? n - 1 : n;
+function lineCount(absPath: string, cache?: LineCache): number {
+  return readFileCached(absPath, cache).count;
 }
 
 export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidence {
@@ -138,7 +158,7 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
     const line = anchor?.match(/^L(\d+)$/);
     if (line) {
       const n = Number(line[1]);
-      const total = lineCount(absPath);
+      const total = lineCount(absPath, opts.lineCache);
       if (n < 1 || n > total)
         return { raw, kind: "run", gradeable: true, resolved: false, reason: `line ${n} out of range (1-${total})`, absPath, lineStart: n, lineEnd: n };
       return { raw, kind: "run", gradeable: true, resolved: true, absPath, lineStart: n, lineEnd: n };
@@ -178,7 +198,7 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
     };
   }
   if (lineSpec) {
-    const total = lineCount(absPath);
+    const total = lineCount(absPath, opts.lineCache);
     if (lineSpec.start < 1 || lineSpec.end < lineSpec.start || lineSpec.end > total) {
       return {
         raw,
@@ -198,9 +218,11 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
 }
 
 // Pull a short context window around the cited line(s) for a verify digest.
-export function extractContext(absPath: string, start?: number, end?: number, pad = 2): string {
+// Shares the per-invocation cache with resolveEvidence so the file a finding
+// cites is read once, not once to range-check and again to extract context.
+export function extractContext(absPath: string, start?: number, end?: number, pad = 2, cache?: LineCache): string {
   if (!existsSync(absPath)) return "";
-  const lines = readFileSync(absPath, "utf8").split("\n");
+  const { lines } = readFileCached(absPath, cache);
   if (start === undefined) return lines.slice(0, 12).join("\n");
   const from = Math.max(0, start - 1 - pad);
   const to = Math.min(lines.length, (end ?? start) + pad);

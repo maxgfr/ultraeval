@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Provenance } from "../src/types.js";
-import { provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
+import { extractContext, type LineCache, provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -112,6 +112,49 @@ describe("provLine — shared provenance one-liner (compare + render)", () => {
 
   it("compare's fallback labels a legacy run", () => {
     expect(provLine(undefined, "no provenance (legacy run)")).toBe("no provenance (legacy run)");
+  });
+});
+
+describe("resolveEvidence / extractContext — per-invocation line cache", () => {
+  function targetFile(content: string): { targetAbs: string; runDir: string; file: string } {
+    const root = mkdtempSync(join(tmpdir(), "ue-cache-"));
+    tmps.push(root);
+    const targetAbs = join(root, "target");
+    const runDir = join(root, "run");
+    mkdirSync(targetAbs, { recursive: true });
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(targetAbs, "f.txt"), content);
+    return { targetAbs, runDir, file: join(targetAbs, "f.txt") };
+  }
+
+  it("passing a cache does not change resolveEvidence's result", () => {
+    const { targetAbs, runDir } = targetFile("a\nb\nc\n");
+    const cache: LineCache = new Map();
+    const cached = resolveEvidence("f.txt:2", { targetAbs, runDir, lineCache: cache });
+    const uncached = resolveEvidence("f.txt:2", { targetAbs, runDir });
+    expect(cached).toEqual(uncached);
+    expect(cached.resolved).toBe(true);
+  });
+
+  it("passing a cache does not change extractContext's output", () => {
+    const { targetAbs, runDir, file } = targetFile("a\nb\nc\nd\ne\n");
+    const cache: LineCache = new Map();
+    // prime the cache via a resolve, then compare cached vs uncached digest
+    resolveEvidence("f.txt:3", { targetAbs, runDir, lineCache: cache });
+    expect(extractContext(file, 3, 3, 2, cache)).toBe(extractContext(file, 3, 3, 2));
+  });
+
+  it("memoizes the read within one invocation (a same-cache re-resolve does not re-read disk)", () => {
+    const { targetAbs, runDir, file } = targetFile("a\nb\nc\nd\ne\n"); // 5 lines
+    const cache: LineCache = new Map();
+    // First resolve populates the cache: line 5 is in range.
+    expect(resolveEvidence("f.txt:5", { targetAbs, runDir, lineCache: cache }).resolved).toBe(true);
+    // Shrink the file on disk to 2 lines.
+    writeFileSync(file, "a\nb\n");
+    // A cache-less resolve re-reads and now sees line 5 out of range.
+    expect(resolveEvidence("f.txt:5", { targetAbs, runDir }).resolved).toBe(false);
+    // The SAME cache serves the memoized 5-line count — proof the read was memoized.
+    expect(resolveEvidence("f.txt:5", { targetAbs, runDir, lineCache: cache }).resolved).toBe(true);
   });
 });
 
