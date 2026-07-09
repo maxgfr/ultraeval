@@ -16,6 +16,7 @@ import { appendHistory, formatScore, scoreRun } from "./score.js";
 import { formatStatus, statusRun } from "./status.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
+import { type Args, num, parse, str } from "./cliargs.js";
 import { exists, readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
 
@@ -71,34 +72,6 @@ Commands:
 
 Exit codes: 0 = ok / gate passed · 1 = gate failed (check/verify) · 2 = usage or runtime error.`;
 
-interface Args {
-  _: string[];
-  [k: string]: string | boolean | string[];
-}
-
-const VALUE_FLAGS = new Set([
-  "--target",
-  "--out",
-  "--run",
-  "--kind",
-  "--category",
-  "--mode",
-  "--since",
-  "--base",
-  "--apply",
-  "--min-findings",
-  "--coverage-min",
-  "--max-verify",
-  "--shards",
-  "--shard",
-  "--bar",
-  "--honeypots",
-  "--task",
-]);
-
-// Flags whose value is optional: `--history` alone means "use the default file".
-const OPTIONAL_VALUE_FLAGS = new Set(["--history"]);
-
 // Known flags per command. A typo'd gate flag must never be silently ignored —
 // `check --require-verfy` weakening the exit gate is exactly the failure mode.
 const COMMAND_FLAGS: Record<string, string[]> = {
@@ -142,31 +115,6 @@ function rejectUnknownFlags(cmd: string, args: Args): void {
     const hint = best && editDistance(k, best) <= 3 ? ` (did you mean --${best}?)` : "";
     throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
   }
-}
-
-function parse(argv: string[]): Args {
-  const args: Args = { _: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === undefined) continue;
-    if (a === "-h") args.help = true;
-    else if (a === "-v") args.version = true;
-    else if (a.startsWith("--")) {
-      if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
-      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
-        const next = argv[i + 1];
-        args[a.slice(2)] = next !== undefined && !next.startsWith("--") ? (argv[++i] as string) : "";
-      } else args[a.slice(2)] = true;
-    } else args._.push(a);
-  }
-  return args;
-}
-
-function num(v: string | boolean | string[] | undefined): number | undefined {
-  return typeof v === "string" && v !== "" ? Number(v) : undefined;
-}
-function str(v: string | boolean | string[] | undefined): string | undefined {
-  return typeof v === "string" ? v : undefined;
 }
 
 function main(): void {

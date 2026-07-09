@@ -2299,6 +2299,51 @@ function formatStatus(s, runDir) {
   return lines.join("\n");
 }
 
+// src/cliargs.ts
+var VALUE_FLAGS = /* @__PURE__ */ new Set([
+  "--target",
+  "--out",
+  "--run",
+  "--kind",
+  "--category",
+  "--mode",
+  "--since",
+  "--base",
+  "--apply",
+  "--min-findings",
+  "--coverage-min",
+  "--max-verify",
+  "--shards",
+  "--shard",
+  "--bar",
+  "--honeypots",
+  "--task"
+]);
+var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
+function parse(argv) {
+  const args = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === void 0) continue;
+    if (a === "-h") args.help = true;
+    else if (a === "-v") args.version = true;
+    else if (a.startsWith("--")) {
+      if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
+      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
+        const next = argv[i + 1];
+        args[a.slice(2)] = next !== void 0 && !next.startsWith("--") ? argv[++i] : "";
+      } else args[a.slice(2)] = true;
+    } else args._.push(a);
+  }
+  return args;
+}
+function num(v) {
+  return typeof v === "string" && v !== "" ? Number(v) : void 0;
+}
+function str(v) {
+  return typeof v === "string" ? v : void 0;
+}
+
 // src/verify.ts
 import { readdirSync as readdirSync4 } from "fs";
 import { isAbsolute as isAbsolute3, join as join17, resolve as resolve4 } from "path";
@@ -2531,26 +2576,6 @@ Commands:
   help | --help        version | --version
 
 Exit codes: 0 = ok / gate passed \xB7 1 = gate failed (check/verify) \xB7 2 = usage or runtime error.`;
-var VALUE_FLAGS = /* @__PURE__ */ new Set([
-  "--target",
-  "--out",
-  "--run",
-  "--kind",
-  "--category",
-  "--mode",
-  "--since",
-  "--base",
-  "--apply",
-  "--min-findings",
-  "--coverage-min",
-  "--max-verify",
-  "--shards",
-  "--shard",
-  "--bar",
-  "--honeypots",
-  "--task"
-]);
-var OPTIONAL_VALUE_FLAGS = /* @__PURE__ */ new Set(["--history"]);
 var COMMAND_FLAGS = {
   init: ["target", "out", "kind", "category", "mode", "bar", "since"],
   plan: ["run"],
@@ -2589,29 +2614,6 @@ function rejectUnknownFlags(cmd, args) {
     const hint = best && editDistance(k, best) <= 3 ? ` (did you mean --${best}?)` : "";
     throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
   }
-}
-function parse(argv) {
-  const args = { _: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === void 0) continue;
-    if (a === "-h") args.help = true;
-    else if (a === "-v") args.version = true;
-    else if (a.startsWith("--")) {
-      if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
-      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
-        const next = argv[i + 1];
-        args[a.slice(2)] = next !== void 0 && !next.startsWith("--") ? argv[++i] : "";
-      } else args[a.slice(2)] = true;
-    } else args._.push(a);
-  }
-  return args;
-}
-function num(v) {
-  return typeof v === "string" && v !== "" ? Number(v) : void 0;
-}
-function str(v) {
-  return typeof v === "string" ? v : void 0;
 }
 function main() {
   const args = parse(process.argv.slice(2));
