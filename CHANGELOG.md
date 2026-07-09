@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.5.0](https://github.com/maxgfr/ultraeval/compare/v1.4.0...v1.5.0) (2026-07-09)
+
+
+### Bug Fixes
+
+* **gate,backlog,score:** close the RUN-3 P1/P2 findings the self-eval surfaced ([5f251e4](https://github.com/maxgfr/ultraeval/commit/5f251e449938fe05ea121d8670afdf8a3afba6de))
+* **polish:** sharded verify message, clean eval.sarif, rank folds as open, actionable backlog error ([57bea3d](https://github.com/maxgfr/ultraeval/commit/57bea3d70624152ac8cf7aeb2224c41644f69e47))
+
+
+### Features
+
+* **execute:** normed live-scenario library and budget-aware generated workflow ([2a6ce2a](https://github.com/maxgfr/ultraeval/commit/2a6ce2ae6d468cfb8448943135d0c8f6e6e487d0))
+* **fix:** close the red-green loop — dispatchable fix-agent contracts and verify-fix ([f4040cd](https://github.com/maxgfr/ultraeval/commit/f4040cdd91755ce6814f2ab55fcec9d944ec0892))
+* **gate:** honeypot skeptic-checks and judge calibration (protocol v2) ([5dcd204](https://github.com/maxgfr/ultraeval/commit/5dcd20475cff06b6b9aad2a1503ec2833eb2b7eb))
+* **rejudge:** test-retest verdict stability from reused artifacts ([397f7f9](https://github.com/maxgfr/ultraeval/commit/397f7f9aa9312d74852e1af3d3001f9768d68663))
+* **score,backlog:** history ledger, weight-sensitivity, derived dependsOn ([d875306](https://github.com/maxgfr/ultraeval/commit/d8753060bd0864955adc2366796430ff276f158c))
+
 # [1.4.0](https://github.com/maxgfr/ultraeval/compare/v1.3.0...v1.4.0) (2026-07-09)
 
 
