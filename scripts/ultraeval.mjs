@@ -1373,6 +1373,8 @@ function gateFailures(r) {
   if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
   const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
   if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
+  const escalated = r.retitled.filter((p) => p.to.kind !== "opportunity" && p.to.severity === "P0" && p.from.severity !== "P0");
+  if (escalated.length) fails.push(`escalated to P0 defect(s): ${escalated.map((p) => `${p.from.severity}\u2192P0 ${p.to.title}`).join("; ")}`);
   return fails;
 }
 function compareRuns(baseDir, newDir) {

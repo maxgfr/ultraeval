@@ -128,6 +128,26 @@ describe("compare — CI regression gate", () => {
     const cur = runDir([], 85);
     expect(gateFailures(compareRuns(base, cur))).toEqual([]);
   });
+
+  it("gate fails when a retitled finding escalates P1→P0 at the same evidence fingerprint (FIX-011)", () => {
+    // Same cited line, new title, severity bumped P1→P0. compareRuns pairs it as
+    // a retitle (not an introduction), so a gate that only inspects introduced[]
+    // would silently miss the escalation and green a new-P0 PR.
+    const base = runDir([{ ...f("SQLi in /u"), severity: "P1", evidence: [{ ref: "src/app.js:3" }] }], 80);
+    const cur = runDir([{ ...f("SQL injection via req.query.id in /u"), severity: "P0", evidence: [{ ref: "src/app.js:3" }] }], 85);
+    const r = compareRuns(base, cur);
+    expect(r.retitled.length).toBe(1); // matched by fingerprint, not introduced
+    expect(r.introduced).toEqual([]);
+    expect(gateFailures(r).join(" ")).toMatch(/P0/); // escalation still fails the gate
+  });
+
+  it("gate does NOT fail on a retitle that stays below P0 (no false escalation) (FIX-011)", () => {
+    const base = runDir([{ ...f("bug"), severity: "P2", evidence: [{ ref: "src/app.js:3" }] }], 80);
+    const cur = runDir([{ ...f("bug, clarified"), severity: "P1", evidence: [{ ref: "src/app.js:3" }] }], 85);
+    const r = compareRuns(base, cur);
+    expect(r.retitled.length).toBe(1);
+    expect(gateFailures(r).join(" ")).not.toMatch(/P0/);
+  });
 });
 
 describe("compare — comparability & provenance", () => {
