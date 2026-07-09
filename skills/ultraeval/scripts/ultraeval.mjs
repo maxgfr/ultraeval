@@ -10,7 +10,7 @@ import { readdirSync as readdirSync2, readFileSync as readFileSync2 } from "fs";
 import { extname, join as join2, relative as relative2 } from "path";
 
 // src/util.ts
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 function exists(p) {
   return existsSync(p);
@@ -21,9 +21,17 @@ function ensureDir(p) {
 function readText(p) {
   return readFileSync(p, "utf8");
 }
+var tmpCounter = 0;
 function writeText(p, s) {
   ensureDir(dirname(p));
-  writeFileSync(p, s);
+  const tmp = `${p}.${process.pid}.${tmpCounter++}.tmp`;
+  try {
+    writeFileSync(tmp, s);
+    renameSync(tmp, p);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 function readJson(p) {
   return JSON.parse(readFileSync(p, "utf8"));
@@ -1084,7 +1092,7 @@ function writeSarif(runDir, out) {
 }
 
 // src/clean.ts
-import { readdirSync as readdirSync3, rmSync } from "fs";
+import { readdirSync as readdirSync3, rmSync as rmSync2 } from "fs";
 import { join as join8 } from "path";
 var DERIVED = [
   "VERIFY.todo.json",
@@ -1104,7 +1112,7 @@ function clean(runDir, opts = {}) {
   }
   if (opts.all) {
     if (exists(runDir)) {
-      rmSync(runDir, { recursive: true, force: true });
+      rmSync2(runDir, { recursive: true, force: true });
       removed.push(runDir);
     }
     return removed;
@@ -1112,21 +1120,21 @@ function clean(runDir, opts = {}) {
   for (const name of DERIVED) {
     const p = join8(runDir, name);
     if (exists(p)) {
-      rmSync(p, { force: true });
+      rmSync2(p, { force: true });
       removed.push(p);
     }
   }
   if (exists(runDir)) {
     for (const e of readdirSync3(runDir)) {
       if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync(join8(runDir, e), { force: true });
+        rmSync2(join8(runDir, e), { force: true });
         removed.push(join8(runDir, e));
       }
     }
   }
   const fixes = join8(runDir, "fixes");
   if (exists(fixes)) {
-    rmSync(fixes, { recursive: true, force: true });
+    rmSync2(fixes, { recursive: true, force: true });
     removed.push(fixes);
   }
   return removed;

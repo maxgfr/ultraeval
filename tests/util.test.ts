@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Provenance } from "../src/types.js";
-import { provLine, resolveEvidence, SEV_ORDER, titleKey } from "../src/util.js";
+import { provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -30,6 +30,52 @@ describe("shared ranking/identity helpers", () => {
     expect(SEV_ORDER.P1).toBe(1);
     expect(SEV_ORDER.P2).toBe(2);
     expect(titleKey("  Quick Win ")).toBe("quick win");
+  });
+});
+
+describe("writeText — atomic write", () => {
+  function scratch(): string {
+    const d = mkdtempSync(join(tmpdir(), "ue-write-"));
+    tmps.push(d);
+    return d;
+  }
+
+  it("creates missing parent directories and writes content", () => {
+    const p = join(scratch(), "nested", "deep", "out.txt");
+    writeText(p, "hello world");
+    expect(readText(p)).toBe("hello world");
+  });
+
+  it("writes an empty file faithfully when content is ''", () => {
+    const p = join(scratch(), "empty.jsonl");
+    writeText(p, "");
+    expect(readText(p)).toBe("");
+  });
+
+  it("overwrites an existing file with the new content", () => {
+    const p = join(scratch(), "out.txt");
+    writeText(p, "first");
+    writeText(p, "second");
+    expect(readText(p)).toBe("second");
+  });
+
+  it("leaves no .tmp staging files behind after a successful write", () => {
+    const dir = scratch();
+    const p = join(dir, "out.txt");
+    writeText(p, "content");
+    expect(readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("cleans up the temp file and never partially writes the target when the rename fails", () => {
+    const dir = scratch();
+    // A directory target makes the final renameSync(tempFile, target) fail, so
+    // the destination is never touched — the atomicity guarantee. No partial
+    // .tmp staging file may linger afterwards.
+    const target = join(dir, "iamdir");
+    mkdirSync(target);
+    expect(() => writeText(target, "x")).toThrow();
+    expect(existsSync(target)).toBe(true);
+    expect(readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
   });
 });
 

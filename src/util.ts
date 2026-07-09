@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Effort, Impact, Provenance } from "./types.js";
 
@@ -15,9 +15,22 @@ export function readText(p: string): string {
   return readFileSync(p, "utf8");
 }
 
+let tmpCounter = 0;
 export function writeText(p: string, s: string): void {
   ensureDir(dirname(p));
-  writeFileSync(p, s);
+  // Atomic write: stage into a temp file in the SAME directory (rename is only
+  // atomic within a filesystem) then rename over the target, so a crash
+  // mid-write can never leave a truncated file. Empty content (s === "") is
+  // written faithfully. writeJson delegates here, so JSON is covered too.
+  const tmp = `${p}.${process.pid}.${tmpCounter++}.tmp`;
+  try {
+    writeFileSync(tmp, s);
+    renameSync(tmp, p);
+  } catch (err) {
+    // Best-effort cleanup of the partial temp file; surface the original error.
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 export function readJson<T = unknown>(p: string): T {
