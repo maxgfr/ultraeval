@@ -199,6 +199,56 @@ describe("check — grounding gate", () => {
     expect(r.errors.join(" ")).toMatch(/unadjudicated/);
   });
 
+  it("warns when a BACKLOG task is done but its finding is still open", () => {
+    const run = scaffold([{ ...genuine, status: "open" }], {
+      "BACKLOG.json": JSON.stringify({
+        target: "/t",
+        generatedFrom: "r",
+        tasks: [{ id: "FIX-001", findingId: "F1", status: "done", verifiedAt: "2026-07-09T00:00:00.000Z" }],
+      }),
+    });
+    const r = checkRun(run);
+    expect(r.warnings.join(" ")).toMatch(/done but finding/i);
+  });
+
+  it("warns (not fails) when runs/budget.md records cuts but SUMMARY.md does not mention them", () => {
+    const run = scaffold([genuine], {
+      "runs/budget.md": "# Budget coverage cuts\n- judges: 3 lenses -> 2\n",
+      "SUMMARY.md": "# Summary\nEverything is fine [F1]\n",
+    });
+    const r = checkRun(run);
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/budget/i);
+  });
+
+  it("no budget warning when SUMMARY.md reports the cuts", () => {
+    const run = scaffold([genuine], {
+      "runs/budget.md": "# Budget coverage cuts\n- judges: 3 lenses -> 2\n",
+      "SUMMARY.md": "# Summary\nBudget cuts: judges 3 -> 2 [M]\n",
+    });
+    expect(checkRun(run).warnings.join(" ")).not.toMatch(/budget/i);
+  });
+
+  it("fails --require-verify while a honeypot failure is unresolved", () => {
+    const run = scaffold([genuine], {
+      "VERIFY.json": JSON.stringify({
+        ok: false,
+        adjudicated: 1,
+        supported: 1,
+        partial: 0,
+        refuted: 0,
+        unsupported: 0,
+        failures: [],
+        unadjudicated: [],
+        verdicts: [{ claimId: "F1", verdict: "supported" }],
+        honeypots: { planted: 2, caught: 1, failed: ["F9"] },
+      }),
+    });
+    const r = checkRun(run, { requireVerify: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/honeypot/i);
+  });
+
   it("passes --require-verify when every finding is adjudicated", () => {
     const run = scaffold([genuine], {
       "VERIFY.json": JSON.stringify({

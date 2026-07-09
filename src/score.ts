@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { MEETS_BAR } from "./types.js";
 import type { EvalConfig, FindingsDoc, JudgeLine, Scorecard } from "./types.js";
 import { exists, readJson, readText, writeJson } from "./util.js";
@@ -38,30 +39,107 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
 
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
-  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
+  // Judge calibration (references/calibration-run.json): a panel with zero
+  // passed calibrations cannot green-light the verdict — its scale is untrusted.
+  const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
+  const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : undefined;
+  const calibrationVeto = judges.length > 0 && calibrated === 0;
+  const meetsBase = !liveP0 && !judgeSaysNo && !calibrationVeto;
+  const meetsExpectations = meetsBase && overall >= bar;
+
+  // Verdict stability: nudge each weight by ±0.05 (renormalized, like the real
+  // scoring) and record every dimension whose nudge flips meetsExpectations.
+  const overallWith = (dimId: string, delta: number): number => {
+    const ws = dimensions.map((x) => ({ w: Math.max(0, x.weight + (x.id === dimId ? delta : 0)), s: x.score }));
+    const tot = ws.reduce((a, b) => a + b.w, 0) || 1;
+    return Math.round((ws.reduce((a, b) => a + (b.s / 5) * b.w, 0) / tot) * 100);
+  };
+  const flips = dimensions.filter((d) => [0.05, -0.05].some((delta) => (meetsBase && overallWith(d.id, delta) >= bar) !== meetsExpectations)).map((d) => d.id);
+  const sensitivity = { robust: flips.length === 0, flips };
   const reason = liveP0
     ? "an unresolved P0 finding caps meets-expectations at false"
     : judgeSaysNo
       ? "a judge ruled it does not meet expectations"
-      : overall < bar
-        ? `weighted score ${overall} is below the ${bar} bar`
-        : `no P0, judges agree, score ${overall} >= ${bar}`;
-  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason };
+      : calibrationVeto
+        ? "no judge passed calibration — an uncalibrated panel cannot green-light the verdict"
+        : overall < bar
+          ? `weighted score ${overall} is below the ${bar} bar`
+          : `no P0, judges agree, score ${overall} >= ${bar}`;
+  return {
+    overall,
+    maxScore: 100,
+    meetsExpectations,
+    bar,
+    dimensions,
+    judges: judges.length,
+    agreement,
+    reason,
+    sensitivity,
+    ...(judgesCalibrated ? { judgesCalibrated } : {}),
+  };
 }
 
 export function scoreRun(runDir: string): Scorecard {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
-  const sc = computeScore(cfg, readJudges(runDir), doc);
+  const judges = readJudges(runDir);
+  // A 0-judge panel must never quietly become a plausible 0/100 scorecard.
+  if (!judges.length) throw new Error("no judge verdicts in judges.jsonl — the Judge phase has not run; dispatch judges (agents/judge.md) first");
+  const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = new Date().toISOString();
   writeJson(join(runDir, "scorecard.json"), sc);
   return sc;
 }
 
+// One committed JSONL line per scored run. Run directories are gitignored;
+// the ledger is where the score trend (58 → 81 → …) survives the working tree.
+export interface HistoryEntry {
+  scoredAt: string;
+  commit?: string;
+  overall: number;
+  meetsExpectations: boolean;
+  bar: number;
+  agreement?: number;
+  counts: { p0: number; p1: number; p2: number; opps: number };
+}
+
+export function appendHistory(runDir: string, file: string): HistoryEntry {
+  const scPath = join(runDir, "scorecard.json");
+  if (!exists(scPath)) throw new Error("no scorecard.json — run `score --run <run>` first, then --history");
+  const sc = readJson<Scorecard>(scPath);
+  const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
+  const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
+  const commit = sc.provenance?.targetGit?.commit;
+  const entry: HistoryEntry = {
+    scoredAt: sc.scoredAt ?? new Date().toISOString(),
+    ...(commit ? { commit } : {}),
+    overall: sc.overall,
+    meetsExpectations: sc.meetsExpectations,
+    bar: sc.bar,
+    agreement: sc.agreement,
+    counts: {
+      p0: live.filter((f) => f.kind !== "opportunity" && f.severity === "P0").length,
+      p1: live.filter((f) => f.kind !== "opportunity" && f.severity === "P1").length,
+      p2: live.filter((f) => f.kind !== "opportunity" && f.severity === "P2").length,
+      opps: live.filter((f) => f.kind === "opportunity").length,
+    },
+  };
+  mkdirSync(dirname(file), { recursive: true });
+  appendFileSync(file, `${JSON.stringify(entry)}\n`);
+  return entry;
+}
+
 export function formatScore(sc: Scorecard): string {
-  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"})`;
+  const head = `${sc.meetsExpectations ? "MEETS" : "BELOW"} expectations — ${sc.overall}/100 (${sc.judges} judge${sc.judges === 1 ? "" : "s"}${sc.judgesCalibrated ? `, ${sc.judgesCalibrated} calibrated` : ""})`;
   const lines = [head, ...sc.dimensions.map((d) => `  ${d.score.toFixed(1)}/5  ${d.name} (w=${d.weight})`), `  -> ${sc.reason}`];
+  if (sc.sensitivity) {
+    lines.push(
+      sc.sensitivity.robust
+        ? "  weights: verdict robust to ±0.05 shifts"
+        : `  weights: verdict flips under a ±0.05 shift of ${sc.sensitivity.flips.join(", ")}`,
+    );
+  }
   if (sc.provenance) {
     const p = sc.provenance;
     const sha = p.targetGit ? ` · target ${p.targetGit.commit.slice(0, 7)}${p.targetGit.dirty ? "*" : ""}` : "";

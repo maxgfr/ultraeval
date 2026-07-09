@@ -57,6 +57,14 @@ describe("brainstorm — worklist + rank", () => {
     expect(doc.findings.some((f: F) => f.id === "F1" && f.kind !== "opportunity")).toBe(true);
   });
 
+  it("folds opportunities in as open — adjudication happens at verify, not at fold time", () => {
+    const dir = run([{ title: "quick win", impact: "high", effort: "S", statement: "s", evidence: [{ ref: "a.ts:1" }] }]);
+    rankBrainstorm(dir);
+    const doc = JSON.parse(readFileSync(join(dir, "findings.json"), "utf8"));
+    const opp = doc.findings.find((f: F) => f.kind === "opportunity");
+    expect(opp.status).toBe("open");
+  });
+
   it("reports skipped and malformed opportunities instead of silently dropping or folding them", () => {
     const dir = run([
       { title: "good", impact: "high", effort: "S", statement: "s", evidence: [{ ref: "a.ts:1" }] },

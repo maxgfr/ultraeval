@@ -32,9 +32,28 @@ function guessTestFile(targets: string[], f: Finding): string {
   return `tests/${slug(f.title)}.test.ts`;
 }
 
+// A runnable test entrypoint detected from the target's manifest — verify-fix
+// replays verify.command verbatim through a shell, so prose must be a last resort.
+function detectVerifyCommand(targetAbs: string): string | null {
+  if (exists(join(targetAbs, "package.json"))) {
+    const pkg = readJson<{ scripts?: Record<string, string> }>(join(targetAbs, "package.json"));
+    if (pkg.scripts?.test) {
+      if (exists(join(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
+      if (exists(join(targetAbs, "yarn.lock"))) return "yarn test";
+      return "npm test";
+    }
+  }
+  if (exists(join(targetAbs, "go.mod"))) return "go test ./...";
+  if (exists(join(targetAbs, "Cargo.toml"))) return "cargo test";
+  if (exists(join(targetAbs, "pytest.ini")) || exists(join(targetAbs, "pyproject.toml"))) return "pytest";
+  return null;
+}
+
 export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
-  const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
+  const findingsPath = join(runDir, "findings.json");
+  if (!exists(findingsPath)) throw new Error("no findings.json — record findings first (see agents/findings.md), then re-run backlog");
+  const doc = readJson<FindingsDoc>(findingsPath);
   const failed = new Set<string>();
   const vpath = join(runDir, "VERIFY.json");
   if (exists(vpath)) {
@@ -84,11 +103,25 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
         command:
           cfg.kind === "skill"
             ? "pnpm test  # then re-run the target's own check/verify gate"
-            : "run the new test (must pass) + the full suite (nothing regresses)",
+            : (detectVerifyCommand(cfg.targetAbs) ?? "run the new test (must pass) + the full suite (nothing regresses)"),
       },
       dependsOn: [],
     };
   });
+
+  // Two tasks touching the same file must not run in parallel: chain each task
+  // to the previous holder of each of its target files. Backward-only edges in
+  // priority order — a cycle is impossible by construction.
+  const lastByFile = new Map<string, string>();
+  for (const t of tasks) {
+    const deps = new Set<string>();
+    for (const file of t.targets) {
+      const prev = lastByFile.get(file);
+      if (prev) deps.add(prev);
+    }
+    t.dependsOn = [...deps];
+    for (const file of t.targets) lastByFile.set(file, t.id);
+  }
 
   const out = opts.out ?? runDir;
   const backlog: Backlog = { target: cfg.targetAbs, generatedFrom: runDir, tasks };

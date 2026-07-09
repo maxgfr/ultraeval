@@ -19,11 +19,19 @@
       "red":   { "testFile": "tests/app.test.js", "description": "Write a failing test that reproduces: …" },
       "green": { "change": "Use a parameterized query for the id." },
       "verify":{ "command": "run the new test (must pass) + the full suite (nothing regresses)" },
-      "dependsOn": []
+      "dependsOn": []                   // derived: tasks sharing a target file chain to the previous holder
     }
   ]
 }
 ```
+
+`dependsOn` is derived from shared `targets` files: when two tasks touch the same file, the later (lower-priority) one depends on the earlier — respect it before dispatching fix agents in parallel. Task order in `tasks[]` is topological over `dependsOn`.
+
+## Closing the loop: `fix` and `verify-fix`
+
+- `fix --run <RUN> [--task FIX-XXX] [--workflow]` emits one **autonomous fix-agent contract** per task at `fixes/agents/FIX-XXX.agent.md` — the TDD card plus absolute target/run paths, the target's own invariants (test suite, build step, conventional commit) and a no-gate-weakening rule. `--workflow` also emits `fix.workflow.mjs` (sequential over the cards, dependsOn-safe; set its `ISOLATION` const to `'worktree'` to isolate each agent).
+- `verify-fix --run <RUN> --task FIX-XXX` replays the task's `verify.command` (timeboxed, in the target) and requires the RED `testFile` to exist; on success it stamps `status: "done"` + `verifiedAt` (ISO 8601) into `BACKLOG.json`, otherwise exit 1. A `done` task whose finding is still `open` makes `check` warn.
+- Tasks without a `status` field are simply not-yet-verified — pre-existing backlogs stay valid.
 
 A downstream agent (or a `to-issues`-style skill) consumes `tasks[]` directly: one issue/PR per task, priority-ordered.
 

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "note": "Golden judge-calibration fixture. Score these artifacts 0-5 on each dimension BEFORE judging the real run; passed = every score within `tolerance` of `expected`. Report calibration:{scores,passed} in your judges.jsonl line. Do NOT let this fixture influence how you score the real run.",
+  "dimensions": [
+    {
+      "id": "grounding",
+      "name": "Correctness & grounding",
+      "expected": 1,
+      "tolerance": 1,
+      "signal": "RESULTS.md cites src/parse.js:88 and src/config.js:12 — neither file exists in the artifacts — and the only finding carries an empty evidence array."
+    },
+    {
+      "id": "coverage",
+      "name": "Functional coverage",
+      "expected": 4,
+      "tolerance": 1,
+      "signal": "TEST-PLAN.md enumerates every command the CLI actually implements (init, check, unknown-command) including both error paths, with concrete commands and pass criteria; nothing exercises the exit codes end-to-end in a recorded run."
+    },
+    {
+      "id": "docs",
+      "name": "Docs consistency",
+      "expected": 2,
+      "tolerance": 1,
+      "signal": "README.md documents `report --json` and a global `--verbose` that src/cli.js does not implement; the two commands that do exist are documented correctly."
+    }
+  ],
+  "artifacts": {
+    "src/cli.js": "#!/usr/bin/env node\n// commands: init, check\nconst cmd = process.argv[2];\nif (cmd === 'init') console.log('ok init');\nelse if (cmd === 'check') process.exit(1);\nelse { console.error('unknown command'); process.exit(2); }\n",
+    "README.md": "# mini-tool\n\nCommands: `init`, `check`, `report --json` (writes report.json). All commands accept `--verbose`.\n",
+    "TEST-PLAN.md": "| id | functionality | how tested | pass criteria |\n|----|---------------|-----------|---------------|\n| T1 | init succeeds | node src/cli.js init | exit 0, prints 'ok init' |\n| T2 | check signals failure | node src/cli.js check | exit 1, no output |\n| T3 | unknown command rejected | node src/cli.js nope | exit 2, error on stderr |\n",
+    "RESULTS.md": "# Results\n\nThe parser in src/parse.js:88 mishandles unicode input [F1]. The config loader at src/config.js:12 silently ignores overrides [F2].\n",
+    "findings.json": {
+      "findings": [
+        {
+          "id": "F1",
+          "severity": "P1",
+          "title": "parser mishandles unicode",
+          "statement": "the parser breaks on unicode input",
+          "evidence": [],
+          "status": "confirmed"
+        }
+      ]
+    }
+  }
+}

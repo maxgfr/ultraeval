@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,6 +38,58 @@ const mk = (id: string, sev: string, status: string) => ({
 });
 
 describe("backlog — TDD fix cards", () => {
+  it("errors actionably when findings.json is missing (pipeline run out of order)", () => {
+    const root = mkdtempSync(join(tmpdir(), "ue-bl-"));
+    tmps.push(root);
+    const run = join(root, "run");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({ target: "t", targetAbs: root, kind: "codebase", category: "library", dimensions: [], version: "0.0.0" }),
+    );
+    expect(() => buildBacklog(run)).toThrow(/no findings\.json — record findings first/);
+  });
+
+  it("codebase tasks get a runnable verify command when the target manifest declares one", () => {
+    const run = scaffold([mk("F1", "P1", "confirmed")]);
+    const cfg = JSON.parse(readFileSync(join(run, "eval.config.json"), "utf8"));
+    writeFileSync(join(cfg.targetAbs, "package.json"), JSON.stringify({ name: "t", scripts: { test: "vitest run" } }));
+    const bl = buildBacklog(run);
+    expect(bl.tasks[0]?.verify.command).toBe("npm test");
+  });
+
+  it("codebase tasks keep the prose fallback when no test entrypoint is detectable", () => {
+    const bl = buildBacklog(scaffold([mk("F1", "P1", "confirmed")]));
+    expect(bl.tasks[0]?.verify.command).toMatch(/run the new test/);
+  });
+
+  it("derives a dependsOn chain when tasks share a target file", () => {
+    const bl = buildBacklog(scaffold([mk("F1", "P0", "confirmed"), mk("F2", "P1", "confirmed"), mk("F3", "P2", "confirmed")]));
+    expect(bl.tasks[0]?.dependsOn).toEqual([]);
+    expect(bl.tasks[1]?.dependsOn).toEqual(["FIX-001"]);
+    expect(bl.tasks[2]?.dependsOn).toEqual(["FIX-002"]);
+  });
+
+  it("keeps tasks on disjoint files independent", () => {
+    const a = { ...mk("F1", "P0", "confirmed"), evidence: [{ ref: "app.js:2" }] };
+    const b = { ...mk("F2", "P1", "confirmed"), evidence: [{ ref: "lib.js:1" }] };
+    const bl = buildBacklog(scaffold([a, b]));
+    expect(bl.tasks.every((t) => t.dependsOn.length === 0)).toBe(true);
+  });
+
+  it("dependsOn only ever points at earlier tasks (no cycle possible)", () => {
+    const a = { ...mk("F1", "P0", "confirmed"), evidence: [{ ref: "app.js:2" }] };
+    const b = { ...mk("F2", "P1", "confirmed"), evidence: [{ ref: "app.js:3" }, { ref: "lib.js:1" }] };
+    const c = { ...mk("F3", "P2", "confirmed"), evidence: [{ ref: "lib.js:2" }] };
+    const bl = buildBacklog(scaffold([a, b, c]));
+    const index = new Map(bl.tasks.map((t, i) => [t.id, i]));
+    for (const [i, t] of bl.tasks.entries()) {
+      for (const dep of t.dependsOn) expect(index.get(dep)).toBeLessThan(i);
+    }
+    expect(bl.tasks[1]?.dependsOn).toEqual(["FIX-001"]); // shares app.js with FIX-001
+    expect(bl.tasks[2]?.dependsOn).toEqual(["FIX-002"]); // shares lib.js with FIX-002
+  });
+
   it("includes only confirmed findings, sorted by priority", () => {
     const run = scaffold([mk("F1", "P1", "confirmed"), mk("F2", "P0", "confirmed"), mk("F3", "P2", "dismissed")]);
     const bl = buildBacklog(run, { tdd: true });

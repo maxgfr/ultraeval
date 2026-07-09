@@ -75,11 +75,65 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
   it("cli characterization: help lists every command, unknown command and missing --run exit 2", () => {
     const help = run(["--help"]);
     expect(help.status).toBe(0);
-    for (const c of ["init", "plan", "analyze", "brainstorm", "compare", "check", "verify", "backlog", "score", "render", "clean"]) {
+    for (const c of [
+      "init",
+      "plan",
+      "analyze",
+      "brainstorm",
+      "compare",
+      "check",
+      "verify",
+      "backlog",
+      "fix",
+      "verify-fix",
+      "score",
+      "rejudge",
+      "render",
+      "clean",
+    ]) {
       expect(help.out).toMatch(new RegExp(`^  ${c} `, "m"));
     }
     expect(run(["frobnicate"]).status).toBe(2);
     expect(run(["check"]).status).toBe(2);
+  });
+
+  it("judge contract requires calibration against the shipped golden fixture", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-e2e-cal-"));
+    tmps.push(out);
+    expect(run(["init", "--target", join(FIX, "target-lib"), "--out", out, "--kind", "codebase"]).status).toBe(0);
+    expect(run(["plan", "--run", out]).status).toBe(0);
+    const judge = readFileSync(join(out, "agents", "judge.md"), "utf8");
+    expect(judge).toMatch(/calibration-run\.json/);
+    expect(judge).toMatch(/"calibration"/);
+  });
+
+  it("score --history without a value appends to evals/history.jsonl under the cwd", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-hist-"));
+    tmps.push(dir);
+    cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+    writeFileSync(
+      join(dir, "judges.jsonl"),
+      '{"lens":"a","dimensionScores":[{"id":"security","score":4}],"meetsExpectations":true,"calibration":{"passed":true}}\n',
+    );
+    const out = execFileSync("node", [BUNDLE, "score", "--run", dir, "--history", "--json"], { encoding: "utf8", cwd: dir });
+    expect(out.trimStart().startsWith("{")).toBe(true); // --json output stays pure JSON
+    const ledger = join(dir, "evals", "history.jsonl");
+    expect(existsSync(ledger)).toBe(true);
+    expect(readFileSync(ledger, "utf8").trim().split("\n").length).toBe(1);
+  });
+
+  it("sharded verify names the shard worklist it actually wrote", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-shard-"));
+    tmps.push(dir);
+    cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+    const r = run(["verify", "--run", dir, "--shards", "2", "--shard", "0"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(join(dir, "VERIFY.todo.0.json"));
+    expect(r.out).not.toContain(`${join(dir, "VERIFY.todo.json")} `);
+  });
+
+  it("check on a nonexistent run dir exits 2 (usage), not 1 (gate verdict)", () => {
+    expect(run(["check", "--run", "/nonexistent-ultraeval-run"]).status).toBe(2);
   });
 
   it("check fails (exit 1) on a doctored citation", () => {

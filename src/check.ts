@@ -118,11 +118,13 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   const backlogPath = join(runDir, "BACKLOG.json");
   if (exists(backlogPath)) {
     try {
-      const bl = readJson<{ tasks?: { id: string; findingId: string }[] }>(backlogPath);
+      const bl = readJson<{ tasks?: { id: string; findingId: string; status?: string }[] }>(backlogPath);
       for (const t of bl.tasks ?? []) {
         const f = findings.find((x) => x.id === t.findingId);
         if (!f) errors.push(`BACKLOG ${t.id} references ${t.findingId} which is not a finding`);
         else if (f.status === "dismissed") errors.push(`BACKLOG ${t.id} references dismissed finding ${t.findingId}`);
+        else if (t.status === "done" && f.status === "open")
+          warnings.push(`BACKLOG ${t.id} is done but finding ${t.findingId} is still open — adjudicate the finding or reopen the task`);
       }
     } catch {
       errors.push("BACKLOG.json is not valid JSON");
@@ -137,6 +139,10 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       try {
         const v = readJson<VerifyResult>(verifyPath);
         if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (v.honeypots?.failed?.length)
+          errors.push(
+            `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) — the skeptic rubber-stamped; re-verify with a fresh skeptic`,
+          );
         // Partial adjudication is not adjudication: every emitted pair must have
         // a verdict, or the unverified findings would sail through the exit gate.
         const pending = (v.unadjudicated ?? []).filter((fid) => {
@@ -169,6 +175,12 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation — its backlog card will be vague`);
   }
   if (exists(join(runDir, "RESULTS.md")) && !exists(join(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  // A budgeted run recorded coverage cuts — the summary must own them.
+  if (exists(join(runDir, "runs", "budget.md"))) {
+    const summaryPath = join(runDir, "SUMMARY.md");
+    if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
+      warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them — report every cut in the summary");
+  }
   if (!cfg.provenance) warnings.push("legacy run (pre-protocol) — no provenance recorded; re-init to stamp engine/protocol/rubric versions");
 
   return { ok: errors.length === 0, errors, warnings };

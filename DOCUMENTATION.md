@@ -7,7 +7,7 @@ judges, and writes.
 ## The pipeline
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → score → render
+init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → fix/verify-fix → score → render
 ```
 
 `plan` emits a ready-to-launch multi-agent Workflow (`eval.workflow.mjs`) plus `agents/*.md` dispatch
@@ -33,13 +33,28 @@ claim (`supported`/`partial`/`refuted`/`unsupported`); `check --semantic --requi
 verdicts in and is the exit gate. Verdicts reduce conservatively — a finding fails if any evidence is
 refuted or all of it is unsupported.
 
+`verify --honeypots N` guards the guard: it plants N deterministic trap pairs (one finding's claim glued
+to another finding's evidence, seeded on the run's `dimensionsHash`) into the worklist; ground truth stays
+in `VERIFY.honeypots.json`, never shown to skeptics. A trap graded `supported`/`partial` means the skeptic
+is rubber-stamping — `--apply` exits 1 and `check --require-verify` stays red until a fresh skeptic
+re-verifies. Trap verdicts never touch the findings ledger.
+
 ## Scoring
 
 `score` reduces `judges.jsonl` (one JSON line per judge: per-dimension 0–5 scores + a meets-expectations
 vote) and the config dimensions to a weighted `scorecard.json`. The overall is the weight-normalized mean
 of the per-dimension averages, scaled to 0–100. `meetsExpectations` is `false` if any live P0 finding
-stands, any judge votes no, or the overall is below the bar (`MEETS_BAR`, default 80). `render` shows the
-verdict banner + dimension table.
+stands, any judge votes no, the judge panel has zero passed calibrations, or the overall is below the bar
+(`MEETS_BAR`, default 80). `render` shows the verdict banner + dimension table.
+
+Three trust signals ride along: **judge calibration** (each judge first scores the golden fixture
+`references/calibration-run.json` and reports `calibration:{scores,passed}`; `scorecard.judgesCalibrated`
+counts the passes), **weight sensitivity** (`scorecard.sensitivity` — every dimension weight is nudged
+±0.05, renormalized; `flips` lists the dimensions whose nudge flips the verdict), and the **history
+ledger** (`score --history [file]` appends one JSONL line — scoredAt, target commit, overall, verdict,
+counts — to a committed file, default `evals/history.jsonl`, so the score trend survives gitignored run
+dirs). `rejudge --run <run> --out <run2>` reuses a run's artifacts with a fresh judge panel; `compare`
+prints a Stability line (|Δoverall| at constant target SHA) — test-retest for the verdict itself.
 
 ## Rubrics
 
@@ -84,6 +99,16 @@ Beyond defects, ultraeval discovers grounded improvement **opportunities**:
 `--mode audit|improve|deep` selects which stages `plan` bakes into the generated workflow. The generated
 executor contract is hardened against the failure that once hung a self-run for hours: strict Bash
 timeboxes and a ban on launching another live/fan-out tool inside the executor.
+
+## The closed fix loop
+
+`backlog --tdd` derives `dependsOn` between tasks sharing a target file (backward-only edges — the order
+is topological). `fix --run <run> [--task FIX-XXX] [--workflow]` turns each task into an autonomous
+fix-agent contract (`fixes/agents/FIX-*.agent.md`: absolute paths, the full RED→GREEN→VERIFY card, the
+target's own invariants, and a no-gate-weakening rule), plus an optional sequential `fix.workflow.mjs`.
+`verify-fix --run <run> --task FIX-XXX` closes the loop: it replays the task's verify command (timeboxed)
+in the target, requires the RED test file to exist, and stamps `status:"done"` + `verifiedAt` into
+`BACKLOG.json` — `check` warns when a done task's finding is still `open`.
 
 ## Why the bundle is committed
 

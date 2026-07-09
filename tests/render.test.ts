@@ -87,6 +87,19 @@ describe("render — anchors & provenance surfacing", () => {
     expect(html).toMatch(/engine 1\.4\.0/);
   });
 
+  it("index.md surfaces the weight-sensitivity verdict when the scorecard carries it", () => {
+    const run = scaffold();
+    const scPath = join(run, "scorecard.json");
+    const sc = JSON.parse(readFileSync(scPath, "utf8"));
+    sc.sensitivity = { robust: false, flips: ["grounding"] };
+    writeFileSync(scPath, JSON.stringify(sc));
+    render(run);
+    const md = readFileSync(join(run, "index.md"), "utf8");
+    expect(md).toMatch(/±0\.05/);
+    expect(md).toContain("grounding");
+    expect(readFileSync(join(run, "index.html"), "utf8")).toMatch(/±0\.05/);
+  });
+
   it("a legacy run without anchors or provenance still renders both outputs", () => {
     const run = scaffold({ withProvenance: false, withAnchors: false });
     const written = render(run);

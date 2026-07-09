@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { CAPS, VALID_VERDICTS } from "./types.js";
 import type { EvalConfig, Finding, FindingsDoc, Verdict, VerdictItem, VerdictsFile, VerifyPair, VerifyResult, VerifyTodo } from "./types.js";
@@ -7,6 +8,19 @@ export interface VerifyOpts {
   maxVerify?: number;
   shards?: number;
   shard?: number;
+  honeypots?: number;
+}
+
+// Deterministic PRNG — honeypot planting must reproduce byte-identically from
+// the run's provenance (no Math.random: a re-run is a re-audit, not a reshuffle).
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 // Phase A — build the claim<->evidence worklist a skeptic fills in.
@@ -32,11 +46,64 @@ export function runVerify(runDir: string, opts: VerifyOpts = {}): VerifyTodo {
   const full = buildWorklist(runDir, opts.maxVerify);
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== undefined) pairs = pairs.filter((_, i) => i % (opts.shards as number) === opts.shard);
-  const out: VerifyTodo = { run: runDir, pairs };
   const sh = opts.shards !== undefined && opts.shard !== undefined;
+  if (opts.honeypots && opts.honeypots > 0) pairs = plantHoneypots(runDir, pairs, opts.honeypots, opts.shard);
+  const out: VerifyTodo = { run: runDir, pairs };
   writeJson(join(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
   writeText(join(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   return out;
+}
+
+// Fabricate N trap pairs — one finding's claim glued to ANOTHER finding's
+// evidence digest (preferring a different file). The correct verdict is always
+// unsupported/refuted; a skeptic who grades one `supported` is rubber-stamping.
+// Ground truth goes to VERIFY.honeypots(.<shard>).json — NEVER into a prompt.
+function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: number): VerifyPair[] {
+  if (pairs.length < 2) return pairs; // nothing to cross-pair against
+  const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
+  const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
+  const seedHex = cfg.provenance?.dimensionsHash ?? "0";
+  const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
+  let maxN = 0;
+  for (const f of doc.findings ?? []) {
+    const m = /^F(\d+)$/.exec(f.id);
+    if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
+  }
+  const offset = (shard ?? 0) * n;
+  const pathOf = (ref: string) => (/:\d/.test(ref) ? ref.slice(0, ref.lastIndexOf(":")) : ref);
+  const real = [...pairs];
+  const traps: VerifyPair[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = real[Math.floor(rng() * real.length)] as VerifyPair;
+    // Cross-finding ONLY: a trap must never borrow the claim's own sibling
+    // evidence (a multi-file finding's other ref genuinely supports the claim).
+    const others = real.filter((p) => p.claimId !== a.claimId);
+    const elsewhere = others.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
+    const pool = elsewhere.length ? elsewhere : others;
+    if (!pool.length) break;
+    const b = pool[Math.floor(rng() * pool.length)] as VerifyPair;
+    traps.push({ claimId: `F${maxN + offset + k + 1}`, evidenceRef: b.evidenceRef, claim: a.claim, digest: b.digest, verdict: null, note: "" });
+  }
+  const mixed = [...pairs];
+  for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
+  const truthName = shard !== undefined ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
+  writeJson(join(runDir, truthName), {
+    note: "ground truth for planted honeypot pairs — never paste this file into a skeptic prompt",
+    claimIds: traps.map((t) => t.claimId),
+  });
+  return mixed;
+}
+
+// Union of the unsharded + sharded ground-truth files.
+function loadHoneypotIds(runDir: string): Set<string> {
+  const ids = new Set<string>();
+  const files = [join(runDir, "VERIFY.honeypots.json")];
+  if (exists(runDir)) for (const e of readdirSync(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join(runDir, e));
+  for (const f of files) {
+    if (!exists(f)) continue;
+    for (const id of readJson<{ claimIds?: string[] }>(f).claimIds ?? []) ids.add(id);
+  }
+  return ids;
 }
 
 function renderWorklistMd(todo: VerifyTodo): string {
@@ -93,6 +160,7 @@ function loadVerdicts(runDir: string, spec: string): VerdictItem[] {
     // Resolve as given (cwd) first, else relative to the run dir — so `--apply
     // verdicts.json` works whether the file sits in cwd or inside the run.
     const p = exists(f) ? f : isAbsolute(f) ? f : resolve(runDir, f);
+    if (!exists(p)) throw new Error(`verdicts file not found: ${p} — pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson<VerdictsFile | VerdictItem[]>(p);
     const items = Array.isArray(data) ? data : (data.pairs ?? []);
     for (const v of items) merged.set(`${v.claimId}␟${v.evidenceRef ?? ""}`, v);
@@ -102,7 +170,21 @@ function loadVerdicts(runDir: string, spec: string): VerdictItem[] {
 
 export function applyVerdicts(runDir: string, spec: string): VerifyResult {
   const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
-  const result = reduceVerdicts(loadVerdicts(runDir, spec), doc.findings ?? []);
+  const all = loadVerdicts(runDir, spec);
+  const trapIds = loadHoneypotIds(runDir);
+  // Honeypot verdicts never reach the findings ledger — they grade the skeptic.
+  const result = reduceVerdicts(
+    all.filter((v) => !trapIds.has(v.claimId)),
+    doc.findings ?? [],
+  );
+  if (trapIds.size) {
+    const graded = all.filter((v) => trapIds.has(v.claimId) && VALID_VERDICTS.includes(v.verdict as Verdict));
+    const failed = [...new Set(graded.filter((v) => v.verdict === "supported" || v.verdict === "partial").map((v) => v.claimId))];
+    const caught = new Set(graded.filter((v) => v.verdict === "refuted" || v.verdict === "unsupported").map((v) => v.claimId));
+    for (const id of failed) caught.delete(id); // any supported grade on a trap is a failure
+    result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
+    if (failed.length) result.ok = false;
+  }
   writeJson(join(runDir, "VERIFY.json"), result);
   return result;
 }
@@ -111,6 +193,8 @@ export function formatVerifyReport(r: VerifyResult): string {
   const head = r.ok ? "PASS" : "FAIL";
   return [
     `${head}  ${r.adjudicated} adjudicated · ${r.supported} supported · ${r.partial} partial · ${r.refuted} refuted · ${r.unsupported} unsupported`,
+    ...(r.honeypots ? [`  honeypots: ${r.honeypots.caught}/${r.honeypots.planted} caught`] : []),
+    ...(r.honeypots?.failed ?? []).map((f) => `  ✗ honeypot ${f} graded supported — the skeptic is rubber-stamping; re-verify with a fresh skeptic`),
     ...r.failures.map((f) => `  ✗ ${f} not supported by its evidence`),
     ...r.unadjudicated.map((f) => `  ! ${f} still unadjudicated`),
   ].join("\n");

@@ -84,7 +84,10 @@ export interface Dimension {
 // Protocol/rubric versions are semantic contracts, bumped BY HAND in the commit
 // that changes phase/gate semantics (protocol) or starter dims/weights/anchors
 // (rubric) — deliberately not in the sync-version.mjs lockstep.
-export const PROTOCOL_VERSION = "1";
+// v2: honeypot skeptic-checks gate --require-verify; a judge panel with zero
+// passed calibrations cannot green-light meets-expectations; a budgeted run
+// must record its coverage cut.
+export const PROTOCOL_VERSION = "2";
 export const RUBRIC_VERSION = "1";
 
 // Who/what/when of a run — makes runs attributable to a code state and a rubric
@@ -206,6 +209,9 @@ export interface VerifyResult {
   failures: string[]; // finding ids whose evidence does not hold up
   unadjudicated: string[]; // finding ids with pairs still lacking a verdict
   verdicts: VerdictItem[];
+  // Skeptic-quality control (planted trap pairs): failed lists honeypots the
+  // skeptic graded supported|partial — a non-empty list blocks --require-verify.
+  honeypots?: { planted: number; caught: number; failed: string[] };
 }
 
 // ---- backlog / TDD fix cards --------------------------------------------
@@ -221,6 +227,8 @@ export interface FixTask {
   green: { change: string }; // the minimal change to make it pass
   verify: { command: string }; // how to confirm green
   dependsOn: string[];
+  status?: "todo" | "done"; // stamped by `verify-fix` when the loop closes
+  verifiedAt?: string; // ISO 8601, stamped alongside status: "done"
 }
 export interface Backlog {
   target: string;
@@ -242,6 +250,10 @@ export interface JudgeLine {
   overall?: number;
   meetsExpectations?: boolean;
   topFindings?: string[];
+  // Scored against references/calibration-run.json BEFORE judging the run.
+  // A judge without a passed calibration is counted but flagged; a panel with
+  // zero calibrated judges cannot green-light the verdict.
+  calibration?: { scores?: Record<string, number>; passed: boolean };
 }
 
 export interface Scorecard {
@@ -253,6 +265,10 @@ export interface Scorecard {
   judges: number;
   agreement?: number; // 1 - avgSpread/5 — 1.0 = full consensus, lower = judges split
   reason: string;
+  // Verdict stability under ±0.05 per-dimension weight perturbation (renormalized
+  // like the score): flips lists the dimensions whose shift flips meetsExpectations.
+  sensitivity?: { robust: boolean; flips: string[] };
+  judgesCalibrated?: string; // "n/N" — judges whose calibration.passed is true
   provenance?: Provenance; // copied from eval.config.json when present
   scoredAt?: string; // ISO 8601, stamped by `score`
 }

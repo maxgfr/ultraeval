@@ -9,11 +9,13 @@ import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
 import { planRun } from "./plan.js";
+import { emitFixAgents, formatVerifyFix, verifyFix } from "./fix.js";
+import { rejudgeRun } from "./rejudge.js";
 import { render } from "./render.js";
-import { formatScore, scoreRun } from "./score.js";
+import { appendHistory, formatScore, scoreRun } from "./score.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
-import { readJson, resolveTargetAbs } from "./util.js";
+import { exists, readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
 
 const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then generate grounded, AI-exploitable TDD fix docs.
@@ -35,12 +37,24 @@ Commands:
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--min-findings n] [--coverage-min f]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
-  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i]
+  verify   --run <run> [--apply <verdicts>] [--max-verify n] [--shards n --shard i] [--honeypots n]
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
+             --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json — never show it to skeptics);
+             a trap graded supported fails --apply and blocks check --require-verify.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
-  score    --run <run> [--json]
+  fix      --run <run> [--task FIX-XXX] [--workflow]
+             Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
+             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
+  verify-fix --run <run> --task FIX-XXX
+             Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
+             + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+  score    --run <run> [--json] [--history [file]]
              Reduce judges.jsonl + config dimensions to a weighted scorecard.json (0-100 + meets-expectations).
+             --history appends a one-line ledger entry (default file: evals/history.jsonl under the cwd).
+  rejudge  --run <run> --out <run2>
+             Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
+             Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
@@ -72,7 +86,12 @@ const VALUE_FLAGS = new Set([
   "--shards",
   "--shard",
   "--bar",
+  "--honeypots",
+  "--task",
 ]);
+
+// Flags whose value is optional: `--history` alone means "use the default file".
+const OPTIONAL_VALUE_FLAGS = new Set(["--history"]);
 
 function parse(argv: string[]): Args {
   const args: Args = { _: [] };
@@ -83,7 +102,10 @@ function parse(argv: string[]): Args {
     else if (a === "-v") args.version = true;
     else if (a.startsWith("--")) {
       if (VALUE_FLAGS.has(a)) args[a.slice(2)] = argv[++i] ?? "";
-      else args[a.slice(2)] = true;
+      else if (OPTIONAL_VALUE_FLAGS.has(a)) {
+        const next = argv[i + 1];
+        args[a.slice(2)] = next !== undefined && !next.startsWith("--") ? (argv[++i] as string) : "";
+      } else args[a.slice(2)] = true;
     } else args._.push(a);
   }
   return args;
@@ -197,6 +219,8 @@ function main(): void {
       }
       case "check": {
         if (!run) throw new Error("check requires --run <run>");
+        // A nonexistent/uninitialized run is a usage error (exit 2), not a gate verdict (exit 1).
+        if (!exists(join(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} — not an ultraeval run; run \`ultraeval init\` first`);
         const r = checkRun(run, {
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],
@@ -216,8 +240,13 @@ function main(): void {
           console.log(formatVerifyReport(res));
           process.exitCode = res.ok ? 0 : 1;
         } else {
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards: num(args.shards), shard: num(args.shard) });
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/VERIFY.todo.json (fill verdicts, then --apply <file>)`);
+          const shards = num(args.shards);
+          const shard = num(args.shard);
+          const honeypots = num(args.honeypots);
+          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
+          const todoName = shards !== undefined && shard !== undefined ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
+          const hp = honeypots ? ` (incl. ${honeypots} honeypot(s))` : "";
+          console.log(`ultraeval verify: ${todo.pairs.length} pair(s)${hp} -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
         }
         return;
       }
@@ -231,6 +260,36 @@ function main(): void {
         if (!run) throw new Error("score requires --run <run>");
         const sc = scoreRun(run);
         console.log(args.json ? JSON.stringify(sc, null, 2) : formatScore(sc));
+        if (args.history !== undefined) {
+          const file = typeof args.history === "string" && args.history !== "" ? args.history : join(process.cwd(), "evals", "history.jsonl");
+          appendHistory(run, file);
+          // keep --json stdout pure JSON — the ledger notice goes to stderr there
+          (args.json ? console.error : console.log)(`ultraeval score: history entry appended -> ${file}`);
+        }
+        return;
+      }
+      case "fix": {
+        if (!run) throw new Error("fix requires --run <run>");
+        const engine = fileURLToPath(import.meta.url);
+        const written = emitFixAgents(run, engine, { task: str(args.task), workflow: !!args.workflow });
+        console.log(`ultraeval fix: ${written.length} file(s) -> ${run}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
+        return;
+      }
+      case "verify-fix": {
+        const task = str(args.task);
+        if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
+        const res = verifyFix(run, task);
+        console.log(formatVerifyFix(res));
+        process.exitCode = res.ok ? 0 : 1;
+        return;
+      }
+      case "rejudge": {
+        const out = str(args.out);
+        if (!run || !out) throw new Error("rejudge requires --run <run> and --out <run2>");
+        const engine = fileURLToPath(import.meta.url);
+        const copied = rejudgeRun(run, out, engine);
+        console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
+        console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
         return;
       }
       case "render": {

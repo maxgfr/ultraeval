@@ -103,12 +103,20 @@ export function compareRuns(baseDir: string, newDir: string): CompareResult {
       ? `Score: ${base.score.overall} → ${cur.score.overall} (${(scoreDelta ?? 0) >= 0 ? "+" : ""}${scoreDelta}) · meets-expectations ${base.score.meetsExpectations} → ${cur.score.meetsExpectations}`
       : "Score: (one or both runs have no scorecard.json)";
   const warningBlock = warnings.length ? `\n${warnings.map((w) => `> **⚠ ${w}**`).join("\n")}\n` : "";
+  // Test-retest: at constant target commit the delta measures judge variance,
+  // not target change — surface it as a stability reading.
+  const baseCommit = base.cfg?.provenance?.targetGit?.commit;
+  const curCommit = cur.cfg?.provenance?.targetGit?.commit;
+  const stabilityLine =
+    base.score && cur.score && baseCommit && curCommit && baseCommit === curCommit
+      ? `\nStability (same target commit ${baseCommit.slice(0, 7)}): |Δoverall| = ${Math.abs(scoreDelta ?? 0)} · agreement ${base.score.agreement ?? "—"} → ${cur.score.agreement ?? "—"}`
+      : "";
   const md = `# Comparison — base \`${baseDir}\` → current \`${newDir}\`
 
 - base: ${provLine(base.cfg?.provenance)}
 - current: ${provLine(cur.cfg?.provenance)}
 
-${scoreLine}
+${scoreLine}${stabilityLine}
 ${warningBlock}
 ## Resolved since base (${resolved.length})
 

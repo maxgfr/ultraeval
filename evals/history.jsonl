@@ -1,0 +1,3 @@
+{"scoredAt":"2026-07-09T11:39:52.113Z","overall":58,"meetsExpectations":false,"bar":80,"agreement":0.92,"counts":{"p0":0,"p1":3,"p2":5,"opps":15}}
+{"scoredAt":"2026-07-09T11:39:52.150Z","commit":"6a15e8887d85de49630f9ef04c8b0e5bc5669800","overall":81,"meetsExpectations":true,"bar":80,"agreement":0.96,"counts":{"p0":0,"p1":0,"p2":4,"opps":20}}
+{"scoredAt":"2026-07-09T13:57:54.541Z","commit":"f4040cdd91755ce6814f2ab55fcec9d944ec0892","overall":64,"meetsExpectations":false,"bar":80,"agreement":0.96,"counts":{"p0":0,"p1":3,"p2":3,"opps":21}}

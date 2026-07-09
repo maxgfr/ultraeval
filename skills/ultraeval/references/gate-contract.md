@@ -52,7 +52,7 @@ Flags: `--semantic` (fold VERIFY.json), `--require-verify` (fail if no adjudicat
 
 ## `verify` — adversarial semantic gate
 
-- `verify --run <RUN>` writes `VERIFY.todo.json` (one `{claimId, evidenceRef, claim, digest}` pair per gradeable evidence; `digest` is the extracted source/log context) + `VERIFY.md`. `--shards N --shard i` writes a disjoint slice for parallel skeptics; `--max-verify N` caps (default 60).
+- `verify --run <RUN>` writes `VERIFY.todo.json` (one `{claimId, evidenceRef, claim, digest}` pair per gradeable evidence; `digest` is the extracted source/log context) + `VERIFY.md`. `--shards N --shard i` writes a disjoint slice to `VERIFY.todo.<i>.json` + `VERIFY.<i>.md` (not the unsharded filenames) for parallel skeptics; `--max-verify N` caps (default 60).
 - Fill each pair's `verdict`: `supported` (source states it) · `partial` (weaker version) · `unsupported` (does not address it) · `refuted` (contradicts it). An invalid token is ignored — it cannot false-green.
 - The verdicts file `--apply` accepts: `{ "pairs": [ { "claimId": "F1", "evidenceRef": "src/app.js:3", "verdict": "supported", "note": "…" } ] }` — a bare array of the same items works too, and the filled `VERIFY.todo.json` is itself valid input. `evidenceRef`/`note` are optional: verdicts reduce **per finding** (claimId); `evidenceRef` is the merge key when combining sharded verdict files (last one wins).
 - `verify --run <RUN> --apply <verdicts.json|a,b,c>` reduces to `VERIFY.json`. A finding **fails** if any evidence is `refuted`, or all its evidence is `unsupported`.

@@ -102,6 +102,7 @@ A finding is only trustworthy if its evidence resolves. `check` opens each `path
 - `references/gate-contract.md` — `findings.json` schema, evidence-ref grammar, and exactly what makes `check`/`verify` pass or fail.
 - `references/tdd-remediation.md` — the `BACKLOG.json` shape and the `fixes/FIX-*.md` TDD-card format.
 - `references/rubric-library.md` — starter dimensions per target category.
+- `references/live-scenarios.md` — the normed Execute-phase live scenarios per category (golden path, error path, help contract, expected artifact, pass criteria); the executor contract embeds the matching block.
 - `references/analysis-playbook.md` — the `analyze` signals, the brainstorm lenses, and how opportunities stay grounded.
 
 ## Safety
