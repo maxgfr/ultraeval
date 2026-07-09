@@ -1,4 +1,11 @@
-import type { EvalConfig } from "./types.js";
+import type { Dimension, EvalConfig } from "./types.js";
+import { SEVERITY_DEFS, VALID_SEVERITIES } from "./types.js";
+
+// One-line rendering of a dimension's standards anchors (for contracts/templates).
+const anchorText = (d: Dimension): string => (d.anchors?.length ? d.anchors.map((a) => `${a.standard} — ${a.ref}`).join("; ") : "");
+
+// Severity legend derived from the codified SEVERITY_DEFS (single source of truth).
+const severityLegend = (): string => VALID_SEVERITIES.map((s) => `${s} (${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning})`).join(" · ");
 
 // ---------------------------------------------------------------------------
 // The generator. `plan` calls these to emit, into an eval run dir:
@@ -96,7 +103,9 @@ const GATE_CHEATSHEET = (engineAbs: string, run: string) =>
   ].join("\n");
 
 export function agentContracts(cfg: EvalConfig, runDirAbs: string, engineAbs: string): Record<string, string> {
-  const dims = cfg.dimensions.map((d) => `- **${d.id}** ${d.name} (w=${d.weight}): ${d.whatPerfectLooksLike}`).join("\n");
+  const dims = cfg.dimensions
+    .map((d) => `- **${d.id}** ${d.name} (w=${d.weight}${anchorText(d) ? `, anchored to ${anchorText(d)}` : ""}): ${d.whatPerfectLooksLike}`)
+    .join("\n");
   return {
     researcher: `# Contract: researcher
 
@@ -107,6 +116,8 @@ Do REAL web research (WebSearch + WebFetch; if not loaded, ToolSearch \`select:W
 Deliver:
 1. Write a cited markdown note at \`${runDirAbs}/research/<DIMENSION>.md\` — every non-obvious methodological claim cites a fetched URL.
 2. End the note with a **scoring rubric** for this dimension: 0–5 anchors and how to measure each on THIS target.
+
+Each dimension is anchored to an external referential (see below). Your research MAY refine an anchor with cited justification; it MUST NOT silently drop the referential.
 
 Dimensions in scope:
 ${dims}
@@ -143,7 +154,7 @@ RULES (the grounding gate will enforce these):
   - \`path:line\` or \`path:start-end\` — a real location IN THE TARGET (\`${cfg.targetAbs}\`).
   - \`run:relpath#Lnn\` — a line in a log this run produced.
 - Do NOT invent line numbers. If you cite \`src/x.ts:42\`, line 42 must exist and support the claim.
-- \`severity\`: P0 (trust/correctness/data-loss), P1 (fidelity/coverage cap), P2 (polish).
+- \`severity\`: ${severityLegend()}.
 - \`status\`: \`confirmed\` (evidence holds) or \`open\` (needs verification). Never keep a finding you cannot ground — delete it.
 
 Also draft \`${runDirAbs}/RESULTS.md\` (per-functionality results, every claim citing \`[F#]\`) and \`${runDirAbs}/SUMMARY.md\` (scorecard + headline). Flag any narrative sentence that is not a finding with \`[M]\`.
@@ -160,7 +171,7 @@ If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings —
 
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
-Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0–5 with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth — weight them.
+Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0–5 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth — weight them.
 
 Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [] }\`.
 `,
@@ -194,7 +205,11 @@ Discover grounded improvement leads (both internal health AND product/capability
 }
 
 export function testPlanTemplate(cfg: EvalConfig): string {
-  const dims = cfg.dimensions.map((d) => `### ${d.name} (weight ${d.weight})\n> Perfect: ${d.whatPerfectLooksLike}\n\n- [ ] …\n`).join("\n");
+  const dims = cfg.dimensions
+    .map(
+      (d) => `### ${d.name} (weight ${d.weight})\n> Perfect: ${d.whatPerfectLooksLike}${anchorText(d) ? `\n> Anchored to: ${anchorText(d)}` : ""}\n\n- [ ] …\n`,
+    )
+    .join("\n");
   return `# Test plan — ${cfg.target}
 
 Target: \`${cfg.targetAbs}\` · kind: ${cfg.kind} · category: ${cfg.category}
@@ -230,7 +245,12 @@ export function findingsSchema(): unknown {
           properties: {
             id: { type: "string", pattern: "^F\\d+$" },
             dimension: { type: "string" },
-            severity: { enum: ["P0", "P1", "P2"] },
+            severity: {
+              enum: [...VALID_SEVERITIES],
+              description: VALID_SEVERITIES.map(
+                (s) => `${s} — ${SEVERITY_DEFS[s].label} (${SEVERITY_DEFS[s].cvssBand}): ${SEVERITY_DEFS[s].meaning}; gate: ${SEVERITY_DEFS[s].gateEffect}`,
+              ).join(" | "),
+            },
             title: { type: "string" },
             statement: { type: "string" },
             evidence: {

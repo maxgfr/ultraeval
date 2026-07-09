@@ -18,6 +18,38 @@ export type Verdict = "supported" | "partial" | "refuted" | "unsupported";
 export const VALID_VERDICTS: readonly Verdict[] = ["supported", "partial", "refuted", "unsupported"];
 export const VALID_SEVERITIES: readonly Severity[] = ["P0", "P1", "P2"];
 
+// The single normative source for what P0/P1/P2 mean (normative text:
+// references/protocol.md). Band language aligns with CVSS v4.0 qualitative
+// ratings; the membership test is degradation of a scored dimension.
+// templates.ts (contracts + findings.schema.json) and backlog.ts derive their
+// prose from here so auditors and subagents share one definition.
+export interface SeverityDef {
+  label: string;
+  cvssBand: string;
+  meaning: string;
+  gateEffect: string;
+}
+export const SEVERITY_DEFS: Record<Severity, SeverityDef> = {
+  P0: {
+    label: "Critical",
+    cvssBand: "Critical/High",
+    meaning: "breaks trust, correctness, safety, or data integrity of the primary deliverable; the documented main path fails",
+    gateEffect: "caps meets-expectations at false while unresolved",
+  },
+  P1: {
+    label: "Major",
+    cvssBand: "Medium",
+    meaning: "materially degrades a scored dimension (fidelity, coverage, robustness); a workaround or secondary path exists",
+    gateEffect: "weighs on the dimension score and leads the backlog after P0",
+  },
+  P2: {
+    label: "Minor",
+    cvssBand: "Low",
+    meaning: "polish, consistency, or documentation drift; no scored dimension materially degraded",
+    gateEffect: "informs the backlog tail; never blocks the verdict",
+  },
+};
+
 // A finding is a DEFECT (something wrong) or an OPPORTUNITY (a grounded improvement lead).
 export type FindingKind = "defect" | "opportunity";
 export type Impact = "high" | "med" | "low";
@@ -29,13 +61,24 @@ export const VALID_EFFORT: readonly Effort[] = ["S", "M", "L"];
 export type Mode = "audit" | "improve" | "deep";
 export const VALID_MODES: readonly Mode[] = ["audit", "improve", "deep"];
 
+// A machine-readable link from a dimension to the clause of an external
+// referential it operationalizes (ISO/IEC 25010, WCAG, OWASP Benchmark, ...).
+// `note` flags informative or interpretive mappings; the rationale for each
+// mapping lives in references/rubric-library.md.
+export interface DimensionAnchor {
+  standard: string; // e.g. "ISO/IEC 25010:2023"
+  ref: string; // e.g. "Maintainability — testability"
+  note?: string;
+}
+
 // A scored evaluation axis. The engine ships starter dimensions per category;
-// the research stage refines them.
+// the research stage refines them (it may refine anchors, never silently drop them).
 export interface Dimension {
   id: string;
   name: string;
   weight: number;
   whatPerfectLooksLike: string;
+  anchors?: DimensionAnchor[];
 }
 
 export interface EvalConfig {

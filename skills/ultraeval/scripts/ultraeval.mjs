@@ -375,6 +375,46 @@ ${a.tests.untested.map((u) => `- \`${u}\``).join("\n")}
 
 // src/backlog.ts
 import { join as join3 } from "path";
+
+// src/types.ts
+var VERSION = "1.3.0";
+var CAPS = {
+  maxVerify: 60,
+  // claim<->evidence pairs a single verify worklist emits
+  minClaimWords: 6,
+  // a report line shorter than this is not treated as a factual claim
+  coverageMin: 0.6,
+  // default fraction of report claim-units that must carry a citation
+  coverageStrict: 1
+  // --strict raises coverage to this
+};
+var VALID_VERDICTS = ["supported", "partial", "refuted", "unsupported"];
+var VALID_SEVERITIES = ["P0", "P1", "P2"];
+var SEVERITY_DEFS = {
+  P0: {
+    label: "Critical",
+    cvssBand: "Critical/High",
+    meaning: "breaks trust, correctness, safety, or data integrity of the primary deliverable; the documented main path fails",
+    gateEffect: "caps meets-expectations at false while unresolved"
+  },
+  P1: {
+    label: "Major",
+    cvssBand: "Medium",
+    meaning: "materially degrades a scored dimension (fidelity, coverage, robustness); a workaround or secondary path exists",
+    gateEffect: "weighs on the dimension score and leads the backlog after P0"
+  },
+  P2: {
+    label: "Minor",
+    cvssBand: "Low",
+    meaning: "polish, consistency, or documentation drift; no scored dimension materially degraded",
+    gateEffect: "informs the backlog tail; never blocks the verdict"
+  }
+};
+var VALID_IMPACT = ["high", "med", "low"];
+var VALID_EFFORT = ["S", "M", "L"];
+var MEETS_BAR = 80;
+
+// src/backlog.ts
 var SEV_ORDER = { P0: 0, P1: 1, P2: 2 };
 function targetsOf(f) {
   const set = /* @__PURE__ */ new Set();
@@ -468,7 +508,7 @@ ${items.map((t) => `- **${t.id}** ${t.title} \u2014 ${t.rationale}
 
 Target: \`${bl.target}\` \xB7 ${bl.tasks.length} fix task(s), most impactful first.
 Each task has a matching TDD card under \`fixes/\` (RED failing test \u2192 GREEN change \u2192 VERIFY).
-${section("P0", "P0 \u2014 trust / correctness / data-loss")}${section("P1", "P1 \u2014 fidelity / coverage")}${section("P2", "P2 \u2014 polish / ergonomics")}`;
+${["P0", "P1", "P2"].map((s) => section(s, `${s} \u2014 ${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning}`)).join("")}`;
 }
 function renderFixCard(t, f) {
   const evidence = (f?.evidence ?? []).map((e) => `\`${e.ref}\``).join(", ") || "\u2014";
@@ -586,24 +626,6 @@ function rankBrainstorm(runDir) {
 
 // src/check.ts
 import { join as join5 } from "path";
-
-// src/types.ts
-var VERSION = "1.3.0";
-var CAPS = {
-  maxVerify: 60,
-  // claim<->evidence pairs a single verify worklist emits
-  minClaimWords: 6,
-  // a report line shorter than this is not treated as a factual claim
-  coverageMin: 0.6,
-  // default fraction of report claim-units that must carry a citation
-  coverageStrict: 1
-  // --strict raises coverage to this
-};
-var VALID_VERDICTS = ["supported", "partial", "refuted", "unsupported"];
-var VALID_SEVERITIES = ["P0", "P1", "P2"];
-var VALID_IMPACT = ["high", "med", "low"];
-var VALID_EFFORT = ["S", "M", "L"];
-var MEETS_BAR = 80;
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -877,57 +899,210 @@ function clean(runDir, opts = {}) {
 import { join as join8, resolve as resolve2 } from "path";
 
 // src/rubrics.ts
+var iso25010 = (ref, note) => ({ standard: "ISO/IEC 25010:2023", ref, ...note ? { note } : {} });
+var iso25059 = (ref) => ({ standard: "ISO/IEC 25059:2023", ref });
+var informative = (standard, ref) => ({ standard, ref, note: "informative" });
 var SKILL_DIMS = [
   {
     id: "grounding",
     name: "Correctness & grounding",
     weight: 0.3,
-    whatPerfectLooksLike: "every claim resolves to real source; gates pass on genuine AND fail on doctored artifacts"
+    whatPerfectLooksLike: "every claim resolves to real source; gates pass on genuine AND fail on doctored artifacts",
+    anchors: [iso25059("functional correctness for AI systems"), informative("RAGAS", "faithfulness / attributable-to-source")]
   },
-  { id: "coverage", name: "Functional coverage", weight: 0.25, whatPerfectLooksLike: "every mode/command/flag/gate works as documented" },
-  { id: "ux", name: "UX & meets-expectations", weight: 0.2, whatPerfectLooksLike: "the real deliverable is production-quality, low-friction" },
-  { id: "safety", name: "Safety & robustness", weight: 0.15, whatPerfectLooksLike: "no destructive defaults; graceful degradation without deps/network" },
-  { id: "docs", name: "Docs consistency", weight: 0.1, whatPerfectLooksLike: "SKILL.md, README, --help, and behavior agree; examples run" }
+  {
+    id: "coverage",
+    name: "Functional coverage",
+    weight: 0.25,
+    whatPerfectLooksLike: "every mode/command/flag/gate works as documented",
+    anchors: [iso25010("Functional suitability \u2014 functional completeness")]
+  },
+  {
+    id: "ux",
+    name: "UX & meets-expectations",
+    weight: 0.2,
+    whatPerfectLooksLike: "the real deliverable is production-quality, low-friction",
+    anchors: [iso25010("Interaction capability \u2014 operability, user engagement")]
+  },
+  {
+    id: "safety",
+    name: "Safety & robustness",
+    weight: 0.15,
+    whatPerfectLooksLike: "no destructive defaults; graceful degradation without deps/network",
+    anchors: [iso25010("Safety \u2014 fail safe, operational constraint"), informative("NIST AI RMF 1.0", "Safe characteristic")]
+  },
+  {
+    id: "docs",
+    name: "Docs consistency",
+    weight: 0.1,
+    whatPerfectLooksLike: "SKILL.md, README, --help, and behavior agree; examples run",
+    anchors: [iso25010("Interaction capability \u2014 user assistance"), informative("ISO/IEC/IEEE 26514:2022", "user documentation design")]
+  }
 ];
 var CODEBASE_DIMS = [
-  { id: "correctness", name: "Correctness", weight: 0.3, whatPerfectLooksLike: "correct on happy AND edge paths; no logic bugs" },
-  { id: "tests", name: "Test quality", weight: 0.2, whatPerfectLooksLike: "tests fail when the code is wrong (not just coverage %)" },
-  { id: "security", name: "Security", weight: 0.2, whatPerfectLooksLike: "no exploitable source->sink flows; inputs validated" },
-  { id: "maintainability", name: "Maintainability", weight: 0.2, whatPerfectLooksLike: "clear boundaries, low duplication" },
-  { id: "performance", name: "Performance", weight: 0.1, whatPerfectLooksLike: "no hot-path waste; scales to realistic inputs" }
+  {
+    id: "correctness",
+    name: "Correctness",
+    weight: 0.3,
+    whatPerfectLooksLike: "correct on happy AND edge paths; no logic bugs",
+    anchors: [iso25010("Functional suitability \u2014 functional correctness"), iso25010("Reliability \u2014 faultlessness")]
+  },
+  {
+    id: "tests",
+    name: "Test quality",
+    weight: 0.2,
+    whatPerfectLooksLike: "tests fail when the code is wrong (not just coverage %)",
+    anchors: [iso25010("Maintainability \u2014 testability")]
+  },
+  {
+    id: "security",
+    name: "Security",
+    weight: 0.2,
+    whatPerfectLooksLike: "no exploitable source->sink flows; inputs validated",
+    anchors: [iso25010("Security \u2014 confidentiality, integrity, resistance"), informative("OWASP Top 10 (2021)", "categories A01\u2013A10")]
+  },
+  {
+    id: "maintainability",
+    name: "Maintainability",
+    weight: 0.2,
+    whatPerfectLooksLike: "clear boundaries, low duplication",
+    anchors: [iso25010("Maintainability \u2014 modularity, analysability, modifiability")]
+  },
+  {
+    id: "performance",
+    name: "Performance",
+    weight: 0.1,
+    whatPerfectLooksLike: "no hot-path waste; scales to realistic inputs",
+    anchors: [iso25010("Performance efficiency \u2014 time behaviour, resource utilization, capacity")]
+  }
 ];
 var SECURITY_DIMS = [
-  { id: "precision", name: "Precision", weight: 0.25, whatPerfectLooksLike: "reported findings are real exploitable issues, not false positives" },
-  { id: "recall", name: "Recall", weight: 0.25, whatPerfectLooksLike: "known vulnerabilities in a labelled corpus are all found" },
-  { id: "false-positive-rate", name: "False-positive rate", weight: 0.2, whatPerfectLooksLike: "sanitized/safe code is never flagged" },
-  { id: "reachability", name: "Reachability", weight: 0.15, whatPerfectLooksLike: "flagged sinks are actually reachable from untrusted input" },
-  { id: "maintainability", name: "Maintainability", weight: 0.15, whatPerfectLooksLike: "clear rules, easy to extend" }
+  {
+    id: "precision",
+    name: "Precision",
+    weight: 0.25,
+    whatPerfectLooksLike: "reported findings are real exploitable issues, not false positives",
+    anchors: [{ standard: "OWASP Benchmark", ref: "true-positive rate vs labelled corpus" }]
+  },
+  {
+    id: "recall",
+    name: "Recall",
+    weight: 0.25,
+    whatPerfectLooksLike: "known vulnerabilities in a labelled corpus are all found",
+    anchors: [{ standard: "OWASP Benchmark", ref: "recall vs labelled corpus" }, informative("NIST SAMATE / Juliet", "labelled vulnerability test suites")]
+  },
+  {
+    id: "false-positive-rate",
+    name: "False-positive rate",
+    weight: 0.2,
+    whatPerfectLooksLike: "sanitized/safe code is never flagged",
+    anchors: [{ standard: "OWASP Benchmark", ref: "false-positive rate on safe variants" }]
+  },
+  {
+    id: "reachability",
+    name: "Reachability",
+    weight: 0.15,
+    whatPerfectLooksLike: "flagged sinks are actually reachable from untrusted input",
+    anchors: [{ standard: "CVSS v4.0", ref: "exploitability metrics (attack vector, complexity)", note: "interpretive" }]
+  },
+  {
+    id: "maintainability",
+    name: "Maintainability",
+    weight: 0.15,
+    whatPerfectLooksLike: "clear rules, easy to extend",
+    anchors: [iso25010("Maintainability \u2014 modifiability")]
+  }
 ];
+var REQ_29148 = (characteristic) => ({
+  standard: "ISO/IEC/IEEE 29148:2018",
+  ref: `requirement characteristic \u2014 ${characteristic}`
+});
 var REQUIREMENTS_DIMS = [
-  { id: "completeness", name: "Completeness", weight: 0.3, whatPerfectLooksLike: "every needed requirement is present; no gaps (ISO/IEC/IEEE 29148)" },
-  { id: "consistency", name: "Consistency", weight: 0.25, whatPerfectLooksLike: "no contradictions across requirements/sections" },
+  {
+    id: "completeness",
+    name: "Completeness",
+    weight: 0.3,
+    whatPerfectLooksLike: "every needed requirement is present; no gaps (ISO/IEC/IEEE 29148)",
+    anchors: [REQ_29148("complete")]
+  },
+  {
+    id: "consistency",
+    name: "Consistency",
+    weight: 0.25,
+    whatPerfectLooksLike: "no contradictions across requirements/sections",
+    anchors: [REQ_29148("consistent")]
+  },
   {
     id: "verifiable-acceptance",
     name: "Verifiable acceptance",
     weight: 0.25,
-    whatPerfectLooksLike: "every requirement has testable Given/When/Then acceptance criteria"
+    whatPerfectLooksLike: "every requirement has testable Given/When/Then acceptance criteria",
+    anchors: [REQ_29148("verifiable")]
   },
-  { id: "traceability", name: "Traceability", weight: 0.2, whatPerfectLooksLike: "requirements trace to scope/build tasks and back" }
+  {
+    id: "traceability",
+    name: "Traceability",
+    weight: 0.2,
+    whatPerfectLooksLike: "requirements trace to scope/build tasks and back",
+    anchors: [REQ_29148("traceable")]
+  }
 ];
 var RESEARCH_DIMS = [
-  { id: "faithfulness", name: "Faithfulness", weight: 0.35, whatPerfectLooksLike: "every claim is attributable to a fetched source" },
-  { id: "retrieval", name: "Retrieval", weight: 0.25, whatPerfectLooksLike: "high recall@k and MRR for the needed evidence" },
-  { id: "coverage", name: "Coverage", weight: 0.2, whatPerfectLooksLike: "the question is answered completely, not partially" },
-  { id: "hallucination", name: "Hallucination control", weight: 0.2, whatPerfectLooksLike: "no ungrounded or fabricated statements survive the gate" }
+  {
+    id: "faithfulness",
+    name: "Faithfulness",
+    weight: 0.35,
+    whatPerfectLooksLike: "every claim is attributable to a fetched source",
+    anchors: [{ standard: "RAGAS", ref: "faithfulness" }, informative("AIS", "attributable to identified sources")]
+  },
+  {
+    id: "retrieval",
+    name: "Retrieval",
+    weight: 0.25,
+    whatPerfectLooksLike: "high recall@k and MRR for the needed evidence",
+    anchors: [{ standard: "IR evaluation (TREC)", ref: "recall@k, MRR" }]
+  },
+  {
+    id: "coverage",
+    name: "Coverage",
+    weight: 0.2,
+    whatPerfectLooksLike: "the question is answered completely, not partially",
+    anchors: [iso25010("Functional suitability \u2014 functional completeness")]
+  },
+  {
+    id: "hallucination",
+    name: "Hallucination control",
+    weight: 0.2,
+    whatPerfectLooksLike: "no ungrounded or fabricated statements survive the gate",
+    anchors: [{ standard: "RAGAS", ref: "answer attribution / hallucination rate" }]
+  }
 ];
 var webFlavored = (base) => [
   ...base,
-  { id: "accessibility", name: "Accessibility (WCAG 2.2 AA)", weight: 0.15, whatPerfectLooksLike: "no blocking a11y violations" },
-  { id: "auth", name: "AuthN / AuthZ", weight: 0.2, whatPerfectLooksLike: "sessions and authorization are correct; no IDOR" }
+  {
+    id: "accessibility",
+    name: "Accessibility (WCAG 2.2 AA)",
+    weight: 0.15,
+    whatPerfectLooksLike: "no blocking a11y violations",
+    anchors: [{ standard: "WCAG 2.2", ref: "conformance level AA", note: "lineage ISO/IEC 40500" }]
+  },
+  {
+    id: "auth",
+    name: "AuthN / AuthZ",
+    weight: 0.2,
+    whatPerfectLooksLike: "sessions and authorization are correct; no IDOR",
+    anchors: [iso25010("Security \u2014 authenticity, accountability"), informative("OWASP ASVS 4.0", "V2 authentication, V4 access control")]
+  }
 ];
 var cliFlavored = (base) => [
   ...base,
-  { id: "ergonomics", name: "Ergonomics", weight: 0.15, whatPerfectLooksLike: "clear --help, actionable errors, consistent exit codes" }
+  {
+    id: "ergonomics",
+    name: "Ergonomics",
+    weight: 0.15,
+    whatPerfectLooksLike: "clear --help, actionable errors, consistent exit codes",
+    anchors: [iso25010("Interaction capability \u2014 operability, user error protection")]
+  }
 ];
 function defaultDimensions(kind, category = "") {
   const cat = category.toLowerCase();
@@ -975,6 +1150,8 @@ function initRun(opts) {
 import { join as join9 } from "path";
 
 // src/templates.ts
+var anchorText = (d) => d.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "";
+var severityLegend = () => VALID_SEVERITIES.map((s) => `${s} (${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning})`).join(" \xB7 ");
 function workflowScript(cfg, runDirAbs, engineAbs) {
   const mode = cfg.mode ?? "audit";
   const doDefects = mode !== "improve";
@@ -1057,7 +1234,7 @@ var GATE_CHEATSHEET = (engineAbs, run) => [
   `- \`node ${engineAbs} check --run ${run} --semantic --require-verify\` \u2014 folds verdicts in; the exit gate.`
 ].join("\n");
 function agentContracts(cfg, runDirAbs, engineAbs) {
-  const dims = cfg.dimensions.map((d) => `- **${d.id}** ${d.name} (w=${d.weight}): ${d.whatPerfectLooksLike}`).join("\n");
+  const dims = cfg.dimensions.map((d) => `- **${d.id}** ${d.name} (w=${d.weight}${anchorText(d) ? `, anchored to ${anchorText(d)}` : ""}): ${d.whatPerfectLooksLike}`).join("\n");
   return {
     researcher: `# Contract: researcher
 
@@ -1068,6 +1245,8 @@ Do REAL web research (WebSearch + WebFetch; if not loaded, ToolSearch \`select:W
 Deliver:
 1. Write a cited markdown note at \`${runDirAbs}/research/<DIMENSION>.md\` \u2014 every non-obvious methodological claim cites a fetched URL.
 2. End the note with a **scoring rubric** for this dimension: 0\u20135 anchors and how to measure each on THIS target.
+
+Each dimension is anchored to an external referential (see below). Your research MAY refine an anchor with cited justification; it MUST NOT silently drop the referential.
 
 Dimensions in scope:
 ${dims}
@@ -1104,7 +1283,7 @@ RULES (the grounding gate will enforce these):
   - \`path:line\` or \`path:start-end\` \u2014 a real location IN THE TARGET (\`${cfg.targetAbs}\`).
   - \`run:relpath#Lnn\` \u2014 a line in a log this run produced.
 - Do NOT invent line numbers. If you cite \`src/x.ts:42\`, line 42 must exist and support the claim.
-- \`severity\`: P0 (trust/correctness/data-loss), P1 (fidelity/coverage cap), P2 (polish).
+- \`severity\`: ${severityLegend()}.
 - \`status\`: \`confirmed\` (evidence holds) or \`open\` (needs verification). Never keep a finding you cannot ground \u2014 delete it.
 
 Also draft \`${runDirAbs}/RESULTS.md\` (per-functionality results, every claim citing \`[F#]\`) and \`${runDirAbs}/SUMMARY.md\` (scorecard + headline). Flag any narrative sentence that is not a finding with \`[M]\`.
@@ -1121,7 +1300,7 @@ If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings \u2
 
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
-Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0\u20135 with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth \u2014 weight them.
+Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0\u20135 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth \u2014 weight them.
 
 Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens": "...", "dimensionScores": [{"id","score","rationale"}], "overall": 0-100, "meetsExpectations": bool, "topFindings": [] }\`.
 `,
@@ -1154,11 +1333,14 @@ Discover grounded improvement leads (both internal health AND product/capability
   };
 }
 function testPlanTemplate(cfg) {
-  const dims = cfg.dimensions.map((d) => `### ${d.name} (weight ${d.weight})
-> Perfect: ${d.whatPerfectLooksLike}
+  const dims = cfg.dimensions.map(
+    (d) => `### ${d.name} (weight ${d.weight})
+> Perfect: ${d.whatPerfectLooksLike}${anchorText(d) ? `
+> Anchored to: ${anchorText(d)}` : ""}
 
 - [ ] \u2026
-`).join("\n");
+`
+  ).join("\n");
   return `# Test plan \u2014 ${cfg.target}
 
 Target: \`${cfg.targetAbs}\` \xB7 kind: ${cfg.kind} \xB7 category: ${cfg.category}
@@ -1193,7 +1375,12 @@ function findingsSchema() {
           properties: {
             id: { type: "string", pattern: "^F\\d+$" },
             dimension: { type: "string" },
-            severity: { enum: ["P0", "P1", "P2"] },
+            severity: {
+              enum: [...VALID_SEVERITIES],
+              description: VALID_SEVERITIES.map(
+                (s) => `${s} \u2014 ${SEVERITY_DEFS[s].label} (${SEVERITY_DEFS[s].cvssBand}): ${SEVERITY_DEFS[s].meaning}; gate: ${SEVERITY_DEFS[s].gateEffect}`
+              ).join(" | ")
+            },
             title: { type: "string" },
             statement: { type: "string" },
             evidence: {
