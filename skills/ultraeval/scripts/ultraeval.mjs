@@ -328,9 +328,25 @@ function buildTestSubjects(files) {
   for (const t of files) if (t.isTest) set.add(testSubject(t.rel));
   return set;
 }
-function hasTest(f, testSubjects) {
+function importReachedByTests(files, adj) {
+  const reached = /* @__PURE__ */ new Set();
+  const stack = files.filter((f) => f.isTest).map((f) => f.rel);
+  const seen = new Set(stack);
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const to of adj.get(cur) ?? []) {
+      reached.add(to);
+      if (!seen.has(to)) {
+        seen.add(to);
+        stack.push(to);
+      }
+    }
+  }
+  return reached;
+}
+function hasTest(f, testSubjects, testedByImport) {
   const base = (f.rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
-  return !!base && testSubjects.has(base);
+  return !!base && testSubjects.has(base) || testedByImport.has(f.rel);
 }
 function isGenerated(f, relSet) {
   if (!/\.(js|mjs|cjs)$/.test(f.rel) || f.loc < 400) return false;
@@ -387,7 +403,10 @@ function analyzeRepo(targetAbs, opts = {}) {
   const src = files.filter((f) => !f.isTest);
   const testFiles = files.filter((f) => f.isTest).length;
   const testSubjects = buildTestSubjects(files);
-  const untested = src.filter((f) => !hasTest(f, testSubjects)).map((f) => f.rel).slice(0, 20);
+  const testedByImport = importReachedByTests(files, adj);
+  const untested = src.filter((f) => !hasTest(f, testSubjects, testedByImport)).map((f) => f.rel).slice(0, 20);
+  if (testFiles > 0 && src.some((f) => !hasTest(f, testSubjects, testedByImport)) && !src.some((f) => testedByImport.has(f.rel)))
+    notes.push("test coverage attributed by filename only (no test\u2192source imports resolved) \u2014 the untested list may overstate gaps");
   const languages = {};
   for (const f of files) languages[f.ext] = (languages[f.ext] ?? 0) + 1;
   const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join2(targetAbs, d)));

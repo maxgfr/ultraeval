@@ -167,9 +167,29 @@ function buildTestSubjects(files: FileInfo[]): Set<string> {
   return set;
 }
 
-function hasTest(f: FileInfo, testSubjects: Set<string>): boolean {
+// Sources a test file's import graph REACHES (transitively) — a behaviour-named
+// or integration test (parse.test.ts covering cliargs.ts) credits its subjects
+// even though it shares no base name with them.
+function importReachedByTests(files: FileInfo[], adj: Map<string, Set<string>>): Set<string> {
+  const reached = new Set<string>();
+  const stack = files.filter((f) => f.isTest).map((f) => f.rel);
+  const seen = new Set<string>(stack);
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    for (const to of adj.get(cur) ?? []) {
+      reached.add(to);
+      if (!seen.has(to)) {
+        seen.add(to);
+        stack.push(to);
+      }
+    }
+  }
+  return reached;
+}
+
+function hasTest(f: FileInfo, testSubjects: Set<string>, testedByImport: Set<string>): boolean {
   const base = (f.rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
-  return !!base && testSubjects.has(base);
+  return (!!base && testSubjects.has(base)) || testedByImport.has(f.rel);
 }
 
 // A generated bundle is a large JS file with zero resolvable local imports — a
@@ -242,10 +262,15 @@ export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis
   const src = files.filter((f) => !f.isTest);
   const testFiles = files.filter((f) => f.isTest).length;
   const testSubjects = buildTestSubjects(files);
+  const testedByImport = importReachedByTests(files, adj);
   const untested = src
-    .filter((f) => !hasTest(f, testSubjects))
+    .filter((f) => !hasTest(f, testSubjects, testedByImport))
     .map((f) => f.rel)
     .slice(0, 20);
+  // Caveat the ratio when NO test→source import resolved (pure filename matching):
+  // the untested list may then overstate gaps for behaviour-named/integration tests.
+  if (testFiles > 0 && src.some((f) => !hasTest(f, testSubjects, testedByImport)) && !src.some((f) => testedByImport.has(f.rel)))
+    notes.push("test coverage attributed by filename only (no test→source imports resolved) — the untested list may overstate gaps");
   const languages: Record<string, number> = {};
   for (const f of files) languages[f.ext] = (languages[f.ext] ?? 0) + 1;
   const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join(targetAbs, d)));

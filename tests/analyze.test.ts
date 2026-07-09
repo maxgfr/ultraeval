@@ -83,6 +83,33 @@ describe("analyze — deterministic repo signal", () => {
     expect(a.tests.untested).not.toContain("src/bar.py");
   });
 
+  it("credits a source reached through a test file's imports, even when the test is named by behaviour (FIX-007)", () => {
+    // A behaviour-named test (parse.test.ts covering cliargs.ts) shares no base
+    // name with its subject, yet its import graph reaches it. Exact-base-name
+    // matching alone would report the source as a false coverage gap.
+    const a = analyzeRepo(
+      repo({
+        "src/cliargs.ts": "export const parse = () => 1;\n",
+        "tests/parse.test.ts": "import { parse } from '../src/cliargs.js';\nit('parses', () => {});\n",
+      }),
+    );
+    expect(a.tests.untested).not.toContain("src/cliargs.ts");
+  });
+
+  it("credits a source reached TRANSITIVELY through the test import graph (FIX-007)", () => {
+    // integration.test.ts imports the facade, which imports the helper; both
+    // sources are exercised even though only the facade is imported directly.
+    const a = analyzeRepo(
+      repo({
+        "src/helper.ts": "export const help = () => 2;\n",
+        "src/facade.ts": "import { help } from './helper.js';\nexport const run = () => help();\n",
+        "tests/integration.test.ts": "import { run } from '../src/facade.js';\nit('runs', () => {});\n",
+      }),
+    );
+    expect(a.tests.untested).not.toContain("src/facade.ts");
+    expect(a.tests.untested).not.toContain("src/helper.ts");
+  });
+
   it("notes when git churn is unavailable so size-only hotspot ranking is explicit", () => {
     const a = analyzeRepo(repo({ "src/x.ts": "export const x = 1;\n" }));
     expect((a.notes ?? []).join(" ")).toMatch(/churn unavailable/);
