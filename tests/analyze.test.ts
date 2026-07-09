@@ -60,6 +60,34 @@ describe("analyze — deterministic repo signal", () => {
     expect(a.hotspots[0]?.churn).toBeUndefined();
   });
 
+  it("does not count an unrelated fixture as the test of a similarly-named source file", () => {
+    const a = analyzeRepo(
+      repo({
+        "evals/run.mjs": "export const r = 1;\n",
+        "tests/fixtures/sample-run/app.js": "module.exports = 1;\n",
+      }),
+    );
+    expect(a.tests.untested).toContain("evals/run.mjs");
+  });
+
+  it("matches a real test to its source by base name across test-naming conventions", () => {
+    const a = analyzeRepo(
+      repo({
+        "src/foo.ts": "export const f = 1;\n",
+        "src/bar.py": "BAR = 1\n",
+        "tests/foo.test.ts": "it('x', () => {});\n",
+        "tests/test_bar.py": "def test_bar(): pass\n",
+      }),
+    );
+    expect(a.tests.untested).not.toContain("src/foo.ts");
+    expect(a.tests.untested).not.toContain("src/bar.py");
+  });
+
+  it("notes when git churn is unavailable so size-only hotspot ranking is explicit", () => {
+    const a = analyzeRepo(repo({ "src/x.ts": "export const x = 1;\n" }));
+    expect((a.notes ?? []).join(" ")).toMatch(/churn unavailable/);
+  });
+
   it("excludes a generated bundle (large JS, no local imports) from analysis", () => {
     const bundle = `#!/usr/bin/env node\nimport { readFileSync } from "node:fs";\n${Array.from({ length: 450 }, (_, i) => `const g${i} = ${i};`).join("\n")}\n`;
     const a = analyzeRepo(

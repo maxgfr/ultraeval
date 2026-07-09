@@ -78,4 +78,10 @@ describe("generated contracts — anchored referentials", () => {
   it("the judge contract instructs scoring against the anchored referential", () => {
     expect(agentContracts(cfg, "/run", "/engine").judge).toMatch(/anchored referential/);
   });
+
+  it("the remediator contract defers the verdict to `score` instead of hand-averaging overalls", () => {
+    const text = agentContracts(cfg, "/run", "/engine").remediator;
+    expect(text).not.toMatch(/average the overalls/);
+    expect(text).toMatch(/do not hand-average/);
+  });
 });

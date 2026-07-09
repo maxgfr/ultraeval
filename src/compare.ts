@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { EvalConfig, Finding, FindingsDoc, Provenance, Scorecard } from "./types.js";
-import { exists, readJson, writeText } from "./util.js";
+import { exists, readJson, titleKey, writeText } from "./util.js";
 
 interface Side {
   findings: Finding[];
@@ -16,7 +16,7 @@ function load(dir: string): Side {
 }
 
 // Findings are matched across runs by kind+title (ids differ between runs)…
-const key = (f: Finding) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+const key = (f: Finding) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
 
 // …with a secondary evidence fingerprint (kind + sorted target refs, line spec
 // included) so a mere retitle is not miscounted as one resolved + one

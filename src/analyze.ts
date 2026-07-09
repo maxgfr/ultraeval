@@ -131,7 +131,7 @@ function findCycles(adj: Map<string, Set<string>>): string[][] {
   return cycles;
 }
 
-function gitChurn(root: string): Map<string, number> {
+function gitChurn(root: string): { churn: Map<string, number>; ok: boolean } {
   const m = new Map<string, number>();
   try {
     const out = execFileSync("git", ["-C", root, "log", "--pretty=format:", "--name-only"], {
@@ -143,16 +143,33 @@ function gitChurn(root: string): Map<string, number> {
       const f = line.trim();
       if (f) m.set(f, (m.get(f) ?? 0) + 1);
     }
+    return { churn: m, ok: true };
   } catch {
-    // not a git repo, or git unavailable — churn stays empty
+    // not a git repo, or git unavailable — degrade loudly, not silently
+    return { churn: m, ok: false };
   }
-  return m;
 }
 
-function hasTest(f: FileInfo, files: FileInfo[]): boolean {
+// The base name a test file is "about": foo.test.ts / foo.spec.ts / foo_test.go
+// -> foo, test_foo.py -> foo. A plain fixture file keeps its own name, so it can
+// no longer claim to test an unrelated source that shares a substring.
+function testSubject(rel: string): string {
+  const base = (rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
+  return base
+    .replace(/\.(test|spec)$/, "")
+    .replace(/_test$/, "")
+    .replace(/^test_/, "");
+}
+
+function buildTestSubjects(files: FileInfo[]): Set<string> {
+  const set = new Set<string>();
+  for (const t of files) if (t.isTest) set.add(testSubject(t.rel));
+  return set;
+}
+
+function hasTest(f: FileInfo, testSubjects: Set<string>): boolean {
   const base = (f.rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
-  if (!base) return false;
-  return files.some((t) => t.isTest && t.rel.includes(base));
+  return !!base && testSubjects.has(base);
 }
 
 // A generated bundle is a large JS file with zero resolvable local imports — a
@@ -190,7 +207,9 @@ export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis
   let files = all.filter((f) => !isGenerated(f, fullSet));
   if (opts.onlyFiles) files = files.filter((f) => opts.onlyFiles?.has(f.rel));
   const relSet = new Set(files.map((f) => f.rel));
-  const churn = gitChurn(targetAbs);
+  const { churn, ok: churnOk } = gitChurn(targetAbs);
+  const notes: string[] = [];
+  if (!churnOk) notes.push("git churn unavailable (not a git repo, or git missing) — hotspots are ranked by size only");
 
   let edges = 0;
   const adj = new Map<string, Set<string>>();
@@ -222,8 +241,9 @@ export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis
 
   const src = files.filter((f) => !f.isTest);
   const testFiles = files.filter((f) => f.isTest).length;
+  const testSubjects = buildTestSubjects(files);
   const untested = src
-    .filter((f) => !hasTest(f, files))
+    .filter((f) => !hasTest(f, testSubjects))
     .map((f) => f.rel)
     .slice(0, 20);
   const languages: Record<string, number> = {};
@@ -240,6 +260,7 @@ export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis
     tests: { sourceFiles: src.length, testFiles, ratio: src.length ? Number((testFiles / src.length).toFixed(2)) : 0, untested },
     todos: files.reduce((a, f) => a + f.todos, 0),
     docs,
+    notes,
   };
 }
 
@@ -257,7 +278,7 @@ function renderAnalysisMd(a: Analysis): string {
     .join(" · ");
   return `# Analysis — ${a.target}
 
-${a.files} files · ${a.loc} LOC · ${langs}
+${(a.notes ?? []).map((n) => `> ⚠ ${n}\n`).join("")}${a.files} files · ${a.loc} LOC · ${langs}
 deps: ${a.deps.edges} local import edges${a.deps.cycles.length ? `, ${a.deps.cycles.length} cycle(s)` : ""} · tests: ${a.tests.testFiles}/${a.tests.sourceFiles} (ratio ${a.tests.ratio}) · TODO/FIXME: ${a.todos} · docs: ${a.docs.join(", ") || "none"}
 
 ## Hotspots (size + churn)

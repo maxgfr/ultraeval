@@ -179,7 +179,7 @@ Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens
 
 Finalize the eval and generate the AI-exploitable fix docs.
 
-1. Ensure \`${runDirAbs}/RESULTS.md\` and \`SUMMARY.md\` are complete and cite \`[F#]\`; fold in the judges' scores from \`judges.jsonl\` (average the overalls).
+1. Ensure \`${runDirAbs}/RESULTS.md\` and \`SUMMARY.md\` are complete and cite \`[F#]\`; \`score\` computes the weighted verdict and judge agreement from \`judges.jsonl\` — do not hand-average.
 2. Score: \`node ${engineAbs} score --run ${runDirAbs}\` → \`scorecard.json\` (weighted 0-100 + meets-expectations, from judges.jsonl).
 3. Emit the TDD backlog: \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` → \`BACKLOG.json\`, \`REMEDIATION.md\`, and one \`fixes/FIX-*.md\` card per confirmed finding/opportunity (RED failing/spec test → GREEN change → VERIFY).
 4. Render the dashboard: \`node ${engineAbs} render --run ${runDirAbs}\` → \`index.md\` + \`index.html\` (shows the verdict + opportunities matrix).

@@ -12,6 +12,7 @@ export interface InitOpts {
   kind?: Kind;
   category?: string;
   mode?: Mode;
+  bar?: number; // category-calibrated meets-expectations bar
 }
 
 // A target is a "skill" if it exposes a SKILL.md (at root or under skills/<x>/).
@@ -74,6 +75,7 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
     note: "starter dimensions — the research stage refines them",
     version: VERSION,
     provenance,
+    ...(opts.bar !== undefined && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}),
   };
   const runDir = resolve(process.cwd(), opts.out);
   ensureDir(join(runDir, "runs"));

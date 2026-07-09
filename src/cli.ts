@@ -21,8 +21,9 @@ const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then gener
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
-  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep]
-             Scaffold an eval run: detect the target, write eval.config.json + starter dimensions.
+  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>]
+             Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
+             --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
@@ -70,6 +71,7 @@ const VALUE_FLAGS = new Set([
   "--max-verify",
   "--shards",
   "--shard",
+  "--bar",
 ]);
 
 function parse(argv: string[]): Args {
@@ -118,6 +120,7 @@ function main(): void {
           kind: str(args.kind) as Kind | undefined,
           category: str(args.category),
           mode: str(args.mode) as Mode | undefined,
+          bar: num(args.bar),
         });
         console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
@@ -157,6 +160,7 @@ function main(): void {
         if (args.rank) {
           const r = rankBrainstorm(run);
           console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
+          for (const s of r.skipped) console.log(`  ! skipped${s.title ? ` "${s.title}"` : ""}: ${s.reason}`);
           if (args.check) {
             const c = checkRun(run);
             console.log(formatCheckReport(c, run));

@@ -1,9 +1,7 @@
 import { join } from "node:path";
 import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, Severity, VerifyResult } from "./types.js";
 import { SEVERITY_DEFS } from "./types.js";
-import { exists, opportunityPriority, opportunityValue, readJson, slug, writeJson, writeText } from "./util.js";
-
-const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+import { exists, opportunityPriority, opportunityValue, readJson, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
 
 export interface BacklogOpts {
   out?: string;

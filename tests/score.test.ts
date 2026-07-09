@@ -135,4 +135,52 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     expect(sc.provenance).toBeUndefined();
     expect(sc.overall).toBeGreaterThan(0);
   });
+
+  it("uses the config's meetsBar when present and records the applied bar", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 4 },
+          { id: "correctness", score: 3 },
+        ],
+        meetsExpectations: true,
+      },
+    ]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.meetsBar = 60;
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const sc = scoreRun(run);
+    expect(sc.overall).toBe(72); // (4/5*.6 + 3/5*.4) * 100
+    expect(sc.bar).toBe(60);
+    expect(sc.meetsExpectations).toBe(true); // 72 >= 60
+  });
+
+  it("defaults the bar to 80 and records it", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true }]);
+    expect(scoreRun(run).bar).toBe(80);
+  });
+
+  it("records per-dimension judge spread and an overall agreement index", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+      },
+      {
+        dimensionScores: [
+          { id: "security", score: 1 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+      },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.dimensions.find((d) => d.id === "security")?.spread).toBe(4);
+    expect(sc.dimensions.find((d) => d.id === "correctness")?.spread).toBe(0);
+    expect(sc.agreement).toBeCloseTo(0.6, 2); // 1 - avgSpread/5 = 1 - 2/5
+  });
 });

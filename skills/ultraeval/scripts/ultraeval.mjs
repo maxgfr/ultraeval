@@ -144,6 +144,8 @@ function extractContext(absPath, start, end, pad = 2) {
   const to = Math.min(lines.length, (end ?? start) + pad);
   return lines.slice(from, to).map((l, i) => `${from + i + 1}: ${l}`).join("\n");
 }
+var SEV_ORDER = { P0: 0, P1: 1, P2: 2 };
+var titleKey = (title) => title.toLowerCase().trim();
 function opportunityValue(impact, effort) {
   const i = impact === "high" ? 3 : impact === "med" ? 2 : 1;
   const e = effort === "S" ? 1 : effort === "M" ? 2 : 3;
@@ -272,14 +274,23 @@ function gitChurn(root) {
       const f = line.trim();
       if (f) m.set(f, (m.get(f) ?? 0) + 1);
     }
+    return { churn: m, ok: true };
   } catch {
+    return { churn: m, ok: false };
   }
-  return m;
 }
-function hasTest(f, files) {
+function testSubject(rel) {
+  const base = (rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
+  return base.replace(/\.(test|spec)$/, "").replace(/_test$/, "").replace(/^test_/, "");
+}
+function buildTestSubjects(files) {
+  const set = /* @__PURE__ */ new Set();
+  for (const t of files) if (t.isTest) set.add(testSubject(t.rel));
+  return set;
+}
+function hasTest(f, testSubjects) {
   const base = (f.rel.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
-  if (!base) return false;
-  return files.some((t) => t.isTest && t.rel.includes(base));
+  return !!base && testSubjects.has(base);
 }
 function isGenerated(f, relSet) {
   if (!/\.(js|mjs|cjs)$/.test(f.rel) || f.loc < 400) return false;
@@ -307,7 +318,9 @@ function analyzeRepo(targetAbs, opts = {}) {
   let files = all.filter((f) => !isGenerated(f, fullSet));
   if (opts.onlyFiles) files = files.filter((f) => opts.onlyFiles?.has(f.rel));
   const relSet = new Set(files.map((f) => f.rel));
-  const churn = gitChurn(targetAbs);
+  const { churn, ok: churnOk } = gitChurn(targetAbs);
+  const notes = [];
+  if (!churnOk) notes.push("git churn unavailable (not a git repo, or git missing) \u2014 hotspots are ranked by size only");
   let edges = 0;
   const adj = /* @__PURE__ */ new Map();
   for (const f of files) {
@@ -333,7 +346,8 @@ function analyzeRepo(targetAbs, opts = {}) {
   });
   const src = files.filter((f) => !f.isTest);
   const testFiles = files.filter((f) => f.isTest).length;
-  const untested = src.filter((f) => !hasTest(f, files)).map((f) => f.rel).slice(0, 20);
+  const testSubjects = buildTestSubjects(files);
+  const untested = src.filter((f) => !hasTest(f, testSubjects)).map((f) => f.rel).slice(0, 20);
   const languages = {};
   for (const f of files) languages[f.ext] = (languages[f.ext] ?? 0) + 1;
   const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join2(targetAbs, d)));
@@ -346,7 +360,8 @@ function analyzeRepo(targetAbs, opts = {}) {
     deps: { edges, cycles },
     tests: { sourceFiles: src.length, testFiles, ratio: src.length ? Number((testFiles / src.length).toFixed(2)) : 0, untested },
     todos: files.reduce((a, f) => a + f.todos, 0),
-    docs
+    docs,
+    notes
   };
 }
 function runAnalyze(targetDir, outDir, opts = {}) {
@@ -359,7 +374,8 @@ function renderAnalysisMd(a) {
   const langs = Object.entries(a.languages).sort((x, y) => y[1] - x[1]).map(([e, n]) => `${e} ${n}`).join(" \xB7 ");
   return `# Analysis \u2014 ${a.target}
 
-${a.files} files \xB7 ${a.loc} LOC \xB7 ${langs}
+${(a.notes ?? []).map((n) => `> \u26A0 ${n}
+`).join("")}${a.files} files \xB7 ${a.loc} LOC \xB7 ${langs}
 deps: ${a.deps.edges} local import edges${a.deps.cycles.length ? `, ${a.deps.cycles.length} cycle(s)` : ""} \xB7 tests: ${a.tests.testFiles}/${a.tests.sourceFiles} (ratio ${a.tests.ratio}) \xB7 TODO/FIXME: ${a.todos} \xB7 docs: ${a.docs.join(", ") || "none"}
 
 ## Hotspots (size + churn)
@@ -421,7 +437,6 @@ var RUBRIC_VERSION = "1";
 var MEETS_BAR = 80;
 
 // src/backlog.ts
-var SEV_ORDER = { P0: 0, P1: 1, P2: 2 };
 function targetsOf(f) {
   const set = /* @__PURE__ */ new Set();
   for (const e of f.evidence ?? []) {
@@ -603,13 +618,24 @@ function rankBrainstorm(runDir) {
     const m = /^F(\d+)$/.exec(f.id);
     if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
   }
-  const key2 = (o) => o.title.toLowerCase().trim();
-  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => key2(f)));
+  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => titleKey(f.title)));
   const ranked = [...opps].sort((x, y) => opportunityValue(y.impact, y.effort) - opportunityValue(x.impact, x.effort));
   let added = 0;
+  const skipped = [];
   for (const o of ranked) {
-    if (!o?.title || seen.has(key2(o))) continue;
-    seen.add(key2(o));
+    if (!o?.title) {
+      skipped.push({ reason: "missing title" });
+      continue;
+    }
+    if (seen.has(titleKey(o.title))) {
+      skipped.push({ title: o.title, reason: "duplicate title (already folded or present)" });
+      continue;
+    }
+    if (!VALID_IMPACT.includes(o.impact) || !VALID_EFFORT.includes(o.effort)) {
+      skipped.push({ title: o.title, reason: `invalid impact/effort "${o.impact}/${o.effort}" (expected high|med|low / S|M|L)` });
+      continue;
+    }
+    seen.add(titleKey(o.title));
     maxN++;
     doc.findings.push({
       id: `F${maxN}`,
@@ -627,7 +653,7 @@ function rankBrainstorm(runDir) {
     added++;
   }
   writeJson(join4(runDir, "findings.json"), doc);
-  return { added, total: doc.findings.length };
+  return { added, total: doc.findings.length, skipped };
 }
 
 // src/check.ts
@@ -843,7 +869,7 @@ function load(dir) {
   const cfg = exists(join6(dir, "eval.config.json")) ? readJson(join6(dir, "eval.config.json")) : null;
   return { findings, score, cfg };
 }
-var key = (f) => `${f.kind ?? "defect"}:${f.title.toLowerCase().trim()}`;
+var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
 function targetRefOf(ref) {
   if (ref.startsWith("run:") || ref.startsWith("url:") || /^https?:/.test(ref)) return null;
   return ref.startsWith("analysis:") ? ref.slice("analysis:".length) : ref;
@@ -1303,7 +1329,8 @@ function initRun(opts) {
     dimensions,
     note: "starter dimensions \u2014 the research stage refines them",
     version: VERSION,
-    provenance
+    provenance,
+    ...opts.bar !== void 0 && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}
   };
   const runDir = resolve2(process.cwd(), opts.out);
   ensureDir(join9(runDir, "runs"));
@@ -1474,7 +1501,7 @@ Append your verdict to \`${runDirAbs}/judges.jsonl\` as one JSON line: \`{ "lens
 
 Finalize the eval and generate the AI-exploitable fix docs.
 
-1. Ensure \`${runDirAbs}/RESULTS.md\` and \`SUMMARY.md\` are complete and cite \`[F#]\`; fold in the judges' scores from \`judges.jsonl\` (average the overalls).
+1. Ensure \`${runDirAbs}/RESULTS.md\` and \`SUMMARY.md\` are complete and cite \`[F#]\`; \`score\` computes the weighted verdict and judge agreement from \`judges.jsonl\` \u2014 do not hand-average.
 2. Score: \`node ${engineAbs} score --run ${runDirAbs}\` \u2192 \`scorecard.json\` (weighted 0-100 + meets-expectations, from judges.jsonl).
 3. Emit the TDD backlog: \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` \u2192 \`BACKLOG.json\`, \`REMEDIATION.md\`, and one \`fixes/FIX-*.md\` card per confirmed finding/opportunity (RED failing/spec test \u2192 GREEN change \u2192 VERIFY).
 4. Render the dashboard: \`node ${engineAbs} render --run ${runDirAbs}\` \u2192 \`index.md\` + \`index.html\` (shows the verdict + opportunities matrix).
@@ -1738,16 +1765,20 @@ function computeScore(cfg, judges, doc) {
   const dimensions = dims.map((d) => {
     const scores = judges.flatMap((j) => (j.dimensionScores ?? []).filter((s) => s.id === d.id).map((s) => s.score)).filter((n) => typeof n === "number");
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-    return { id: d.id, name: d.name, weight: d.weight, score: Number(avg.toFixed(2)) };
+    const spread = scores.length > 1 ? Number((Math.max(...scores) - Math.min(...scores)).toFixed(2)) : 0;
+    return { id: d.id, name: d.name, weight: d.weight, score: Number(avg.toFixed(2)), spread };
   });
   const totalWeight = dimensions.reduce((a, b) => a + b.weight, 0) || 1;
   const weighted = dimensions.reduce((a, b) => a + b.score / 5 * b.weight, 0) / totalWeight;
   const overall = Math.round(weighted * 100);
+  const bar = cfg.meetsBar ?? MEETS_BAR;
+  const avgSpread = dimensions.length ? dimensions.reduce((a, b) => a + (b.spread ?? 0), 0) / dimensions.length : 0;
+  const agreement = Number((1 - avgSpread / 5).toFixed(2));
   const liveP0 = (doc.findings ?? []).some((f) => f.status !== "dismissed" && f.kind !== "opportunity" && f.severity === "P0");
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
-  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= MEETS_BAR;
-  const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : overall < MEETS_BAR ? `weighted score ${overall} is below the ${MEETS_BAR} bar` : `no P0, judges agree, score ${overall} >= ${MEETS_BAR}`;
-  return { overall, maxScore: 100, meetsExpectations, dimensions, judges: judges.length, reason };
+  const meetsExpectations = !liveP0 && !judgeSaysNo && overall >= bar;
+  const reason = liveP0 ? "an unresolved P0 finding caps meets-expectations at false" : judgeSaysNo ? "a judge ruled it does not meet expectations" : overall < bar ? `weighted score ${overall} is below the ${bar} bar` : `no P0, judges agree, score ${overall} >= ${bar}`;
+  return { overall, maxScore: 100, meetsExpectations, bar, dimensions, judges: judges.length, agreement, reason };
 }
 function scoreRun(runDir) {
   const cfg = readJson(join12(runDir, "eval.config.json"));
@@ -1771,11 +1802,10 @@ function formatScore(sc) {
 
 // src/verify.ts
 import { isAbsolute as isAbsolute2, join as join13, resolve as resolve3 } from "path";
-var SEV_ORDER2 = { P0: 0, P1: 1, P2: 2 };
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
   const cfg = readJson(join13(runDir, "eval.config.json"));
   const doc = readJson(join13(runDir, "findings.json"));
-  const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER2[a.severity] ?? 9) - (SEV_ORDER2[b.severity] ?? 9));
+  const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir };
   for (const f of findings) {
@@ -1876,8 +1906,9 @@ var HELP = `ultraeval v${VERSION} \u2014 evaluate a skill or codebase, then gene
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
-  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep]
-             Scaffold an eval run: detect the target, write eval.config.json + starter dimensions.
+  init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>]
+             Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
+             --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
   plan     --run <run>
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
@@ -1918,7 +1949,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--coverage-min",
   "--max-verify",
   "--shards",
-  "--shard"
+  "--shard",
+  "--bar"
 ]);
 function parse(argv) {
   const args = { _: [] };
@@ -1963,7 +1995,8 @@ function main() {
           out,
           kind: str(args.kind),
           category: str(args.category),
-          mode: str(args.mode)
+          mode: str(args.mode),
+          bar: num(args.bar)
         });
         console.log(`ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions -> ${runDir}`);
         return;
@@ -2005,6 +2038,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
         if (args.rank) {
           const r = rankBrainstorm(run);
           console.log(`ultraeval brainstorm --rank: +${r.added} opportunities folded into findings.json (${r.total} total)`);
+          for (const s of r.skipped) console.log(`  ! skipped${s.title ? ` "${s.title}"` : ""}: ${s.reason}`);
           if (args.check) {
             const c = checkRun(run);
             console.log(formatCheckReport(c, run));

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveEvidence } from "../src/util.js";
+import { resolveEvidence, SEV_ORDER, titleKey } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -22,6 +22,15 @@ function scaffold(): { targetAbs: string; runDir: string; outside: string } {
   writeFileSync(outside, "secret\n");
   return { targetAbs, runDir, outside };
 }
+
+describe("shared ranking/identity helpers", () => {
+  it("SEV_ORDER ranks P0 before P1 before P2 and titleKey normalizes titles", () => {
+    expect(SEV_ORDER.P0).toBe(0);
+    expect(SEV_ORDER.P1).toBe(1);
+    expect(SEV_ORDER.P2).toBe(2);
+    expect(titleKey("  Quick Win ")).toBe("quick win");
+  });
+});
 
 describe("resolveEvidence — run: containment guard", () => {
   it("a run: ref that escapes the run directory is never graded, even if the file exists", () => {

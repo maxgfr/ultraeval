@@ -197,6 +197,12 @@ export function extractContext(absPath: string, start?: number, end?: number, pa
     .join("\n");
 }
 
+// ---- shared ranking / identity helpers ------------------------------------
+// Single copies of the severity ordering and the title identity key (previously
+// duplicated across verify/backlog and compare/brainstorm).
+export const SEV_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+export const titleKey = (title: string): string => title.toLowerCase().trim();
+
 // ---- opportunity ranking -------------------------------------------------
 // value = impact / effort — a "quick win" (high/S) tops a "big bet" (high/L).
 export function opportunityValue(impact?: Impact, effort?: Effort): number {

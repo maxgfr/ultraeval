@@ -111,6 +111,7 @@ export interface EvalConfig {
   note?: string;
   version: string;
   provenance?: Provenance; // absent on legacy (pre-protocol) runs
+  meetsBar?: number; // category-calibrated meets-expectations bar (default MEETS_BAR)
 }
 
 // Where a finding is grounded. Grammar of `ref` (see references/gate-contract.md):
@@ -170,6 +171,7 @@ export interface Analysis {
   tests: { sourceFiles: number; testFiles: number; ratio: number; untested: string[] };
   todos: number; // TODO/FIXME/HACK/XXX markers
   docs: string[]; // README/DOCUMENTATION/… present at root
+  notes: string[]; // degraded-signal caveats (e.g. churn unavailable) — never silent
 }
 
 // ---- verify worklist -----------------------------------------------------
@@ -246,8 +248,10 @@ export interface Scorecard {
   overall: number; // 0-100 weighted
   maxScore: number; // 100
   meetsExpectations: boolean;
-  dimensions: { id: string; name: string; weight: number; score: number }[]; // 0-5 avg across judges
+  bar: number; // the meets-expectations threshold this verdict was judged against
+  dimensions: { id: string; name: string; weight: number; score: number; spread?: number }[]; // 0-5 avg + max-min across judges
   judges: number;
+  agreement?: number; // 1 - avgSpread/5 — 1.0 = full consensus, lower = judges split
   reason: string;
   provenance?: Provenance; // copied from eval.config.json when present
   scoredAt?: string; // ISO 8601, stamped by `score`

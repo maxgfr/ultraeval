@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { Analysis, EvalConfig, FindingsDoc, Opportunity } from "./types.js";
-import { exists, opportunityPriority, opportunityValue, readJson, writeJson, writeText } from "./util.js";
+import { VALID_EFFORT, VALID_IMPACT } from "./types.js";
+import { exists, opportunityPriority, opportunityValue, readJson, titleKey, writeJson, writeText } from "./util.js";
 
 // Divergent → convergent, grounded. Phase A emits a structured worklist across
 // lenses (internal health + product); the AI fills opportunities.json; Phase B
@@ -63,7 +64,13 @@ Rules (the gate enforces them after \`brainstorm --rank\`):
 `;
 }
 
-export function rankBrainstorm(runDir: string): { added: number; total: number } {
+export interface RankResult {
+  added: number;
+  total: number;
+  skipped: { title?: string; reason: string }[]; // account for every entry not folded
+}
+
+export function rankBrainstorm(runDir: string): RankResult {
   const oppsPath = join(runDir, "opportunities.json");
   if (!exists(oppsPath)) throw new Error("no opportunities.json — fill the BRAINSTORM.todo.md worklist first");
   const opps = readJson<{ opportunities?: Opportunity[] }>(oppsPath).opportunities ?? [];
@@ -74,14 +81,25 @@ export function rankBrainstorm(runDir: string): { added: number; total: number }
     const m = /^F(\d+)$/.exec(f.id);
     if (m?.[1]) maxN = Math.max(maxN, Number(m[1]));
   }
-  const key = (o: { title: string }) => o.title.toLowerCase().trim();
-  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => key(f)));
+  const seen = new Set(doc.findings.filter((f) => f.kind === "opportunity").map((f) => titleKey(f.title)));
 
   const ranked = [...opps].sort((x, y) => opportunityValue(y.impact, y.effort) - opportunityValue(x.impact, x.effort));
   let added = 0;
+  const skipped: RankResult["skipped"] = [];
   for (const o of ranked) {
-    if (!o?.title || seen.has(key(o))) continue;
-    seen.add(key(o));
+    if (!o?.title) {
+      skipped.push({ reason: "missing title" });
+      continue;
+    }
+    if (seen.has(titleKey(o.title))) {
+      skipped.push({ title: o.title, reason: "duplicate title (already folded or present)" });
+      continue;
+    }
+    if (!VALID_IMPACT.includes(o.impact) || !VALID_EFFORT.includes(o.effort)) {
+      skipped.push({ title: o.title, reason: `invalid impact/effort "${o.impact}/${o.effort}" (expected high|med|low / S|M|L)` });
+      continue;
+    }
+    seen.add(titleKey(o.title));
     maxN++;
     doc.findings.push({
       id: `F${maxN}`,
@@ -99,5 +117,5 @@ export function rankBrainstorm(runDir: string): { added: number; total: number }
     added++;
   }
   writeJson(join(runDir, "findings.json"), doc);
-  return { added, total: doc.findings.length };
+  return { added, total: doc.findings.length, skipped };
 }
