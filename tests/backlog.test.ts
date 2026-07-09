@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,6 +48,19 @@ describe("backlog — TDD fix cards", () => {
       JSON.stringify({ target: "t", targetAbs: root, kind: "codebase", category: "library", dimensions: [], version: "0.0.0" }),
     );
     expect(() => buildBacklog(run)).toThrow(/no findings\.json — record findings first/);
+  });
+
+  it("codebase tasks get a runnable verify command when the target manifest declares one", () => {
+    const run = scaffold([mk("F1", "P1", "confirmed")]);
+    const cfg = JSON.parse(readFileSync(join(run, "eval.config.json"), "utf8"));
+    writeFileSync(join(cfg.targetAbs, "package.json"), JSON.stringify({ name: "t", scripts: { test: "vitest run" } }));
+    const bl = buildBacklog(run);
+    expect(bl.tasks[0]?.verify.command).toBe("npm test");
+  });
+
+  it("codebase tasks keep the prose fallback when no test entrypoint is detectable", () => {
+    const bl = buildBacklog(scaffold([mk("F1", "P1", "confirmed")]));
+    expect(bl.tasks[0]?.verify.command).toMatch(/run the new test/);
   });
 
   it("derives a dependsOn chain when tasks share a target file", () => {

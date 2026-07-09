@@ -75,8 +75,11 @@ function plantHoneypots(runDir: string, pairs: VerifyPair[], n: number, shard?: 
   const traps: VerifyPair[] = [];
   for (let k = 0; k < n; k++) {
     const a = real[Math.floor(rng() * real.length)] as VerifyPair;
-    const elsewhere = real.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
-    const pool = elsewhere.length ? elsewhere : real.filter((p) => p.claimId !== a.claimId);
+    // Cross-finding ONLY: a trap must never borrow the claim's own sibling
+    // evidence (a multi-file finding's other ref genuinely supports the claim).
+    const others = real.filter((p) => p.claimId !== a.claimId);
+    const elsewhere = others.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
+    const pool = elsewhere.length ? elsewhere : others;
     if (!pool.length) break;
     const b = pool[Math.floor(rng() * pool.length)] as VerifyPair;
     traps.push({ claimId: `F${maxN + offset + k + 1}`, evidenceRef: b.evidenceRef, claim: a.claim, digest: b.digest, verdict: null, note: "" });
@@ -157,6 +160,7 @@ function loadVerdicts(runDir: string, spec: string): VerdictItem[] {
     // Resolve as given (cwd) first, else relative to the run dir — so `--apply
     // verdicts.json` works whether the file sits in cwd or inside the run.
     const p = exists(f) ? f : isAbsolute(f) ? f : resolve(runDir, f);
+    if (!exists(p)) throw new Error(`verdicts file not found: ${p} — pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson<VerdictsFile | VerdictItem[]>(p);
     const items = Array.isArray(data) ? data : (data.pairs ?? []);
     for (const v of items) merged.set(`${v.claimId}␟${v.evidenceRef ?? ""}`, v);

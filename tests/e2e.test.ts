@@ -111,6 +111,10 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-hist-"));
     tmps.push(dir);
     cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+    writeFileSync(
+      join(dir, "judges.jsonl"),
+      '{"lens":"a","dimensionScores":[{"id":"security","score":4}],"meetsExpectations":true,"calibration":{"passed":true}}\n',
+    );
     const out = execFileSync("node", [BUNDLE, "score", "--run", dir, "--history", "--json"], { encoding: "utf8", cwd: dir });
     expect(out.trimStart().startsWith("{")).toBe(true); // --json output stays pure JSON
     const ledger = join(dir, "evals", "history.jsonl");
@@ -126,6 +130,10 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(r.status).toBe(0);
     expect(r.out).toContain(join(dir, "VERIFY.todo.0.json"));
     expect(r.out).not.toContain(`${join(dir, "VERIFY.todo.json")} `);
+  });
+
+  it("check on a nonexistent run dir exits 2 (usage), not 1 (gate verdict)", () => {
+    expect(run(["check", "--run", "/nonexistent-ultraeval-run"]).status).toBe(2);
   });
 
   it("check fails (exit 1) on a doctored citation", () => {

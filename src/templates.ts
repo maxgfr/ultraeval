@@ -128,6 +128,9 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
   const head = [
     `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: ${JSON.stringify(phases)} }`,
     ``,
+    `// NOT a plain Node script: launch via the Workflow tool — Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
+    `// agent()/phase()/parallel()/log() and the top-level return only exist inside that harness.`,
+    ``,
     `// Constants for THIS eval run (injected by \`ultraeval plan\`).`,
     `const TARGET = ${JSON.stringify(cfg.targetAbs)}`,
     `const ENGINE = ${JSON.stringify(engineAbs)}`,

@@ -82,7 +82,10 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
 export function scoreRun(runDir: string): Scorecard {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const doc = exists(join(runDir, "findings.json")) ? readJson<FindingsDoc>(join(runDir, "findings.json")) : { findings: [] };
-  const sc = computeScore(cfg, readJudges(runDir), doc);
+  const judges = readJudges(runDir);
+  // A 0-judge panel must never quietly become a plausible 0/100 scorecard.
+  if (!judges.length) throw new Error("no judge verdicts in judges.jsonl — the Judge phase has not run; dispatch judges (agents/judge.md) first");
+  const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = new Date().toISOString();
   writeJson(join(runDir, "scorecard.json"), sc);

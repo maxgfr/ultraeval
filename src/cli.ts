@@ -15,7 +15,7 @@ import { render } from "./render.js";
 import { appendHistory, formatScore, scoreRun } from "./score.js";
 import type { EvalConfig, Kind, Mode } from "./types.js";
 import { VERSION } from "./types.js";
-import { readJson, resolveTargetAbs } from "./util.js";
+import { exists, readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
 
 const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then generate grounded, AI-exploitable TDD fix docs.
@@ -219,6 +219,8 @@ function main(): void {
       }
       case "check": {
         if (!run) throw new Error("check requires --run <run>");
+        // A nonexistent/uninitialized run is a usage error (exit 2), not a gate verdict (exit 1).
+        if (!exists(join(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} — not an ultraeval run; run \`ultraeval init\` first`);
         const r = checkRun(run, {
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],

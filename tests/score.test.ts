@@ -165,6 +165,15 @@ describe("score — weighted scorecard from judges.jsonl", () => {
     expect(scoreRun(run).bar).toBe(80);
   });
 
+  it("refuses to score without judges — no judges.jsonl or an empty panel errors instead of a silent 0/100", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    rmSync(join(run, "judges.jsonl"));
+    expect(() => scoreRun(run)).toThrow(/judges\.jsonl/);
+    writeFileSync(join(run, "judges.jsonl"), "");
+    expect(() => scoreRun(run)).toThrow(/judges\.jsonl/);
+    expect(existsSync(join(run, "scorecard.json"))).toBe(false); // nothing plausible written
+  });
+
   it("calibration: counts calibrated judges and keeps the verdict when some passed", () => {
     const run = scaffold([
       {

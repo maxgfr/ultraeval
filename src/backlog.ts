@@ -32,6 +32,23 @@ function guessTestFile(targets: string[], f: Finding): string {
   return `tests/${slug(f.title)}.test.ts`;
 }
 
+// A runnable test entrypoint detected from the target's manifest — verify-fix
+// replays verify.command verbatim through a shell, so prose must be a last resort.
+function detectVerifyCommand(targetAbs: string): string | null {
+  if (exists(join(targetAbs, "package.json"))) {
+    const pkg = readJson<{ scripts?: Record<string, string> }>(join(targetAbs, "package.json"));
+    if (pkg.scripts?.test) {
+      if (exists(join(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
+      if (exists(join(targetAbs, "yarn.lock"))) return "yarn test";
+      return "npm test";
+    }
+  }
+  if (exists(join(targetAbs, "go.mod"))) return "go test ./...";
+  if (exists(join(targetAbs, "Cargo.toml"))) return "cargo test";
+  if (exists(join(targetAbs, "pytest.ini")) || exists(join(targetAbs, "pyproject.toml"))) return "pytest";
+  return null;
+}
+
 export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
   const findingsPath = join(runDir, "findings.json");
@@ -86,7 +103,7 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
         command:
           cfg.kind === "skill"
             ? "pnpm test  # then re-run the target's own check/verify gate"
-            : "run the new test (must pass) + the full suite (nothing regresses)",
+            : (detectVerifyCommand(cfg.targetAbs) ?? "run the new test (must pass) + the full suite (nothing regresses)"),
       },
       dependsOn: [],
     };

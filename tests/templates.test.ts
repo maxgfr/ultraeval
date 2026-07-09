@@ -28,6 +28,10 @@ describe("templates — budget-aware generated workflow", () => {
     const script = workflowScript(cfg(), "/run", "/engine.mjs");
     expect(script).toMatch(/remediator['"]?,\s*CUTS/);
   });
+
+  it("the generated workflow says how to launch it — Workflow harness, not plain node", () => {
+    expect(workflowScript(cfg(), "/run", "/engine.mjs")).toMatch(/Workflow\(\{ scriptPath/);
+  });
 });
 
 describe("templates — normed live-scenario library", () => {

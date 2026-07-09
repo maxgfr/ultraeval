@@ -108,6 +108,34 @@ describe("verify — worklist + reduce", () => {
     expect(r.adjudicated).toBe(2); // honeypot verdicts stay out of the findings ledger
   });
 
+  it("never pairs a trap claim with the claim's own sibling evidence (cross-finding only)", () => {
+    const fA = {
+      id: "F1",
+      severity: "P0",
+      title: "SQLi",
+      statement: "SQL built by string concatenation",
+      evidence: [{ ref: "app.js:3" }, { ref: "lib.js:2" }],
+      status: "confirmed",
+    };
+    const fB = { id: "F2", severity: "P1", title: "XSS", statement: "user bio is sent without escaping", evidence: [{ ref: "app.js:1" }], status: "confirmed" };
+    const run = scaffold([fA, fB]);
+    const todo = runVerify(run, { honeypots: 8 });
+    const truth = new Set(JSON.parse(readFileSync(join(run, "VERIFY.honeypots.json"), "utf8")).claimIds);
+    const own: Record<string, string[]> = {
+      [fA.statement]: fA.evidence.map((e) => e.ref),
+      [fB.statement]: fB.evidence.map((e) => e.ref),
+    };
+    for (const p of todo.pairs.filter((x) => truth.has(x.claimId))) {
+      expect(own[p.claim], `trap ${p.claimId} reuses its own finding's evidence ${p.evidenceRef}`).not.toContain(p.evidenceRef);
+    }
+  });
+
+  it("apply with a missing verdicts file errors actionably (no raw ENOENT)", () => {
+    const run = scaffold([f1]);
+    runVerify(run);
+    expect(() => applyVerdicts(run, "/nope/verdicts.json")).toThrow(/verdicts file not found/);
+  });
+
   it("apply without planted honeypots behaves exactly as before", () => {
     const run = scaffold([f1]);
     runVerify(run);

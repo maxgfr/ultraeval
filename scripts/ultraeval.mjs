@@ -459,6 +459,20 @@ function guessTestFile(targets, f) {
   }
   return `tests/${slug(f.title)}.test.ts`;
 }
+function detectVerifyCommand(targetAbs) {
+  if (exists(join3(targetAbs, "package.json"))) {
+    const pkg = readJson(join3(targetAbs, "package.json"));
+    if (pkg.scripts?.test) {
+      if (exists(join3(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
+      if (exists(join3(targetAbs, "yarn.lock"))) return "yarn test";
+      return "npm test";
+    }
+  }
+  if (exists(join3(targetAbs, "go.mod"))) return "go test ./...";
+  if (exists(join3(targetAbs, "Cargo.toml"))) return "cargo test";
+  if (exists(join3(targetAbs, "pytest.ini")) || exists(join3(targetAbs, "pyproject.toml"))) return "pytest";
+  return null;
+}
 function buildBacklog(runDir, opts = {}) {
   const cfg = readJson(join3(runDir, "eval.config.json"));
   const findingsPath = join3(runDir, "findings.json");
@@ -498,7 +512,7 @@ function buildBacklog(runDir, opts = {}) {
         change: f.recommendation || (isOpp ? "Implement the improvement so the spec test passes." : "Make the minimal change that turns the RED test green \u2014 without weakening any gate.")
       },
       verify: {
-        command: cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : "run the new test (must pass) + the full suite (nothing regresses)"
+        command: cfg.kind === "skill" ? "pnpm test  # then re-run the target's own check/verify gate" : detectVerifyCommand(cfg.targetAbs) ?? "run the new test (must pass) + the full suite (nothing regresses)"
       },
       dependsOn: []
     };
@@ -1475,6 +1489,9 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
   const head = [
     `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: ${JSON.stringify(phases)} }`,
     ``,
+    `// NOT a plain Node script: launch via the Workflow tool \u2014 Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
+    `// agent()/phase()/parallel()/log() and the top-level return only exist inside that harness.`,
+    ``,
     `// Constants for THIS eval run (injected by \`ultraeval plan\`).`,
     `const TARGET = ${JSON.stringify(cfg.targetAbs)}`,
     `const ENGINE = ${JSON.stringify(engineAbs)}`,
@@ -2141,7 +2158,9 @@ function computeScore(cfg, judges, doc) {
 function scoreRun(runDir) {
   const cfg = readJson(join15(runDir, "eval.config.json"));
   const doc = exists(join15(runDir, "findings.json")) ? readJson(join15(runDir, "findings.json")) : { findings: [] };
-  const sc = computeScore(cfg, readJudges(runDir), doc);
+  const judges = readJudges(runDir);
+  if (!judges.length) throw new Error("no judge verdicts in judges.jsonl \u2014 the Judge phase has not run; dispatch judges (agents/judge.md) first");
+  const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
   writeJson(join15(runDir, "scorecard.json"), sc);
@@ -2246,8 +2265,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
   const traps = [];
   for (let k = 0; k < n; k++) {
     const a = real[Math.floor(rng() * real.length)];
-    const elsewhere = real.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
-    const pool = elsewhere.length ? elsewhere : real.filter((p) => p.claimId !== a.claimId);
+    const others = real.filter((p) => p.claimId !== a.claimId);
+    const elsewhere = others.filter((p) => pathOf(p.evidenceRef) !== pathOf(a.evidenceRef));
+    const pool = elsewhere.length ? elsewhere : others;
     if (!pool.length) break;
     const b = pool[Math.floor(rng() * pool.length)];
     traps.push({ claimId: `F${maxN + offset + k + 1}`, evidenceRef: b.evidenceRef, claim: a.claim, digest: b.digest, verdict: null, note: "" });
@@ -2323,6 +2343,7 @@ function loadVerdicts(runDir, spec) {
   const merged = /* @__PURE__ */ new Map();
   for (const f of files) {
     const p = exists(f) ? f : isAbsolute3(f) ? f : resolve4(runDir, f);
+    if (!exists(p)) throw new Error(`verdicts file not found: ${p} \u2014 pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson(p);
     const items = Array.isArray(data) ? data : data.pairs ?? [];
     for (const v of items) merged.set(`${v.claimId}\u241F${v.evidenceRef ?? ""}`, v);
@@ -2552,6 +2573,7 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
       }
       case "check": {
         if (!run) throw new Error("check requires --run <run>");
+        if (!exists(join17(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
         const r = checkRun(run, {
           semantic: !!args.semantic,
           requireVerify: !!args["require-verify"],
