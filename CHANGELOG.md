@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.4.0](https://github.com/maxgfr/ultraeval/compare/v1.3.0...v1.4.0) (2026-07-09)
+
+
+### Bug Fixes
+
+* **contracts:** executor safety notes, verdicts-file shape doc, impact mapping doc, CLI pinning, Node 18 full-surface CI ([6a15e88](https://github.com/maxgfr/ultraeval/commit/6a15e8887d85de49630f9ef04c8b0e5bc5669800))
+* **gate:** close the evidence-laundering and partial-adjudication bypasses; guard clean --all ([b7f77a9](https://github.com/maxgfr/ultraeval/commit/b7f77a943adf808ba19875b3e4b5912d3a531d17))
+
+
+### Features
+
+* **engine:** precise test matching, validated rank, calibrated bar, judge agreement, shared helpers ([bfb460e](https://github.com/maxgfr/ultraeval/commit/bfb460ea8a93bb3c26b7159d429a4ec7761a6c8a))
+* **interop:** evidence-fingerprint compare with --gate/--json, real JSON Schema, SARIF export ([a1ca3e1](https://github.com/maxgfr/ultraeval/commit/a1ca3e1d1c0e35d14e126855687378af5c782fa1))
+* **protocol:** record run provenance, stamp scorecards, and gate run comparability ([4e05dff](https://github.com/maxgfr/ultraeval/commit/4e05dff8cb24bc28754956994cb82d31fd27cb8b))
+* **rubrics:** codify SEVERITY_DEFS and anchor every starter dimension to an external referential ([9d50229](https://github.com/maxgfr/ultraeval/commit/9d502295380d1c36729863209ace14ac2903fb99))
+
 # [1.3.0](https://github.com/maxgfr/ultraeval/compare/v1.2.0...v1.3.0) (2026-07-08)
 
 
