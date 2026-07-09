@@ -1,7 +1,8 @@
-import { join } from "node:path";
+import { type Dirent, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { Backlog, EvalConfig, Finding, FindingsDoc, FixTask, Severity, VerifyResult } from "./types.js";
 import { SEVERITY_DEFS } from "./types.js";
-import { exists, opportunityPriority, opportunityValue, parseEvidenceRef, readJson, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
+import { exists, opportunityPriority, opportunityValue, parseEvidenceRef, readJson, resolveTargetAbs, SEV_ORDER, slug, writeJson, writeText } from "./util.js";
 
 export interface BacklogOpts {
   out?: string;
@@ -18,17 +19,78 @@ function targetsOf(f: Finding): string[] {
   return [...set];
 }
 
-function guessTestFile(targets: string[], f: Finding): string {
-  const src = targets.find((t) => /\.(ts|tsx|js|jsx|py|go|rb|java|php)$/.test(t));
-  if (src) {
-    const dot = src.lastIndexOf(".");
-    const ext = src.slice(dot);
-    const name = src.slice(0, dot).split("/").pop() ?? "target";
-    if (ext === ".py") return `tests/test_${name}.py`;
-    if (ext === ".go") return `${src.slice(0, dot)}_test.go`;
-    return `tests/${name}.test${ext}`;
+// A card that tells the fix agent to create tests/foo.test.ts in a repo that
+// keeps its tests colocated (foo.spec.ts) or under src/__tests__/ is pointing
+// OUTSIDE the project's convention — and verify-fix then enshrines that wrong
+// location. So probe the target for its dominant layout + suffix and follow it,
+// falling back to today's tests/<name>.test.<ext> guess when nothing is found.
+type TestLayout = "tests" | "test" | "__tests__" | "colocated" | null;
+interface TestConvention {
+  layout: TestLayout;
+  suffix: ".test" | ".spec";
+}
+
+const TEST_PATH_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)test_|(^|\/)tests?\/|(^|\/)__tests__\/)/;
+const CONV_SKIP = new Set(["node_modules", "dist", "build", "coverage", "out", "vendor", "__pycache__", ".next", ".cache", ".git"]);
+
+function scanTestFiles(targetAbs: string, limit = 500): string[] {
+  const found: string[] = [];
+  const walk = (dir: string) => {
+    if (found.length >= limit) return;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!e.name.startsWith(".") && !CONV_SKIP.has(e.name)) walk(p);
+        continue;
+      }
+      const rel = relative(targetAbs, p);
+      if (TEST_PATH_RE.test(rel)) found.push(rel);
+    }
+  };
+  walk(targetAbs);
+  return found;
+}
+
+function detectTestConvention(targetAbs: string): TestConvention {
+  const files = scanTestFiles(targetAbs);
+  if (!files.length) return { layout: null, suffix: ".test" };
+  const spec = files.filter((f) => /\.spec\./.test(f)).length;
+  const test = files.filter((f) => /\.test\./.test(f)).length;
+  const suffix: ".test" | ".spec" = spec > test ? ".spec" : ".test";
+  const has = (re: RegExp) => files.some((f) => re.test(f));
+  const layout: TestLayout = has(/(^|\/)__tests__\//) ? "__tests__" : has(/^tests\//) ? "tests" : has(/^test\//) ? "test" : "colocated";
+  return { layout, suffix };
+}
+
+function guessTestFile(targets: string[], f: Finding, targetAbs: string): string {
+  const src = targets.find((t) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rb|java|php|rs)$/.test(t));
+  if (!src) return `tests/${slug(f.title)}.test.ts`;
+  const dot = src.lastIndexOf(".");
+  const ext = src.slice(dot);
+  const stem = src.slice(0, dot); // path without the extension
+  const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
+  const name = stem.split("/").pop() ?? "target";
+  // Go's test convention is fixed: colocated <name>_test.go regardless of layout.
+  if (ext === ".go") return `${stem}_test.go`;
+  const conv = detectTestConvention(targetAbs);
+  const inDir = (base: string) => (dir ? `${dir}/${base}` : base);
+  if (ext === ".py") {
+    if (conv.layout === "colocated") return inDir(`test_${name}.py`);
+    return `${conv.layout && conv.layout !== "__tests__" ? conv.layout : "tests"}/test_${name}.py`;
   }
-  return `tests/${slug(f.title)}.test.ts`;
+  if (ext === ".rs") return `tests/${name}.rs`; // Rust integration tests live in tests/<name>.rs
+  const suffix = conv.suffix;
+  if (conv.layout === "colocated") return `${stem}${suffix}${ext}`;
+  if (conv.layout === "__tests__") return inDir(`__tests__/${name}${suffix}${ext}`);
+  const base = conv.layout ?? "tests"; // "tests" | "test"
+  return `${base}/${name}${suffix}${ext}`;
 }
 
 // A runnable test entrypoint detected from the target's manifest — verify-fix
@@ -59,6 +121,7 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
     const v = readJson<VerifyResult>(vpath);
     for (const id of v.failures ?? []) failed.add(id);
   }
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const prio = (f: Finding): Severity => (f.kind === "opportunity" ? opportunityPriority(f.impact) : f.severity);
   const confirmed = (doc.findings ?? [])
     .filter((f) => f.status !== "dismissed" && !failed.has(f.id))
@@ -84,7 +147,7 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f),
+        testFile: guessTestFile(targets, f, targetAbs),
         description: isOpp
           ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}`
           : f.failureScenario

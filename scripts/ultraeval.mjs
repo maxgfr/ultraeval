@@ -434,7 +434,8 @@ ${a.tests.untested.map((u) => `- \`${u}\``).join("\n")}
 }
 
 // src/backlog.ts
-import { join as join3 } from "path";
+import { readdirSync as readdirSync3 } from "fs";
+import { join as join3, relative as relative3 } from "path";
 
 // src/types.ts
 var VERSION = "1.5.0";
@@ -486,17 +487,63 @@ function targetsOf(f) {
   }
   return [...set];
 }
-function guessTestFile(targets, f) {
-  const src = targets.find((t) => /\.(ts|tsx|js|jsx|py|go|rb|java|php)$/.test(t));
-  if (src) {
-    const dot = src.lastIndexOf(".");
-    const ext = src.slice(dot);
-    const name = src.slice(0, dot).split("/").pop() ?? "target";
-    if (ext === ".py") return `tests/test_${name}.py`;
-    if (ext === ".go") return `${src.slice(0, dot)}_test.go`;
-    return `tests/${name}.test${ext}`;
+var TEST_PATH_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)test_|(^|\/)tests?\/|(^|\/)__tests__\/)/;
+var CONV_SKIP = /* @__PURE__ */ new Set(["node_modules", "dist", "build", "coverage", "out", "vendor", "__pycache__", ".next", ".cache", ".git"]);
+function scanTestFiles(targetAbs, limit = 500) {
+  const found = [];
+  const walk = (dir) => {
+    if (found.length >= limit) return;
+    let entries;
+    try {
+      entries = readdirSync3(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const p = join3(dir, e.name);
+      if (e.isDirectory()) {
+        if (!e.name.startsWith(".") && !CONV_SKIP.has(e.name)) walk(p);
+        continue;
+      }
+      const rel = relative3(targetAbs, p);
+      if (TEST_PATH_RE.test(rel)) found.push(rel);
+    }
+  };
+  walk(targetAbs);
+  return found;
+}
+function detectTestConvention(targetAbs) {
+  const files = scanTestFiles(targetAbs);
+  if (!files.length) return { layout: null, suffix: ".test" };
+  const spec = files.filter((f) => /\.spec\./.test(f)).length;
+  const test = files.filter((f) => /\.test\./.test(f)).length;
+  const suffix = spec > test ? ".spec" : ".test";
+  const has = (re) => files.some((f) => re.test(f));
+  const layout = has(/(^|\/)__tests__\//) ? "__tests__" : has(/^tests\//) ? "tests" : has(/^test\//) ? "test" : "colocated";
+  return { layout, suffix };
+}
+function guessTestFile(targets, f, targetAbs) {
+  const src = targets.find((t) => /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rb|java|php|rs)$/.test(t));
+  if (!src) return `tests/${slug(f.title)}.test.ts`;
+  const dot = src.lastIndexOf(".");
+  const ext = src.slice(dot);
+  const stem = src.slice(0, dot);
+  const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
+  const name = stem.split("/").pop() ?? "target";
+  if (ext === ".go") return `${stem}_test.go`;
+  const conv = detectTestConvention(targetAbs);
+  const inDir = (base2) => dir ? `${dir}/${base2}` : base2;
+  if (ext === ".py") {
+    if (conv.layout === "colocated") return inDir(`test_${name}.py`);
+    return `${conv.layout && conv.layout !== "__tests__" ? conv.layout : "tests"}/test_${name}.py`;
   }
-  return `tests/${slug(f.title)}.test.ts`;
+  if (ext === ".rs") return `tests/${name}.rs`;
+  const suffix = conv.suffix;
+  if (conv.layout === "colocated") return `${stem}${suffix}${ext}`;
+  if (conv.layout === "__tests__") return inDir(`__tests__/${name}${suffix}${ext}`);
+  const base = conv.layout ?? "tests";
+  return `${base}/${name}${suffix}${ext}`;
 }
 function detectVerifyCommand(targetAbs) {
   if (exists(join3(targetAbs, "package.json"))) {
@@ -523,6 +570,7 @@ function buildBacklog(runDir, opts = {}) {
     const v = readJson(vpath);
     for (const id of v.failures ?? []) failed.add(id);
   }
+  const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const prio = (f) => f.kind === "opportunity" ? opportunityPriority(f.impact) : f.severity;
   const confirmed = (doc.findings ?? []).filter((f) => f.status !== "dismissed" && !failed.has(f.id)).sort((a, b) => {
     const pa = SEV_ORDER[prio(a)] ?? 9;
@@ -544,7 +592,7 @@ function buildBacklog(runDir, opts = {}) {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f),
+        testFile: guessTestFile(targets, f, targetAbs),
         description: isOpp ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}` : f.failureScenario ? `Write a failing test that reproduces: ${f.failureScenario}` : `Write a failing test asserting the correct behavior for: ${f.statement}`
       },
       green: {
@@ -1365,7 +1413,7 @@ function runCompare(baseDir, newDir, outDir) {
 }
 
 // src/sarif.ts
-import { join as join8, relative as relative3, sep } from "path";
+import { join as join8, relative as relative4, sep } from "path";
 var LEVEL = { P0: "error", P1: "warning", P2: "note" };
 function buildSarif(cfg, doc, runDir) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
@@ -1375,7 +1423,7 @@ function buildSarif(cfg, doc, runDir) {
     const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
       physicalLocation: {
         artifactLocation: {
-          uri: relative3(targetAbs, r.absPath).split(sep).join("/")
+          uri: relative4(targetAbs, r.absPath).split(sep).join("/")
         },
         ...r.lineStart ? { region: { startLine: r.lineStart, ...r.lineEnd && r.lineEnd !== r.lineStart ? { endLine: r.lineEnd } : {} } } : {}
       }
@@ -1422,7 +1470,7 @@ function writeSarif(runDir, out) {
 }
 
 // src/clean.ts
-import { readdirSync as readdirSync3, rmSync as rmSync2 } from "fs";
+import { readdirSync as readdirSync4, rmSync as rmSync2 } from "fs";
 import { join as join9 } from "path";
 var DERIVED = [
   "VERIFY.todo.json",
@@ -1455,7 +1503,7 @@ function clean(runDir, opts = {}) {
     }
   }
   if (exists(runDir)) {
-    for (const e of readdirSync3(runDir)) {
+    for (const e of readdirSync4(runDir)) {
       if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
         rmSync2(join9(runDir, e), { force: true });
         removed.push(join9(runDir, e));
@@ -2440,7 +2488,7 @@ function str(v) {
 }
 
 // src/verify.ts
-import { readdirSync as readdirSync4 } from "fs";
+import { readdirSync as readdirSync5 } from "fs";
 import { isAbsolute as isAbsolute3, join as join17, resolve as resolve4 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -2524,7 +2572,7 @@ function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
   const files = [join17(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join17(runDir, e));
+    for (const e of readdirSync5(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join17(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;

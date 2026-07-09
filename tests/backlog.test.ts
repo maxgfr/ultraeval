@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildBacklog } from "../src/backlog.js";
 
@@ -20,6 +20,33 @@ function scaffold(findings: unknown[], verify?: unknown): string {
   );
   writeFileSync(join(run, "findings.json"), JSON.stringify({ findings }));
   if (verify) writeFileSync(join(run, "VERIFY.json"), JSON.stringify(verify));
+  return run;
+}
+
+// A target scaffold with an arbitrary file layout + a single confirmed finding
+// citing `evidenceRef` — used to probe guessTestFile's convention detection.
+function scaffoldWith(files: Record<string, string>, evidenceRef: string): string {
+  const root = mkdtempSync(join(tmpdir(), "ue-bl-"));
+  tmps.push(root);
+  const target = join(root, "target");
+  mkdirSync(target, { recursive: true });
+  for (const [rel, content] of Object.entries(files)) {
+    const p = join(target, rel);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, content);
+  }
+  const run = join(root, "run");
+  mkdirSync(run, { recursive: true });
+  writeFileSync(
+    join(run, "eval.config.json"),
+    JSON.stringify({ target: "target", targetAbs: target, kind: "codebase", category: "library", dimensions: [], version: "0.0.0" }),
+  );
+  writeFileSync(
+    join(run, "findings.json"),
+    JSON.stringify({
+      findings: [{ id: "F1", severity: "P1", title: "t", statement: "s", evidence: [{ ref: evidenceRef }], status: "confirmed", recommendation: "fix" }],
+    }),
+  );
   return run;
 }
 
@@ -141,6 +168,28 @@ describe("backlog — TDD fix cards", () => {
     expect(targets).toContain("src/lib.ts");
     expect(targets.some((t) => t.startsWith("analysis:"))).toBe(false);
     expect(targets.some((t) => t.startsWith("run:") || t.startsWith("url:"))).toBe(false);
+  });
+
+  it("places the RED test under tests/ when the target keeps its tests there (FIX-020)", () => {
+    const run = scaffoldWith({ "app.js": "x\n", "tests/app.test.js": "t\n" }, "app.js:1");
+    const testFile = buildBacklog(run).tasks[0]?.red.testFile ?? "";
+    expect(testFile.startsWith("tests/")).toBe(true);
+    expect(testFile).toMatch(/\.test\.js$/);
+  });
+
+  it("emits a colocated *.spec path when the target uses colocated spec tests (FIX-020)", () => {
+    const run = scaffoldWith({ "src/foo.ts": "x\n", "src/foo.spec.ts": "t\n", "src/bar.ts": "y\n" }, "src/bar.ts:1");
+    expect(buildBacklog(run).tasks[0]?.red.testFile).toBe("src/bar.spec.ts");
+  });
+
+  it("emits an __tests__ path when the target colocates tests under __tests__ (FIX-020)", () => {
+    const run = scaffoldWith({ "src/foo.ts": "x\n", "src/__tests__/foo.test.ts": "t\n", "src/bar.ts": "y\n" }, "src/bar.ts:1");
+    expect(buildBacklog(run).tasks[0]?.red.testFile).toBe("src/__tests__/bar.test.ts");
+  });
+
+  it("falls back to tests/<name>.test.<ext> for an unknown/empty layout (FIX-020)", () => {
+    const run = scaffoldWith({ "app.js": "x\n" }, "app.js:1");
+    expect(buildBacklog(run).tasks[0]?.red.testFile).toBe("tests/app.test.js");
   });
 
   it("labels an opportunity task and bands it by impact (high -> P1)", () => {
