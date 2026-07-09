@@ -82,6 +82,16 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     expect(run(["check"]).status).toBe(2);
   });
 
+  it("sharded verify names the shard worklist it actually wrote", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-shard-"));
+    tmps.push(dir);
+    cpSync(join(FIX, "sample-run"), dir, { recursive: true });
+    const r = run(["verify", "--run", dir, "--shards", "2", "--shard", "0"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(join(dir, "VERIFY.todo.0.json"));
+    expect(r.out).not.toContain(`${join(dir, "VERIFY.todo.json")} `);
+  });
+
   it("check fails (exit 1) on a doctored citation", () => {
     const dir = mkdtempSync(join(tmpdir(), "ue-bad-"));
     tmps.push(dir);

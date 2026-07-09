@@ -112,7 +112,9 @@ export function rankBrainstorm(runDir: string): RankResult {
       statement: o.statement,
       evidence: o.evidence ?? [],
       recommendation: o.recommendation,
-      status: "confirmed",
+      // Folded, not adjudicated: verify/adjudication decides confirmed|dismissed,
+      // and check's still-open warning keeps the gap visible until then.
+      status: "open",
     });
     added++;
   }

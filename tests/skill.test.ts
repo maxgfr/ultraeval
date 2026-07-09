@@ -50,6 +50,11 @@ describe("SKILL.md packaging", () => {
     expect(gc).toMatch(/claimId/);
   });
 
+  it("gate-contract.md documents the sharded worklist filename verify --shards writes", () => {
+    const gc = readFileSync(join(SKILL_DIR, "references", "gate-contract.md"), "utf8");
+    expect(gc).toMatch(/VERIFY\.todo\.<i>\.json/);
+  });
+
   it("analysis-playbook.md documents the impact→severity mapping brainstorm --rank applies", () => {
     const ap = readFileSync(join(SKILL_DIR, "references", "analysis-playbook.md"), "utf8");
     expect(ap).toMatch(/high\s*(→|->)\s*P1/);

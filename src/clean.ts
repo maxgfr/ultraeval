@@ -5,7 +5,7 @@ import { exists } from "./util.js";
 // Derived artifacts a re-run regenerates. Default `clean` removes ONLY these and
 // keeps the deliverables (findings.json, RESULTS.md, SUMMARY.md, research/,
 // runs/, agents/, eval.workflow.mjs, eval.config.json). `--all` removes the run.
-const DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md"];
+const DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md", "eval.sarif"];
 
 export function clean(runDir: string, opts: { all?: boolean } = {}): string[] {
   const removed: string[] = [];

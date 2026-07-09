@@ -34,7 +34,9 @@ function guessTestFile(targets: string[], f: Finding): string {
 
 export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
   const cfg = readJson<EvalConfig>(join(runDir, "eval.config.json"));
-  const doc = readJson<FindingsDoc>(join(runDir, "findings.json"));
+  const findingsPath = join(runDir, "findings.json");
+  if (!exists(findingsPath)) throw new Error("no findings.json — record findings first (see agents/findings.md), then re-run backlog");
+  const doc = readJson<FindingsDoc>(findingsPath);
   const failed = new Set<string>();
   const vpath = join(runDir, "VERIFY.json");
   if (exists(vpath)) {

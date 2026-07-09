@@ -38,6 +38,18 @@ const mk = (id: string, sev: string, status: string) => ({
 });
 
 describe("backlog — TDD fix cards", () => {
+  it("errors actionably when findings.json is missing (pipeline run out of order)", () => {
+    const root = mkdtempSync(join(tmpdir(), "ue-bl-"));
+    tmps.push(root);
+    const run = join(root, "run");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({ target: "t", targetAbs: root, kind: "codebase", category: "library", dimensions: [], version: "0.0.0" }),
+    );
+    expect(() => buildBacklog(run)).toThrow(/no findings\.json — record findings first/);
+  });
+
   it("includes only confirmed findings, sorted by priority", () => {
     const run = scaffold([mk("F1", "P1", "confirmed"), mk("F2", "P0", "confirmed"), mk("F3", "P2", "dismissed")]);
     const bl = buildBacklog(run, { tdd: true });

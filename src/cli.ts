@@ -216,8 +216,11 @@ function main(): void {
           console.log(formatVerifyReport(res));
           process.exitCode = res.ok ? 0 : 1;
         } else {
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards: num(args.shards), shard: num(args.shard) });
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/VERIFY.todo.json (fill verdicts, then --apply <file>)`);
+          const shards = num(args.shards);
+          const shard = num(args.shard);
+          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard });
+          const todoName = shards !== undefined && shard !== undefined ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
+          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
         }
         return;
       }

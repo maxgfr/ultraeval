@@ -461,7 +461,9 @@ function guessTestFile(targets, f) {
 }
 function buildBacklog(runDir, opts = {}) {
   const cfg = readJson(join3(runDir, "eval.config.json"));
-  const doc = readJson(join3(runDir, "findings.json"));
+  const findingsPath = join3(runDir, "findings.json");
+  if (!exists(findingsPath)) throw new Error("no findings.json \u2014 record findings first (see agents/findings.md), then re-run backlog");
+  const doc = readJson(findingsPath);
   const failed = /* @__PURE__ */ new Set();
   const vpath = join3(runDir, "VERIFY.json");
   if (exists(vpath)) {
@@ -648,7 +650,9 @@ function rankBrainstorm(runDir) {
       statement: o.statement,
       evidence: o.evidence ?? [],
       recommendation: o.recommendation,
-      status: "confirmed"
+      // Folded, not adjudicated: verify/adjudication decides confirmed|dismissed,
+      // and check's still-open warning keeps the gap visible until then.
+      status: "open"
     });
     added++;
   }
@@ -1017,7 +1021,7 @@ function writeSarif(runDir, out) {
 // src/clean.ts
 import { readdirSync as readdirSync3, rmSync } from "fs";
 import { join as join8 } from "path";
-var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md"];
+var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "index.html", "index.md", "BACKLOG.json", "REMEDIATION.md", "eval.sarif"];
 function clean(runDir, opts = {}) {
   const removed = [];
   if (exists(runDir) && !exists(join8(runDir, "eval.config.json"))) {
@@ -2098,8 +2102,11 @@ Launch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  \u2014 or
           console.log(formatVerifyReport(res));
           process.exitCode = res.ok ? 0 : 1;
         } else {
-          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards: num(args.shards), shard: num(args.shard) });
-          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/VERIFY.todo.json (fill verdicts, then --apply <file>)`);
+          const shards = num(args.shards);
+          const shard = num(args.shard);
+          const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard });
+          const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
+          console.log(`ultraeval verify: ${todo.pairs.length} pair(s) -> ${run}/${todoName} (fill verdicts, then --apply <file>)`);
         }
         return;
       }
