@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.8.1](https://github.com/maxgfr/ultraeval/compare/v1.8.0...v1.8.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **check:** --semantic warns when the verdict layer was never applied ([aae9faf](https://github.com/maxgfr/ultraeval/commit/aae9fafcb5555b575fd1671cd261f7038e0fce16))
+* **check:** enforce pair-level adjudication coverage in the require-verify gate ([62c0118](https://github.com/maxgfr/ultraeval/commit/62c011812f51ae94a04a9c855eba654ca3a6d58f))
+* **check:** re-reduce verdicts[] against live findings so the semantic gate fails closed ([99261d4](https://github.com/maxgfr/ultraeval/commit/99261d455622348f42d4e7de6b089f4abaf4de14))
+
 # [1.8.0](https://github.com/maxgfr/ultraeval/compare/v1.7.1...v1.8.0) (2026-07-09)
 
 

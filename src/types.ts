@@ -1,6 +1,6 @@
 // The version the engine/bundle reports; kept in lockstep with package.json and
 // SKILL.md by scripts/sync-version.mjs during a semantic-release.
-export const VERSION = "1.8.0";
+export const VERSION = "1.8.1";
 
 // ---- caps / knobs --------------------------------------------------------
 export const CAPS = {
