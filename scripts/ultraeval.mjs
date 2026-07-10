@@ -1495,18 +1495,28 @@ function checkRun(runDir, opts = {}) {
       }
     }
   }
-  if (opts.semantic && exists(verifyPath)) {
-    try {
-      const v = readJson(verifyPath);
-      const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
-      const failIds = /* @__PURE__ */ new Set([...v.failures ?? [], ...reReduced.failures]);
-      for (const fid of failIds) {
-        const f = findings.find((x) => x.id === fid);
-        if (f && f.status !== "dismissed")
-          errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" \u2014 dismiss it or fix the claim`);
+  if (opts.semantic) {
+    if (!exists(verifyPath)) {
+      warnings.push(
+        "--semantic: no VERIFY.json \u2014 the verdict/semantic layer was not applied; only file:line grounding was checked (run `ultraeval verify --apply <verdicts>` to adjudicate claims, or --require-verify to gate on it)"
+      );
+    } else {
+      try {
+        const v = readJson(verifyPath);
+        const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
+        const failIds = /* @__PURE__ */ new Set([...v.failures ?? [], ...reReduced.failures]);
+        for (const fid of failIds) {
+          const f = findings.find((x) => x.id === fid);
+          if (f && f.status !== "dismissed")
+            errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" \u2014 dismiss it or fix the claim`);
+        }
+        if (!v.verdicts?.length)
+          warnings.push(
+            "--semantic: VERIFY.json carries no verdict rows \u2014 the trustless re-reduction had nothing to adjudicate; the verdict/semantic layer was not (re)applied to the current findings"
+          );
+      } catch {
+        errors.push("--semantic: VERIFY.json is not valid JSON");
       }
-    } catch {
-      errors.push("--semantic: VERIFY.json is not valid JSON");
     }
   }
   const sinceRef = cfg.provenance?.sinceRef;

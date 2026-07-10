@@ -223,21 +223,40 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       }
     }
   }
-  if (opts.semantic && exists(verifyPath)) {
-    try {
-      const v = readJson<VerifyResult>(verifyPath);
-      const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
-      // Re-derive the refuted/unsupported set from the raw verdict rows and union
-      // it with the stored failures[] — a scrubbed failures[] cannot hide a claim
-      // whose verdict row still says refuted/unsupported.
-      const failIds = new Set<string>([...(v.failures ?? []), ...reReduced.failures]);
-      for (const fid of failIds) {
-        const f = findings.find((x) => x.id === fid);
-        if (f && f.status !== "dismissed")
-          errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" — dismiss it or fix the claim`);
+  if (opts.semantic) {
+    // Don't silently degrade to grounding-only. --semantic asks for the verdict
+    // layer; if there is no VERIFY.json (or it carries no verdict rows) that layer
+    // was never (re)applied, so the operator must be TOLD — a clean "every finding
+    // is grounded" would otherwise misrepresent an unadjudicated run. This only
+    // WARNS; hard-failing on a missing ledger stays --require-verify's job.
+    if (!exists(verifyPath)) {
+      warnings.push(
+        "--semantic: no VERIFY.json — the verdict/semantic layer was not applied; only file:line grounding was checked (run `ultraeval verify --apply <verdicts>` to adjudicate claims, or --require-verify to gate on it)",
+      );
+    } else {
+      try {
+        const v = readJson<VerifyResult>(verifyPath);
+        const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
+        // Re-derive the refuted/unsupported set from the raw verdict rows and union
+        // it with the stored failures[] — a scrubbed failures[] cannot hide a claim
+        // whose verdict row still says refuted/unsupported.
+        const failIds = new Set<string>([...(v.failures ?? []), ...reReduced.failures]);
+        for (const fid of failIds) {
+          const f = findings.find((x) => x.id === fid);
+          if (f && f.status !== "dismissed")
+            errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" — dismiss it or fix the claim`);
+        }
+        // No raw verdict rows to re-reduce: the trustless semantic layer had nothing
+        // to adjudicate against the current findings (the gate can only trust the
+        // stored summary). Surface that so the operator knows the layer was not
+        // (re)applied — same silent-degradation risk as a missing ledger.
+        if (!(v.verdicts?.length))
+          warnings.push(
+            "--semantic: VERIFY.json carries no verdict rows — the trustless re-reduction had nothing to adjudicate; the verdict/semantic layer was not (re)applied to the current findings",
+          );
+      } catch {
+        errors.push("--semantic: VERIFY.json is not valid JSON");
       }
-    } catch {
-      errors.push("--semantic: VERIFY.json is not valid JSON");
     }
   }
 

@@ -119,6 +119,16 @@ describe("check — grounding gate", () => {
     expect(checkRun(run, { semantic: true }).ok).toBe(false);
   });
 
+  it("--semantic WARNS (never hard-fails) when no VERIFY.json exists — the operator is told the verdict layer was never applied", () => {
+    // Silent degradation: --semantic with no VERIFY.json used to pass ok:true with
+    // no signal at all, so an operator who asked for the semantic gate never learned
+    // the verdict layer was skipped. It must stay ok:true (that is --require-verify's
+    // job to gate) but surface a warning naming the un-applied verdict layer.
+    const r = checkRun(scaffold([genuine]), { semantic: true });
+    expect(r.ok).toBe(true); // grounding-only still passes — --semantic alone does NOT hard-fail
+    expect(r.warnings.some((w) => /verdict|semantic/i.test(w) && /not applied|no VERIFY\.json/i.test(w))).toBe(true);
+  });
+
   it("--min-findings enforces a floor", () => {
     expect(checkRun(scaffold([genuine]), { minFindings: 3 }).ok).toBe(false);
   });
