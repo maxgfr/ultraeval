@@ -373,6 +373,54 @@ describe("check — grounding gate", () => {
     const r = checkRun(run);
     expect(r.warnings.join(" ")).not.toMatch(/provenance/);
   });
+
+  // Trustless ledger: the semantic/require-verify gate must RE-REDUCE the raw
+  // verdict rows against the CURRENT findings, not trust VERIFY.json's stored
+  // failures[]/unadjudicated[] (which an edit to findings.json — or a hand-edit
+  // of the ledger — leaves stale). Two class fail-opens are probed here.
+  it("STALE-LEDGER: fails --require-verify when a finding carries no verdict row even though stored unadjudicated[] is empty", () => {
+    // F2 was added (or edited) AFTER verify --apply: the verdict rows only cover
+    // F1, and the stored unadjudicated[] (computed before F2 existed) is empty.
+    const run = scaffold([genuine, { ...genuine, id: "F2", evidence: [{ ref: "app.js:2" }] }], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        adjudicated: 1,
+        supported: 1,
+        partial: 0,
+        refuted: 0,
+        unsupported: 0,
+        failures: [],
+        unadjudicated: [], // STALE — does not include the never-adjudicated F2
+        verdicts: [{ claimId: "F1", verdict: "supported" }],
+      }),
+    });
+    const r = checkRun(run, { requireVerify: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/unadjudicated/);
+    expect(r.errors.join(" ")).toMatch(/F2/);
+  });
+
+  it("DELETED-VERDICT: --semantic re-derives a refuted finding from verdicts[] even when stored failures[] was scrubbed", () => {
+    // The refuting verdict row survives in verdicts[] but was deleted from the
+    // stored failures[] summary; a trustless gate must re-reduce and still fail.
+    const run = scaffold([genuine], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        adjudicated: 1,
+        supported: 0,
+        partial: 0,
+        refuted: 1,
+        unsupported: 0,
+        failures: [], // SCRUBBED — F1 removed from the failure summary
+        unadjudicated: [],
+        verdicts: [{ claimId: "F1", verdict: "refuted" }],
+      }),
+    });
+    const r = checkRun(run, { semantic: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/refuted|unsupported/);
+    expect(r.errors.join(" ")).toMatch(/F1/);
+  });
 });
 
 describe("check — dimensionsHash re-validation (FIX-009)", () => {

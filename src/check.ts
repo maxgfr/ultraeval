@@ -5,6 +5,7 @@ import { dimensionsHash } from "./init.js";
 import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
 import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, VerifyResult } from "./types.js";
 import { exists, parseEvidenceRef, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
+import { reduceVerdicts } from "./verify.js";
 
 export interface CheckOpts {
   semantic?: boolean;
@@ -141,12 +142,22 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   }
 
   // 4. Semantic fold (opt-in). Additive — can only ADD failures.
+  //
+  // TRUSTLESS LEDGER: never trust VERIFY.json's stored failures[]/unadjudicated[]
+  // on their own — an edit to findings.json (a claim added or refuted-then-fixed
+  // AFTER `verify --apply`) or a hand-edit of the ledger leaves those summaries
+  // STALE, and a gate that reads them verbatim fails OPEN. So re-reduce the raw
+  // verdict rows (verdicts[]) against the CURRENT findings and UNION the recomputed
+  // failures/unadjudicated with the stored ones. Union is additive — it can only
+  // ADD a failure, never remove one — so a consistent ledger is unaffected while
+  // every unadjudicated or newly-refuted claim is caught.
   const verifyPath = join(runDir, "VERIFY.json");
   if (opts.requireVerify) {
     if (!exists(verifyPath)) errors.push("--require-verify: no VERIFY.json — run `ultraeval verify --apply <verdicts>`");
     else {
       try {
         const v = readJson<VerifyResult>(verifyPath);
+        const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
         if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
         if (v.honeypots?.failed?.length)
           errors.push(
@@ -154,7 +165,10 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
           );
         // Partial adjudication is not adjudication: every emitted pair must have
         // a verdict, or the unverified findings would sail through the exit gate.
-        const pending = (v.unadjudicated ?? []).filter((fid) => {
+        // Re-derive the unadjudicated set from the live findings (union with the
+        // stored one) so a claim added/edited after --apply cannot slip through.
+        const unadjIds = new Set<string>([...(v.unadjudicated ?? []), ...reReduced.unadjudicated]);
+        const pending = [...unadjIds].filter((fid) => {
           const f = findings.find((x) => x.id === fid);
           return f && f.status !== "dismissed";
         });
@@ -167,7 +181,12 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   if (opts.semantic && exists(verifyPath)) {
     try {
       const v = readJson<VerifyResult>(verifyPath);
-      for (const fid of v.failures ?? []) {
+      const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
+      // Re-derive the refuted/unsupported set from the raw verdict rows and union
+      // it with the stored failures[] — a scrubbed failures[] cannot hide a claim
+      // whose verdict row still says refuted/unsupported.
+      const failIds = new Set<string>([...(v.failures ?? []), ...reReduced.failures]);
+      for (const fid of failIds) {
         const f = findings.find((x) => x.id === fid);
         if (f && f.status !== "dismissed")
           errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" — dismiss it or fix the claim`);
