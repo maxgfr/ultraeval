@@ -1454,6 +1454,28 @@ function checkRun(runDir, opts = {}) {
           return f && f.status !== "dismissed";
         });
         if (pending.length) errors.push(`--require-verify: ${pending.length} finding(s) still unadjudicated (${pending.join(", ")}) \u2014 grade every verify pair`);
+        let expectedPairs = [];
+        try {
+          expectedPairs = buildWorklist(runDir).pairs;
+        } catch {
+          expectedPairs = [];
+        }
+        const pairKeys = /* @__PURE__ */ new Set();
+        const findingLevel = /* @__PURE__ */ new Set();
+        for (const vr of v.verdicts ?? []) {
+          if (!vr || !VALID_VERDICTS.includes(vr.verdict)) continue;
+          if (vr.evidenceRef) pairKeys.add(`${vr.claimId}\u241F${vr.evidenceRef}`);
+          else findingLevel.add(vr.claimId);
+        }
+        const uncovered = expectedPairs.filter((p) => !findingLevel.has(p.claimId) && !pairKeys.has(`${p.claimId}\u241F${p.evidenceRef}`));
+        if (uncovered.length) {
+          const claims = [...new Set(uncovered.map((p) => p.claimId))];
+          errors.push(
+            `--require-verify: ${uncovered.length} cited (finding \xD7 evidence) pair(s) have no verdict (${uncovered.slice(0, 6).map((p) => `${p.claimId} @ ${p.evidenceRef}`).join(
+              ", "
+            )}${uncovered.length > 6 ? ", \u2026" : ""}) \u2014 a per-finding grade cannot stand in for a per-pair one; re-run \`verify\` + \`verify --apply\` so every cited evidence ref is adjudicated (findings: ${claims.join(", ")})`
+          );
+        }
       } catch {
         errors.push("--require-verify: VERIFY.json is not valid JSON");
       }

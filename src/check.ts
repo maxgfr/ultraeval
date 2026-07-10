@@ -2,10 +2,10 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { extractUnits, findingRefs, isCited } from "./citations.js";
 import { dimensionsHash } from "./init.js";
-import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES } from "./types.js";
-import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, VerifyResult } from "./types.js";
+import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES, VALID_VERDICTS } from "./types.js";
+import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, Verdict, VerifyResult } from "./types.js";
 import { exists, parseEvidenceRef, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
-import { reduceVerdicts } from "./verify.js";
+import { buildWorklist, reduceVerdicts } from "./verify.js";
 
 export interface CheckOpts {
   semantic?: boolean;
@@ -173,6 +173,51 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
           return f && f.status !== "dismissed";
         });
         if (pending.length) errors.push(`--require-verify: ${pending.length} finding(s) still unadjudicated (${pending.join(", ")}) — grade every verify pair`);
+
+        // PAIR-LEVEL coverage. reduceVerdicts (above) judges adjudication per
+        // FINDING: a finding keeps counting as adjudicated as long as ONE of its
+        // pairs carries a verdict. So a finding with two cited pairs — one graded
+        // `refuted`, one `supported` — can be laundered green by deleting ONLY the
+        // refuted row: the surviving supported row keeps the finding out of both
+        // failures[] and unadjudicated[], and the finding-level fold recomputes no
+        // failure. Adjudication is really a promise about every (finding × cited
+        // evidence) PAIR, so re-derive the EXPECTED pairs from the CURRENT
+        // findings.json with the SAME pure builder `verify` uses (buildWorklist),
+        // and fail closed on any pair without an adjudicated verdict row.
+        //
+        // Cap-awareness: buildWorklist applies the maxVerify cap itself, so the
+        // re-derived list is ALREADY the (possibly truncated) worklist an honest
+        // default-cap `verify` would emit — every pair in it must be adjudicated,
+        // and there is no beyond-cap remainder to excuse a shortfall. A verdict row
+        // WITHOUT an evidenceRef is a legacy finding-level grade we cannot pin to a
+        // pair; it credits every pair of its finding (the real `verify --apply`
+        // flow always stamps evidenceRef, so this only affects hand-authored
+        // ledgers and never weakens coverage on a genuine run).
+        let expectedPairs: { claimId: string; evidenceRef: string }[] = [];
+        try {
+          expectedPairs = buildWorklist(runDir).pairs;
+        } catch {
+          expectedPairs = [];
+        }
+        const pairKeys = new Set<string>();
+        const findingLevel = new Set<string>();
+        for (const vr of v.verdicts ?? []) {
+          if (!vr || !VALID_VERDICTS.includes(vr.verdict as Verdict)) continue;
+          if (vr.evidenceRef) pairKeys.add(`${vr.claimId}␟${vr.evidenceRef}`);
+          else findingLevel.add(vr.claimId);
+        }
+        const uncovered = expectedPairs.filter((p) => !findingLevel.has(p.claimId) && !pairKeys.has(`${p.claimId}␟${p.evidenceRef}`));
+        if (uncovered.length) {
+          const claims = [...new Set(uncovered.map((p) => p.claimId))];
+          errors.push(
+            `--require-verify: ${uncovered.length} cited (finding × evidence) pair(s) have no verdict (${uncovered
+              .slice(0, 6)
+              .map((p) => `${p.claimId} @ ${p.evidenceRef}`)
+              .join(
+                ", ",
+              )}${uncovered.length > 6 ? ", …" : ""}) — a per-finding grade cannot stand in for a per-pair one; re-run \`verify\` + \`verify --apply\` so every cited evidence ref is adjudicated (findings: ${claims.join(", ")})`,
+          );
+        }
       } catch {
         errors.push("--require-verify: VERIFY.json is not valid JSON");
       }

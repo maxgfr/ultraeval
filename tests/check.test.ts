@@ -421,6 +421,35 @@ describe("check — grounding gate", () => {
     expect(r.errors.join(" ")).toMatch(/refuted|unsupported/);
     expect(r.errors.join(" ")).toMatch(/F1/);
   });
+
+  // PAIR-LEVEL coverage: adjudication is judged per (finding × cited-evidence)
+  // PAIR, not per finding. A finding with two evidence pairs — one graded
+  // "refuted", one "supported" — is a finding-level failure while both rows are
+  // present. Selectively deleting ONLY the refuted row (and scrubbing failures[])
+  // leaves a supported row: the finding still counts as adjudicated, reduceVerdicts
+  // recomputes no failure, and the finding-level unadjudicated set stays empty — so
+  // the require-verify gate goes GREEN even though (F1, app.js:1) is now unverified.
+  // The gate must re-derive the EXPECTED pairs from the CURRENT findings (the same
+  // derivation verify uses) and fail closed on any pair without an adjudicated row.
+  it("PAIR-COVERAGE: fails --require-verify when a refuted evidence pair's verdict is deleted but a sibling supported pair remains", () => {
+    const run = scaffold([{ ...genuine, evidence: [{ ref: "app.js:1" }, { ref: "app.js:2" }] }], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        adjudicated: 1,
+        supported: 1,
+        partial: 0,
+        refuted: 0, // the refuted row for (F1, app.js:1) was deleted
+        unsupported: 0,
+        failures: [], // scrubbed
+        unadjudicated: [], // F1 still has a (supported) row, so finding-level is "adjudicated"
+        verdicts: [{ claimId: "F1", evidenceRef: "app.js:2", verdict: "supported" }],
+      }),
+    });
+    const r = checkRun(run, { requireVerify: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/app\.js:1|pair|no verdict|unadjudicated/);
+    expect(r.errors.join(" ")).toMatch(/F1/);
+  });
 });
 
 describe("check — dimensionsHash re-validation (FIX-009)", () => {
