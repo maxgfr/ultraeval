@@ -247,6 +247,42 @@ describe("backlog — TDD fix cards", () => {
     expect(buildBacklog(run).tasks[0]?.red.testFile).toBe("tests/app.test.js");
   });
 
+  it("never suggests a PRE-EXISTING target test file as the RED test — it picks a fresh path that does not exist and marks it expected-new (TDD-gate integrity)", () => {
+    // The target already keeps a GREEN test at tests/app.test.js and the finding
+    // cites app.js: the convention guess (tests/app.test.js) collides with the
+    // existing file. Reusing it would let verify-fix green-stamp the task with a
+    // pre-existing test (no failing-test-first authored). The RED test path must
+    // therefore NOT already exist, and the task must record that it is expected-new.
+    const root = mkdtempSync(join(tmpdir(), "ue-bl-"));
+    tmps.push(root);
+    const target = join(root, "target");
+    mkdirSync(join(target, "tests"), { recursive: true });
+    writeFileSync(join(target, "app.js"), "a\nb\nc\n");
+    writeFileSync(join(target, "tests", "app.test.js"), "// a pre-existing, already-green test\n");
+    const run = join(root, "run");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({ target: "target", targetAbs: target, kind: "codebase", category: "library", dimensions: [], version: "0.0.0" }),
+    );
+    writeFileSync(
+      join(run, "findings.json"),
+      JSON.stringify({
+        findings: [{ id: "F1", severity: "P1", title: "t", statement: "s", evidence: [{ ref: "app.js:1" }], status: "confirmed", recommendation: "fix" }],
+      }),
+    );
+    const red = buildBacklog(run).tasks[0]?.red;
+    expect(red?.testFile).toBeTruthy();
+    // The suggested RED test must NOT be the pre-existing file, and must not exist yet.
+    expect(existsSync(join(target, red?.testFile ?? ""))).toBe(false);
+    expect(red?.testFile).not.toBe("tests/app.test.js");
+    // It stays a recognizable test path (still under tests/, still a *.test.js).
+    expect(red?.testFile.startsWith("tests/")).toBe(true);
+    expect(red?.testFile).toMatch(/\.test\.js$/);
+    // And the task records that the agent is expected to author it (test-first).
+    expect(red?.expectedNew).toBe(true);
+  });
+
   it("labels an opportunity task and bands it by impact (high -> P1)", () => {
     const opp = {
       id: "F1",

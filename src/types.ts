@@ -227,7 +227,11 @@ export interface FixTask {
   title: string;
   rationale: string;
   targets: string[]; // files the fix touches (from the finding evidence)
-  red: { testFile: string; description: string }; // the failing test to write FIRST
+  // The failing test to write FIRST. `expectedNew` captures the pre-existence
+  // state at backlog time: true = testFile did NOT exist (the agent must author
+  // it), false = it already existed (a pre-existing test is not test-first for
+  // THIS task). verify-fix reads this to gate that a genuine RED test was written.
+  red: { testFile: string; description: string; expectedNew?: boolean };
   green: { change: string }; // the minimal change to make it pass
   verify: { command: string }; // how to confirm green
   dependsOn: string[];

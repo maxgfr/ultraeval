@@ -7,7 +7,7 @@ import { emitFixAgents, verifyFix } from "../src/fix.js";
 
 const tmps: string[] = [];
 
-function scaffold(opts: { verifyCommand?: string; redTestFile?: string; withRedTest?: boolean } = {}): { run: string; target: string } {
+function scaffold(opts: { verifyCommand?: string; redTestFile?: string; withRedTest?: boolean; expectedNew?: boolean } = {}): { run: string; target: string } {
   const root = mkdtempSync(join(tmpdir(), "ue-fix-"));
   tmps.push(root);
   const target = join(root, "target");
@@ -42,7 +42,14 @@ function scaffold(opts: { verifyCommand?: string; redTestFile?: string; withRedT
     title: `task ${id}`,
     rationale: "because",
     targets: ["src/app.js"],
-    red: { testFile: opts.redTestFile ?? "tests/app.test.js", description: "write the failing test" },
+    red: {
+      testFile: opts.redTestFile ?? "tests/app.test.js",
+      description: "write the failing test",
+      // A freshly-generated backlog records whether the RED test file was absent
+      // at backlog time (agent must author it). Default true = the honest "the
+      // agent created a fresh test-first" happy path.
+      expectedNew: opts.expectedNew ?? true,
+    },
     green: { change: "make it pass" },
     verify: { command: opts.verifyCommand ?? "node -e 'process.exit(0)'" },
     dependsOn,
@@ -142,6 +149,18 @@ describe("verify-fix — close the red-green loop", () => {
     const r = verifyFix(run, "FIX-001");
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/test file/i);
+  });
+
+  it("fails closed when the RED test file PRE-EXISTED at backlog time — a green suite + an already-existing test is not test-first (TDD-gate integrity)", () => {
+    // The mature target's suite is already green and the task's red.testFile is a
+    // pre-existing test file (expectedNew:false). No new failing test was authored
+    // and no fix was made — verify-fix must NOT green-stamp this as done.
+    const { run } = scaffold({ verifyCommand: "node -e 'process.exit(0)'", withRedTest: true, expectedNew: false });
+    const r = verifyFix(run, "FIX-001");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/pre-?existed|already existed|test-first/i);
+    const bl = JSON.parse(readFileSync(join(run, "BACKLOG.json"), "utf8"));
+    expect(bl.tasks[0].status).toBeUndefined(); // never stamped done
   });
 
   it("throws on an unknown task id", () => {

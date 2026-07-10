@@ -569,6 +569,17 @@ function guessTestFile(targets, f, conv) {
   const base = conv.layout ?? "tests";
   return `${base}/${name}${suffix}${ext}`;
 }
+function distinctTestPath(rel, disc) {
+  if (/\.(test|spec)\./.test(rel)) return rel.replace(/\.(test|spec)\./, `.${disc}.$1.`);
+  if (/_test\.[^./]+$/.test(rel)) return rel.replace(/_test\.([^./]+)$/, `.${disc}_test.$1`);
+  return rel.replace(/\.([^./]+)$/, `.${disc}.$1`);
+}
+function freshTestFile(guess, disc, targetAbs) {
+  if (!exists(join3(targetAbs, guess))) return guess;
+  let candidate = distinctTestPath(guess, disc);
+  for (let n = 2; exists(join3(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
+  return candidate;
+}
 function detectVerifyCommand(targetAbs) {
   if (exists(join3(targetAbs, "package.json"))) {
     const pkg = readJson(join3(targetAbs, "package.json"));
@@ -609,8 +620,10 @@ function buildBacklog(runDir, opts = {}) {
   const tasks = confirmed.map((f, i) => {
     const targets = targetsOf(f);
     const isOpp = f.kind === "opportunity";
+    const id = `FIX-${String(i + 1).padStart(3, "0")}`;
+    const testFile = freshTestFile(guessTestFile(targets, f, conv), id, targetAbs);
     return {
-      id: `FIX-${String(i + 1).padStart(3, "0")}`,
+      id,
       findingId: f.id,
       kind: f.kind ?? "defect",
       priority: prio(f),
@@ -618,7 +631,8 @@ function buildBacklog(runDir, opts = {}) {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f, conv),
+        testFile,
+        expectedNew: !exists(join3(targetAbs, testFile)),
         description: isOpp ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}` : f.failureScenario ? `Write a failing test that reproduces: ${f.failureScenario}` : `Write a failing test asserting the correct behavior for: ${f.statement}`
       },
       green: {
@@ -2248,7 +2262,7 @@ Touch only: ${absTargets.map((x) => `\`${x}\``).join(", ") || "the relevant modu
 \`${t.verify.command}\`
 The RED test now passes and nothing regresses. Then close the loop:
 \`node ${engineAbs} verify-fix --run ${runDir} --task ${t.id}\`
-(echoes the exact command + cwd, then replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json \u2014 exit 1 otherwise).
+(echoes the exact command + cwd, then replays the verify command timeboxed, confirms the RED test was AUTHORED for this task \u2014 the task-specific test file the backlog marked expected-new must now exist \u2014 and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json \u2014 exit 1 otherwise).
 Note: \`verify.command\` in BACKLOG.json is executable configuration \u2014 it runs verbatim through a shell in the target with your privileges; treat a run directory from an untrusted source like code.
 
 ## Invariants (non-negotiable)
@@ -2316,12 +2330,27 @@ function verifyFix(runDir, taskId, opts = {}) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const redFile = isAbsolute3(task.red.testFile) ? task.red.testFile : resolve4(targetAbs, task.red.testFile);
   const redTestExists = exists(redFile);
+  const expectedNew = task.red.expectedNew;
+  let testFirst = true;
+  let testFirstReason;
+  if (expectedNew === false) {
+    testFirst = false;
+    testFirstReason = `RED test file ${redFile} already existed when the backlog was generated \u2014 a pre-existing test is not a failing-test-first authored for ${taskId}; write a new task-specific RED test`;
+  } else if (expectedNew === true) {
+    if (!redTestExists) {
+      testFirst = false;
+      testFirstReason = `RED test file missing: ${redFile} \u2014 it was expected to be authored (test-first) for ${taskId} but does not exist; the fix was not test-first`;
+    }
+  } else {
+    testFirst = false;
+    testFirstReason = redTestExists ? `RED test file ${redFile} has no recorded pre-existence state (legacy backlog) \u2014 cannot confirm it was authored first for ${taskId}; regenerate the backlog with \`ultraeval backlog\` so verify-fix can gate test-first` : `RED test file missing: ${redFile} \u2014 the fix was not test-first`;
+  }
   console.error(`verify-fix ${taskId}: replaying \`${task.verify.command}\` in ${targetAbs}`);
   const proc = spawnSync(task.verify.command, { shell: true, cwd: targetAbs, encoding: "utf8", timeout: opts.timeoutMs ?? 6e5 });
   const exitCode = proc.status;
-  const ok = exitCode === 0 && redTestExists;
+  const ok = exitCode === 0 && testFirst;
   const result = { ok, taskId, exitCode, redTestExists };
-  if (!redTestExists) result.reason = `RED test file missing: ${redFile} \u2014 the fix was not test-first`;
+  if (!testFirst) result.reason = testFirstReason;
   else if (exitCode !== 0) result.reason = `verify command exited ${exitCode ?? "null (timeout/kill)"}: ${task.verify.command}`;
   if (ok) {
     task.status = "done";

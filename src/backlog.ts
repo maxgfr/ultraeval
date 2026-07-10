@@ -94,6 +94,28 @@ function guessTestFile(targets: string[], f: Finding, conv: TestConvention): str
   return `${base}/${name}${suffix}${ext}`;
 }
 
+// The convention guess can collide with a test file the target ALREADY ships
+// (e.g. src/foo.ts's finding guesses tests/foo.test.ts and that file already
+// exists and is green). Suggesting that pre-existing file as the RED test is a
+// TDD-gate hole: verify-fix would see the file exist and green-stamp the task
+// with NO failing-test-first authored. So when the guess already exists, derive
+// a fresh, TASK-specific path that does not exist at backlog time — inserting the
+// task id so the path stays a recognizable test file for the runner.
+function distinctTestPath(rel: string, disc: string): string {
+  // JS/TS/… .test./.spec. — insert before the marker so `*.test.js` still matches.
+  if (/\.(test|spec)\./.test(rel)) return rel.replace(/\.(test|spec)\./, `.${disc}.$1.`);
+  // Go colocated <name>_test.go — keep the trailing _test.<ext>.
+  if (/_test\.[^./]+$/.test(rel)) return rel.replace(/_test\.([^./]+)$/, `.${disc}_test.$1`);
+  // Python test_<name>.py / Rust tests/<name>.rs / generic — insert before the ext.
+  return rel.replace(/\.([^./]+)$/, `.${disc}.$1`);
+}
+function freshTestFile(guess: string, disc: string, targetAbs: string): string {
+  if (!exists(join(targetAbs, guess))) return guess; // the conventional guess is already new
+  let candidate = distinctTestPath(guess, disc);
+  for (let n = 2; exists(join(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
+  return candidate;
+}
+
 // A runnable test entrypoint detected from the target's manifest — verify-fix
 // replays verify.command verbatim through a shell, so prose must be a last resort.
 function detectVerifyCommand(targetAbs: string): string | null {
@@ -144,8 +166,13 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
   const tasks: FixTask[] = confirmed.map((f, i) => {
     const targets = targetsOf(f);
     const isOpp = f.kind === "opportunity";
+    const id = `FIX-${String(i + 1).padStart(3, "0")}`;
+    // Never point the RED test at a file the target already ships — pick a fresh,
+    // task-specific path and record that the agent is expected to AUTHOR it, so
+    // verify-fix can fail closed unless a genuine failing-test-first was written.
+    const testFile = freshTestFile(guessTestFile(targets, f, conv), id, targetAbs);
     return {
-      id: `FIX-${String(i + 1).padStart(3, "0")}`,
+      id,
       findingId: f.id,
       kind: f.kind ?? "defect",
       priority: prio(f),
@@ -153,7 +180,8 @@ export function buildBacklog(runDir: string, opts: BacklogOpts = {}): Backlog {
       rationale: f.failureScenario || f.statement,
       targets,
       red: {
-        testFile: guessTestFile(targets, f, conv),
+        testFile,
+        expectedNew: !exists(join(targetAbs, testFile)),
         description: isOpp
           ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}`
           : f.failureScenario

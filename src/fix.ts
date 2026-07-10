@@ -64,7 +64,7 @@ Touch only: ${absTargets.map((x) => `\`${x}\``).join(", ") || "the relevant modu
 \`${t.verify.command}\`
 The RED test now passes and nothing regresses. Then close the loop:
 \`node ${engineAbs} verify-fix --run ${runDir} --task ${t.id}\`
-(echoes the exact command + cwd, then replays the verify command timeboxed, checks the RED test file exists, and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json — exit 1 otherwise).
+(echoes the exact command + cwd, then replays the verify command timeboxed, confirms the RED test was AUTHORED for this task — the task-specific test file the backlog marked expected-new must now exist — and stamps \`status: "done"\` + \`verifiedAt\` in BACKLOG.json — exit 1 otherwise).
 Note: \`verify.command\` in BACKLOG.json is executable configuration — it runs verbatim through a shell in the target with your privileges; treat a run directory from an untrusted source like code.
 
 ## Invariants (non-negotiable)
@@ -147,6 +147,34 @@ export function verifyFix(runDir: string, taskId: string, opts: { timeoutMs?: nu
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const redFile = isAbsolute(task.red.testFile) ? task.red.testFile : resolve(targetAbs, task.red.testFile);
   const redTestExists = exists(redFile);
+  // TDD-gate integrity: an existing RED test file is NOT proof a failing-test-first
+  // was authored for THIS task. On a mature target whose suite is already green,
+  // pointing red.testFile at a pre-existing test would green-stamp the task with
+  // zero work. So require POSITIVE evidence the RED test was written for this task,
+  // from the pre-existence state the backlog recorded (red.expectedNew):
+  //   • expectedNew === true  → the file was absent at backlog time; it must exist
+  //     NOW (the agent created it).
+  //   • expectedNew === false → it pre-existed the run; a pre-existing test is not
+  //     a test authored first for this task → FAIL.
+  //   • undefined (legacy backlog) → no recorded state, so we cannot confirm
+  //     test-first → FAIL closed and ask for a regenerated backlog.
+  const expectedNew = task.red.expectedNew;
+  let testFirst = true;
+  let testFirstReason: string | undefined;
+  if (expectedNew === false) {
+    testFirst = false;
+    testFirstReason = `RED test file ${redFile} already existed when the backlog was generated — a pre-existing test is not a failing-test-first authored for ${taskId}; write a new task-specific RED test`;
+  } else if (expectedNew === true) {
+    if (!redTestExists) {
+      testFirst = false;
+      testFirstReason = `RED test file missing: ${redFile} — it was expected to be authored (test-first) for ${taskId} but does not exist; the fix was not test-first`;
+    }
+  } else {
+    testFirst = false;
+    testFirstReason = redTestExists
+      ? `RED test file ${redFile} has no recorded pre-existence state (legacy backlog) — cannot confirm it was authored first for ${taskId}; regenerate the backlog with \`ultraeval backlog\` so verify-fix can gate test-first`
+      : `RED test file missing: ${redFile} — the fix was not test-first`;
+  }
   // Echo the exact command + cwd BEFORE spawning: BACKLOG.json's verify.command
   // is executable configuration replayed verbatim through a shell with the
   // caller's privileges, so the transcript must show what ran (even on a hang).
@@ -154,9 +182,9 @@ export function verifyFix(runDir: string, taskId: string, opts: { timeoutMs?: nu
   // Replay the task's own verify command in the target, timeboxed — a hang is a failure.
   const proc = spawnSync(task.verify.command, { shell: true, cwd: targetAbs, encoding: "utf8", timeout: opts.timeoutMs ?? 600_000 });
   const exitCode = proc.status;
-  const ok = exitCode === 0 && redTestExists;
+  const ok = exitCode === 0 && testFirst;
   const result: VerifyFixResult = { ok, taskId, exitCode, redTestExists };
-  if (!redTestExists) result.reason = `RED test file missing: ${redFile} — the fix was not test-first`;
+  if (!testFirst) result.reason = testFirstReason;
   else if (exitCode !== 0) result.reason = `verify command exited ${exitCode ?? "null (timeout/kill)"}: ${task.verify.command}`;
   if (ok) {
     task.status = "done";
