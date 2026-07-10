@@ -250,7 +250,7 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
         // to adjudicate against the current findings (the gate can only trust the
         // stored summary). Surface that so the operator knows the layer was not
         // (re)applied — same silent-degradation risk as a missing ledger.
-        if (!(v.verdicts?.length))
+        if (!v.verdicts?.length)
           warnings.push(
             "--semantic: VERIFY.json carries no verdict rows — the trustless re-reduction had nothing to adjudicate; the verdict/semantic layer was not (re)applied to the current findings",
           );
