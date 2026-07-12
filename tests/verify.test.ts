@@ -149,6 +149,18 @@ describe("verify — worklist + reduce", () => {
     expect(() => applyVerdicts(run, "/nope/verdicts.json")).toThrow(/verdicts file not found/);
   });
 
+  it("apply with a wrong-shaped verdicts file errors with the expected shape (no silent zero-adjudication)", () => {
+    const run = scaffold([f1]);
+    runVerify(run);
+    const bad = join(run, "bad-verdicts.json");
+    // The observed real-world stumble: a {"verdicts":[...]} document instead of
+    // the todo-shaped {"pairs":[...]} — used to reduce to an empty set and
+    // report "PASS 0 adjudicated" instead of failing fast.
+    writeFileSync(bad, JSON.stringify({ verdicts: [{ claimId: "F1", evidenceRef: "app.js:3", verdict: "supported" }] }));
+    expect(() => applyVerdicts(run, bad)).toThrow(/"pairs"/);
+    expect(() => applyVerdicts(run, bad)).toThrow(/claimId/);
+  });
+
   it("apply without planted honeypots behaves exactly as before", () => {
     const run = scaffold([f1]);
     runVerify(run);

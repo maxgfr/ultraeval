@@ -178,7 +178,16 @@ function loadVerdicts(runDir: string, spec: string): VerdictItem[] {
     const p = exists(f) ? f : isAbsolute(f) ? f : resolve(runDir, f);
     if (!exists(p)) throw new Error(`verdicts file not found: ${p} — pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson<VerdictsFile | VerdictItem[]>(p);
-    const items = Array.isArray(data) ? data : (data.pairs ?? []);
+    // Fail fast on a wrong-shaped document instead of reducing to an empty set
+    // and reporting "PASS 0 adjudicated" — the shape stumble seen in real runs
+    // is a {"verdicts":[...]} file where {"pairs":[...]} was expected.
+    const items = Array.isArray(data) ? data : Array.isArray(data.pairs) ? data.pairs : null;
+    if (items === null) {
+      throw new Error(
+        `verdicts file ${p} has no "pairs" array — pass the filled VERIFY.todo.json shape: ` +
+          `{"pairs":[{"claimId":"F1","evidenceRef":"src/app.ts:42","verdict":"supported|partial|refuted|unsupported","note":"…"}]}`,
+      );
+    }
     for (const v of items) merged.set(`${v.claimId}␟${v.evidenceRef ?? ""}`, v);
   }
   return [...merged.values()];
