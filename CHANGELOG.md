@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.9.0](https://github.com/maxgfr/ultraeval/compare/v1.8.1...v1.9.0) (2026-07-12)
+
+
+### Bug Fixes
+
+* **verify:** fail fast on a wrong-shaped --apply verdicts file ([d725a2e](https://github.com/maxgfr/ultraeval/commit/d725a2ea2c4107dd2d24cda74c608ec1101f419a))
+
+
+### Features
+
+* **plan:** cross-run judge calibration anchor in the emitted judge contract ([e8ef5c9](https://github.com/maxgfr/ultraeval/commit/e8ef5c928c3390c4ca0f94899c29720dfacef528))
+
 ## [1.8.1](https://github.com/maxgfr/ultraeval/compare/v1.8.0...v1.8.1) (2026-07-10)
 
 
