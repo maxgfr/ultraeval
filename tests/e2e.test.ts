@@ -151,6 +151,9 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     const judge = readFileSync(join(out, "agents", "judge.md"), "utf8");
     expect(judge).toMatch(/calibration-run\.json/);
     expect(judge).toMatch(/"calibration"/);
+    // Cross-run anchor: a prior run's panel is the severity standard for the next.
+    expect(judge).toMatch(/history\.jsonl/);
+    expect(judge).toMatch(/CROSS-RUN ANCHOR/);
   });
 
   it("score --history without a value appends to evals/history.jsonl under the cwd", () => {

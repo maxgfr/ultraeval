@@ -1313,7 +1313,12 @@ function loadVerdicts(runDir, spec) {
     const p = exists(f) ? f : isAbsolute2(f) ? f : resolve3(runDir, f);
     if (!exists(p)) throw new Error(`verdicts file not found: ${p} \u2014 pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson(p);
-    const items = Array.isArray(data) ? data : data.pairs ?? [];
+    const items = Array.isArray(data) ? data : Array.isArray(data.pairs) ? data.pairs : null;
+    if (items === null) {
+      throw new Error(
+        `verdicts file ${p} has no "pairs" array \u2014 pass the filled VERIFY.todo.json shape: {"pairs":[{"claimId":"F1","evidenceRef":"src/app.ts:42","verdict":"supported|partial|refuted|unsupported","note":"\u2026"}]}`
+      );
+    }
     for (const v of items) merged.set(`${v.claimId}\u241F${v.evidenceRef ?? ""}`, v);
   }
   return [...merged.values()];
@@ -2038,6 +2043,8 @@ If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings \u2
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
 **Step 0 \u2014 CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0\u20135 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields \u2014 read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
+
+**Step 0b \u2014 CROSS-RUN ANCHOR (when a prior run exists).** If the target's committed ledger \`evals/history.jsonl\` exists (anchored at the target's git root \u2014 \`git -C ${cfg.targetAbs} rev-parse --show-toplevel\`), read its LAST entry and open that prior run's \`scorecard.json\` and \`judges.jsonl\`. That panel is your severity standard: the same defect class in an unchanged area scores the same as it did there \u2014 score deltas must come from changed reality, never from a fresh judge's mood. Re-derive every score yourself (never copy forward); when you deviate from the prior standard on a dimension, say so in that dimension's rationale ("prior run scored N; I score M because <what actually changed>").
 
 Read \`${runDirAbs}/\`: research/, TEST-PLAN.md, runs/core.md, runs/live.md, findings.json, and spot-check the artifacts. Score each dimension 0\u20135 against its anchored referential (each dimension's \`anchors\` in \`dimensions.json\` names the standard it operationalizes) with a one-line rationale grounded in a path you actually read. Objective gate results (VERIFY.json, check exit codes) are ground truth \u2014 weight them.
 
