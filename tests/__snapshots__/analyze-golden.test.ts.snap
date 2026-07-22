@@ -14,7 +14,7 @@ exports[`analysis golden > no-git fixture: full Analysis snapshot (churn degrade
   "docs": [
     "README.md",
   ],
-  "files": 9,
+  "files": 7,
   "hotspots": [
     {
       "churn": undefined,
@@ -58,38 +58,24 @@ exports[`analysis golden > no-git fixture: full Analysis snapshot (churn degrade
       "path": "tests/a.test.ts",
       "reason": "2 LOC",
     },
-    {
-      "churn": undefined,
-      "loc": 1,
-      "path": "generated-dir/out.ts",
-      "reason": "1 LOC",
-    },
-    {
-      "churn": undefined,
-      "loc": 1,
-      "path": "src/skipme.tmp.ts",
-      "reason": "1 LOC",
-    },
   ],
   "languages": {
     ".py": 2,
-    ".ts": 7,
+    ".ts": 5,
   },
-  "loc": 354,
+  "loc": 352,
   "notes": [
     "git churn unavailable (not a git repo, or git missing) — hotspots are ranked by size only",
   ],
   "target": "<target>",
   "tests": {
-    "ratio": 0.13,
-    "sourceFiles": 8,
+    "ratio": 0.17,
+    "sourceFiles": 6,
     "testFiles": 1,
     "untested": [
-      "generated-dir/out.ts",
       "src/app.py",
       "src/big.ts",
       "src/deep.ts",
-      "src/skipme.tmp.ts",
       "src/util.py",
     ],
   },
@@ -111,7 +97,7 @@ exports[`analysis golden > scripted-git fixture: churn feeds hotspots determinis
   "docs": [
     "README.md",
   ],
-  "files": 9,
+  "files": 7,
   "hotspots": [
     {
       "churn": 1,
@@ -155,36 +141,22 @@ exports[`analysis golden > scripted-git fixture: churn feeds hotspots determinis
       "path": "tests/a.test.ts",
       "reason": "2 LOC",
     },
-    {
-      "churn": undefined,
-      "loc": 1,
-      "path": "generated-dir/out.ts",
-      "reason": "1 LOC",
-    },
-    {
-      "churn": undefined,
-      "loc": 1,
-      "path": "src/skipme.tmp.ts",
-      "reason": "1 LOC",
-    },
   ],
   "languages": {
     ".py": 2,
-    ".ts": 7,
+    ".ts": 5,
   },
-  "loc": 354,
+  "loc": 352,
   "notes": [],
   "target": "<target>",
   "tests": {
-    "ratio": 0.13,
-    "sourceFiles": 8,
+    "ratio": 0.17,
+    "sourceFiles": 6,
     "testFiles": 1,
     "untested": [
-      "generated-dir/out.ts",
       "src/app.py",
       "src/big.ts",
       "src/deep.ts",
-      "src/skipme.tmp.ts",
       "src/util.py",
     ],
   },

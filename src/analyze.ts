@@ -1,13 +1,22 @@
-import { execFileSync } from "node:child_process";
-import { type Dirent, readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative } from "node:path";
+import { join } from "node:path";
 import type { Analysis, Hotspot } from "./types.js";
 import { exists, writeJson, writeText } from "./util.js";
+import {
+  scanRepo,
+  buildResolveContext,
+  resolveImport,
+  gitChurn,
+  changedSince,
+  readText,
+} from "./vendor/codeindex-engine.mjs";
 
 // Deterministic, zero-dep, offline repo analysis. Produces objective signal the
-// brainstorm/opportunity stages ground improvement leads in.
+// brainstorm/opportunity stages ground improvement leads in. Walking, import
+// resolution and git plumbing come from the vendored codeindex engine (which
+// honors .gitignore and resolves tsconfig paths / package exports / go / cargo
+// / python beyond the old two-language regex); the analysis semantics —
+// LOC counting, hotspot scoring, test attribution, cycle detection — stay here.
 
-const SKIP_DIRS = new Set(["node_modules", "dist", "build", "coverage", "out", "vendor", "__pycache__", ".next", ".cache"]);
 const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".go", ".rb", ".php", ".java", ".rs", ".vue", ".svelte"]);
 const TEST_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)test_|(^|\/)tests?\/)/;
 const LARGE_LOC = 300;
@@ -18,7 +27,7 @@ interface FileInfo {
   ext: string;
   loc: number;
   isTest: boolean;
-  imports: string[];
+  resolved: string[]; // engine-resolved local import targets (repo-relative)
   todos: number;
   maxIndent: number;
 }
@@ -39,74 +48,33 @@ function maxIndentOf(content: string): number {
   return max;
 }
 
-function importsOf(content: string, ext: string): string[] {
-  const out: string[] = [];
-  if (ext === ".py") {
-    for (const m of content.matchAll(/^\s*(?:from\s+(\S+)\s+import|import\s+(\S+))/gm)) out.push((m[1] ?? m[2] ?? "").split(".")[0] ?? "");
-    return out;
-  }
-  // JS/TS/others: import ... from "X", require("X"), import("X")
-  for (const m of content.matchAll(/(?:from\s+|require\(\s*|import\(\s*)['"]([^'"]+)['"]/g)) out.push(m[1] ?? "");
-  return out;
-}
-
+// Walk + extract via the engine, then derive the per-file analysis record.
+// Content is re-read once per kept file for the skill-specific metrics the
+// engine deliberately does not compute (LOC convention, TODO count, nesting).
 function walkFiles(root: string): FileInfo[] {
+  const scan = scanRepo(root);
+  const ctx = buildResolveContext(scan);
   const out: FileInfo[] = [];
-  const walk = (dir: string) => {
-    let entries: Dirent[];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
+  for (const rec of scan.files) {
+    if (!CODE_EXT.has(rec.ext)) continue;
+    const content = readText(join(root, rec.rel));
+    const resolved: string[] = [];
+    for (const ref of rec.refs) {
+      if (ref.kind !== "import") continue;
+      const r = resolveImport(rec.rel, rec.ext, ref.spec, ctx);
+      if (r.kind === "resolved" && r.target !== rec.rel) resolved.push(r.target);
     }
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) {
-        if (!e.name.startsWith(".") && !SKIP_DIRS.has(e.name)) walk(p);
-        continue;
-      }
-      const ext = extname(e.name);
-      if (!CODE_EXT.has(ext)) continue;
-      let content = "";
-      try {
-        content = readFileSync(p, "utf8");
-      } catch {
-        continue;
-      }
-      const rel = relative(root, p);
-      out.push({
-        rel,
-        ext,
-        loc: locOf(content),
-        isTest: TEST_RE.test(rel),
-        imports: importsOf(content, ext),
-        todos: (content.match(/\b(TODO|FIXME|HACK|XXX)\b/g) ?? []).length,
-        maxIndent: maxIndentOf(content),
-      });
-    }
-  };
-  walk(root);
+    out.push({
+      rel: rec.rel,
+      ext: rec.ext,
+      loc: locOf(content),
+      isTest: TEST_RE.test(rec.rel),
+      resolved,
+      todos: (content.match(/\b(TODO|FIXME|HACK|XXX)\b/g) ?? []).length,
+      maxIndent: maxIndentOf(content),
+    });
+  }
   return out;
-}
-
-function resolveImport(imp: string, fromRel: string, relSet: Set<string>): string | null {
-  if (!imp.startsWith(".")) return null;
-  const dir = fromRel.includes("/") ? fromRel.slice(0, fromRel.lastIndexOf("/")) : "";
-  const base = join(dir, imp);
-  const cands = [
-    base,
-    base.replace(/\.(js|mjs|cjs)$/, ".ts"),
-    base.replace(/\.(js|mjs|cjs)$/, ".tsx"),
-    `${base}.ts`,
-    `${base}.tsx`,
-    `${base}.js`,
-    `${base}.jsx`,
-    `${base}.mjs`,
-    `${base}/index.ts`,
-    `${base}/index.js`,
-  ];
-  for (const c of cands) if (relSet.has(c)) return c;
-  return null;
 }
 
 function findCycles(adj: Map<string, Set<string>>): string[][] {
@@ -129,25 +97,6 @@ function findCycles(adj: Map<string, Set<string>>): string[][] {
   };
   for (const u of adj.keys()) if ((color.get(u) ?? 0) === 0) dfs(u);
   return cycles;
-}
-
-function gitChurn(root: string): { churn: Map<string, number>; ok: boolean } {
-  const m = new Map<string, number>();
-  try {
-    const out = execFileSync("git", ["-C", root, "log", "--pretty=format:", "--name-only"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      maxBuffer: 32 * 1024 * 1024,
-    });
-    for (const line of out.split("\n")) {
-      const f = line.trim();
-      if (f) m.set(f, (m.get(f) ?? 0) + 1);
-    }
-    return { churn: m, ok: true };
-  } catch {
-    // not a git repo, or git unavailable — degrade loudly, not silently
-    return { churn: m, ok: false };
-  }
 }
 
 // The base name a test file is "about": foo.test.ts / foo.spec.ts / foo_test.go
@@ -197,24 +146,12 @@ function hasTest(f: FileInfo, testSubjects: Set<string>, testedByImport: Set<str
 // byte-identical mirror) as a hotspot would point improvement leads at build output.
 function isGenerated(f: FileInfo, relSet: Set<string>): boolean {
   if (!/\.(js|mjs|cjs)$/.test(f.rel) || f.loc < 400) return false;
-  return f.imports.every((imp) => resolveImport(imp, f.rel, relSet) === null);
+  return !f.resolved.some((to) => relSet.has(to));
 }
 
 // Files changed since a git ref (+ untracked) — for `analyze --since <ref>`.
 export function changedFiles(targetAbs: string, since: string): Set<string> {
-  const set = new Set<string>();
-  const gitList = (args: string[]) => {
-    try {
-      return execFileSync("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    } catch {
-      return "";
-    }
-  };
-  for (const line of `${gitList(["diff", "--name-only", since, "--"])}\n${gitList(["ls-files", "--others", "--exclude-standard"])}`.split("\n")) {
-    const f = line.trim();
-    if (f) set.add(f);
-  }
-  return set;
+  return changedSince(targetAbs, since);
 }
 
 export interface AnalyzeOpts {
@@ -234,9 +171,10 @@ export function analyzeRepo(targetAbs: string, opts: AnalyzeOpts = {}): Analysis
   let edges = 0;
   const adj = new Map<string, Set<string>>();
   for (const f of files) {
-    for (const imp of f.imports) {
-      const to = resolveImport(imp, f.rel, relSet);
-      if (to && to !== f.rel) {
+    for (const to of f.resolved) {
+      // Only edges into the analysed file set count (same contract as before:
+      // the old resolver could only land on analysed code files).
+      if (relSet.has(to) && to !== f.rel) {
         edges++;
         const set = adj.get(f.rel) ?? new Set<string>();
         set.add(to);
