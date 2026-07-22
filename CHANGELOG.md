@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.11.0](https://github.com/maxgfr/ultraeval/compare/v1.10.0...v1.11.0) (2026-07-22)
+
+
+### Features
+
+* **analyze:** adopt the vendored codeindex engine ([03ff135](https://github.com/maxgfr/ultraeval/commit/03ff1354aa22f4a06e7b50a90667cb9a48107dfe))
+
 # [1.10.0](https://github.com/maxgfr/ultraeval/compare/v1.9.0...v1.10.0) (2026-07-22)
 
 
