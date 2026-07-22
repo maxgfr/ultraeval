@@ -25,7 +25,6 @@ afterEach(() => {
 
 const f = (title: string, ref = "a:1") => ({ id: "F1", severity: "P1", title, statement: "s", evidence: [{ ref }], status: "confirmed" });
 
-// biome-ignore lint/suspicious/noExplicitAny: test scaffolding
 function withConfig(dir: string, dimensions: any[], provenance?: any): string {
   writeFileSync(
     join(dir, "eval.config.json"),

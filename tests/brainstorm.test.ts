@@ -29,7 +29,6 @@ afterEach(() => {
   for (const t of tmps.splice(0)) rmSync(t, { recursive: true, force: true });
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: test assertions on parsed JSON
 type F = any;
 
 describe("brainstorm — worklist + rank", () => {

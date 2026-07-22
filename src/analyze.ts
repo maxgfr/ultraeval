@@ -1,14 +1,7 @@
 import { join } from "node:path";
 import type { Analysis, Hotspot } from "./types.js";
 import { exists, writeJson, writeText } from "./util.js";
-import {
-  scanRepo,
-  buildResolveContext,
-  resolveImport,
-  gitChurn,
-  changedSince,
-  readText,
-} from "./vendor/codeindex-engine.mjs";
+import { scanRepo, buildResolveContext, resolveImport, gitChurn, changedSince, readText } from "./vendor/codeindex-engine.mjs";
 
 // Deterministic, zero-dep, offline repo analysis. Produces objective signal the
 // brainstorm/opportunity stages ground improvement leads in. Walking, import

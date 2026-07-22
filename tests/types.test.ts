@@ -30,7 +30,6 @@ describe("SEVERITY_DEFS — codified severity referential", () => {
   });
 
   it("findings.schema.json derives its severity definitions from SEVERITY_DEFS", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: walking the informal schema
     const severity = (findingsSchema() as any).properties.findings.items.properties.severity;
     expect(severity.enum).toEqual([...VALID_SEVERITIES]);
     for (const sev of VALID_SEVERITIES) expect(severity.description).toContain(SEVERITY_DEFS[sev].meaning);
@@ -44,7 +43,6 @@ describe("SEVERITY_DEFS — codified severity referential", () => {
 
 describe("findings.schema.json — a real JSON Schema", () => {
   it("declares draft 2020-12 and covers the opportunity fields the gate enforces", () => {
-    // biome-ignore lint/suspicious/noExplicitAny: walking the schema
     const schema = findingsSchema() as any;
     expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
     const props = schema.properties.findings.items.properties;
