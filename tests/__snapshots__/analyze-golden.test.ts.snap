@@ -1,0 +1,193 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`analysis golden > no-git fixture: full Analysis snapshot (churn degraded loudly) 1`] = `
+{
+  "deps": {
+    "cycles": [
+      [
+        "src/a.ts",
+        "src/b.ts",
+      ],
+    ],
+    "edges": 3,
+  },
+  "docs": [
+    "README.md",
+  ],
+  "files": 9,
+  "hotspots": [
+    {
+      "churn": undefined,
+      "loc": 321,
+      "path": "src/big.ts",
+      "reason": "large: 321 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 19,
+      "path": "src/deep.ts",
+      "reason": "19 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 4,
+      "path": "src/app.py",
+      "reason": "4 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 2,
+      "path": "src/a.ts",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 2,
+      "path": "src/b.ts",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 2,
+      "path": "src/util.py",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 2,
+      "path": "tests/a.test.ts",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 1,
+      "path": "generated-dir/out.ts",
+      "reason": "1 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 1,
+      "path": "src/skipme.tmp.ts",
+      "reason": "1 LOC",
+    },
+  ],
+  "languages": {
+    ".py": 2,
+    ".ts": 7,
+  },
+  "loc": 354,
+  "notes": [
+    "git churn unavailable (not a git repo, or git missing) — hotspots are ranked by size only",
+  ],
+  "target": "<target>",
+  "tests": {
+    "ratio": 0.13,
+    "sourceFiles": 8,
+    "testFiles": 1,
+    "untested": [
+      "generated-dir/out.ts",
+      "src/app.py",
+      "src/big.ts",
+      "src/deep.ts",
+      "src/skipme.tmp.ts",
+      "src/util.py",
+    ],
+  },
+  "todos": 1,
+}
+`;
+
+exports[`analysis golden > scripted-git fixture: churn feeds hotspots deterministically 1`] = `
+{
+  "deps": {
+    "cycles": [
+      [
+        "src/a.ts",
+        "src/b.ts",
+      ],
+    ],
+    "edges": 3,
+  },
+  "docs": [
+    "README.md",
+  ],
+  "files": 9,
+  "hotspots": [
+    {
+      "churn": 1,
+      "loc": 321,
+      "path": "src/big.ts",
+      "reason": "large: 321 LOC",
+    },
+    {
+      "churn": 13,
+      "loc": 2,
+      "path": "src/a.ts",
+      "reason": "2 LOC, 13 commits (churn)",
+    },
+    {
+      "churn": 1,
+      "loc": 19,
+      "path": "src/deep.ts",
+      "reason": "19 LOC",
+    },
+    {
+      "churn": 1,
+      "loc": 4,
+      "path": "src/app.py",
+      "reason": "4 LOC",
+    },
+    {
+      "churn": 1,
+      "loc": 2,
+      "path": "src/b.ts",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": 1,
+      "loc": 2,
+      "path": "src/util.py",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": 1,
+      "loc": 2,
+      "path": "tests/a.test.ts",
+      "reason": "2 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 1,
+      "path": "generated-dir/out.ts",
+      "reason": "1 LOC",
+    },
+    {
+      "churn": undefined,
+      "loc": 1,
+      "path": "src/skipme.tmp.ts",
+      "reason": "1 LOC",
+    },
+  ],
+  "languages": {
+    ".py": 2,
+    ".ts": 7,
+  },
+  "loc": 354,
+  "notes": [],
+  "target": "<target>",
+  "tests": {
+    "ratio": 0.13,
+    "sourceFiles": 8,
+    "testFiles": 1,
+    "untested": [
+      "generated-dir/out.ts",
+      "src/app.py",
+      "src/big.ts",
+      "src/deep.ts",
+      "src/skipme.tmp.ts",
+      "src/util.py",
+    ],
+  },
+  "todos": 1,
+}
+`;
