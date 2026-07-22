@@ -44,7 +44,7 @@
     "lint": "biome ci .",
     "format": "biome format --write .",
     "verify:bundle": "node scripts/verify-skill-bundle.mjs",
-    "check:build": "tsup && node scripts/copy-bundle.mjs && git diff --exit-code -- scripts/ultraeval.mjs skills/ultraeval/scripts/ultraeval.mjs && node scripts/verify-skill-bundle.mjs",
+    "check:build": "tsup && node scripts/copy-bundle.mjs && git diff --exit-code -- scripts/ultraeval.mjs skills/ultraeval/scripts/ultraeval.mjs && node scripts/verify-skill-bundle.mjs && node scripts/sync-engine.mjs --check",
     "demo": "node scripts/ultraeval.mjs init --target tests/fixtures/target-lib --out /tmp/ultraeval-demo --kind codebase --category library && node scripts/ultraeval.mjs plan --run /tmp/ultraeval-demo",
     "eval": "node evals/run.mjs",
     "release": "semantic-release"
