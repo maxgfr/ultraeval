@@ -14,7 +14,18 @@ export interface Args {
 // known to the parser, closing the silent `--flag value` → `{flag:true}` misparse.
 export type FlagArity = "boolean" | "value" | "optional-value";
 export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
-  init: { target: "value", out: "value", kind: "value", category: "value", mode: "value", bar: "value", since: "value" },
+  init: {
+    target: "value",
+    out: "value",
+    kind: "value",
+    category: "value",
+    mode: "value",
+    bar: "value",
+    since: "value",
+    scope: "value",
+    "no-gitignore": "boolean",
+  },
+  oneshot: { target: "value", out: "value", kind: "value", category: "value", bar: "value", scope: "value", "no-gitignore": "boolean" },
   plan: { run: "value", eco: "boolean" },
   orchestrate: { run: "value", eco: "boolean" }, // family-wide alias for plan
 

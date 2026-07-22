@@ -97,6 +97,9 @@ export function scoreRun(runDir: string): Scorecard {
   if (!judges.length) throw new Error("no judge verdicts in judges.jsonl — the Judge phase has not run; dispatch judges (agents/judge.md) first");
   const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
+  // A one-shot scorecard is indicative (single pass, usually a self-judge) —
+  // stamp it so trends and comparisons can tell the two rigor levels apart.
+  if (cfg.oneshot) sc.oneshot = true;
   sc.scoredAt = new Date().toISOString();
   writeJson(join(runDir, "scorecard.json"), sc);
   return sc;
@@ -116,6 +119,7 @@ export interface HistoryEntry {
   // a trend spans incompatible revisions (scores are not directly comparable).
   protocol?: string;
   rubric?: string;
+  oneshot?: boolean; // single-pass indicative run — filter these when reading the trend
 }
 
 export function appendHistory(runDir: string, file: string): HistoryEntry {
@@ -142,6 +146,7 @@ export function appendHistory(runDir: string, file: string): HistoryEntry {
     },
     ...(protocol ? { protocol } : {}),
     ...(rubric ? { rubric } : {}),
+    ...(sc.oneshot ? { oneshot: true } : {}),
   };
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}\n`);

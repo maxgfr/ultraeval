@@ -4,7 +4,7 @@
 // not just in unit tests) plus a backlog probe. Mirrors ultrasearch/evals.
 // Runs offline. `pnpm run eval`. Exit non-zero on any probe failure (gates CI).
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -243,7 +243,81 @@ function cleanGuardProbe() {
   }
 }
 
-console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity + containment + honeypot + clean\n");
+// File-scope gate (init --scope), proven RED/GREEN end-to-end: an out-of-scope
+// citation fails check; scope-exempt downgrades it; an in-scope one passes.
+function scopeProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-scope-"));
+  try {
+    const target = join(dir, "target");
+    mkdirSync(join(target, "src", "domain"), { recursive: true });
+    mkdirSync(join(target, "tools"), { recursive: true });
+    writeFileSync(join(target, "src", "domain", "rules.js"), "r1\nr2\n");
+    writeFileSync(join(target, "tools", "helper.js"), "h1\n");
+    const runDir = join(dir, "run");
+    const init = run(["init", "--target", target, "--out", runDir, "--category", "métier", "--scope", "src/domain/**", "--no-gitignore"]);
+    if (init.status !== 0) return fail(`[scope] init --scope failed: ${init.stderr}`);
+    const cfg = JSON.parse(readFileSync(join(runDir, "eval.config.json"), "utf8"));
+    if (!Array.isArray(cfg.scope) || cfg.scope[0] !== "src/domain/**") return fail("[scope] scope not stamped into eval.config.json");
+    pass("[scope] init --scope stamps the globs into the config");
+
+    const finding = (ref, extra = {}) => ({ findings: [{ id: "F1", severity: "P1", title: "t", statement: "s", evidence: [{ ref }], status: "confirmed", ...extra }] });
+    writeFileSync(join(runDir, "findings.json"), JSON.stringify(finding("tools/helper.js:1")));
+    if (run(["check", "--run", runDir]).status === 0) return fail("[scope] an out-of-scope citation slipped through check");
+    pass("[scope] out-of-scope citation fails check (exit 1)");
+
+    writeFileSync(join(runDir, "findings.json"), JSON.stringify(finding("tools/helper.js:1", { tags: ["scope-exempt"] })));
+    const exempt = run(["check", "--run", runDir]);
+    if (exempt.status !== 0) return fail("[scope] a scope-exempt finding still failed check");
+    if (!/scope-exempt/.test(exempt.stdout + exempt.stderr)) return fail("[scope] the scope-exempt downgrade is silent");
+    pass("[scope] scope-exempt downgrades to a visible warning (exit 0)");
+
+    writeFileSync(join(runDir, "findings.json"), JSON.stringify(finding("src/domain/rules.js:2")));
+    if (run(["check", "--run", runDir]).status !== 0) return fail("[scope] an in-scope citation failed check");
+    pass("[scope] in-scope citation passes check (exit 0)");
+  } catch (e) {
+    fail(`[scope] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// One-shot profile: the scaffold carries the profile, the structural gate stays
+// mandatory, and --require-verify refuses explicitly (no verify phase exists).
+function oneshotProbe() {
+  const dir = mkdtempSync(join(tmpdir(), "ue-eval-oneshot-"));
+  try {
+    const runDir = join(dir, "run");
+    const target = join(ROOT, "tests", "fixtures", "target-lib");
+    const os = run(["oneshot", "--target", target, "--out", runDir, "--category", "library", "--no-gitignore"]);
+    if (os.status !== 0) return fail(`[oneshot] scaffold failed: ${os.stderr}`);
+    if (!existsSync(join(runDir, "ONESHOT.md"))) return fail("[oneshot] no ONESHOT.md written");
+    const cfg = JSON.parse(readFileSync(join(runDir, "eval.config.json"), "utf8"));
+    if (cfg.oneshot !== true || cfg.provenance?.profile !== "oneshot") return fail("[oneshot] profile not stamped into the config");
+    pass("[oneshot] scaffold writes ONESHOT.md + oneshot profile");
+
+    const bare = run(["check", "--run", runDir]);
+    if (bare.status !== 1) return fail(`[oneshot] check before findings should gate-fail (exit 1), got ${bare.status}`);
+    pass("[oneshot] structural check still gates a oneshot run (exit 1 before findings)");
+
+    writeFileSync(
+      join(runDir, "findings.json"),
+      JSON.stringify({ findings: [{ id: "F1", severity: "P2", title: "t", statement: "s", evidence: [{ ref: "src/retry.js:1" }], status: "confirmed" }] }),
+    );
+    if (run(["check", "--run", runDir]).status !== 0) return fail("[oneshot] a grounded finding failed the structural gate");
+    pass("[oneshot] grounded finding passes the structural gate (exit 0)");
+
+    const rv = run(["check", "--run", runDir, "--require-verify"]);
+    if (rv.status === 0) return fail("[oneshot] --require-verify passed on a one-shot run");
+    if (!/one-shot/.test(rv.stdout + rv.stderr)) return fail("[oneshot] --require-verify refusal does not name the one-shot profile");
+    pass("[oneshot] --require-verify refuses explicitly (upgrade path named)");
+  } catch (e) {
+    fail(`[oneshot] ${e.message}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log("ultraeval evals — gate + backlog + schema + score + analyze + opportunity + containment + honeypot + clean + scope + oneshot\n");
 gateProbe();
 backlogProbe();
 schemaProbe();
@@ -253,6 +327,8 @@ opportunityProbe();
 containmentProbe();
 honeypotProbe();
 cleanGuardProbe();
+scopeProbe();
+oneshotProbe();
 if (failures) {
   console.error(`\n${failures} probe(s) failed`);
   process.exit(1);

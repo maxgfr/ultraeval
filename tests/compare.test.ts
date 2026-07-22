@@ -56,6 +56,32 @@ const prov = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+describe("compare — profile/scope comparability", () => {
+  it("warns on a one-shot vs full comparison, and --gate hard-fails it", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov());
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov({ profile: "oneshot" }));
+    const r = compareRuns(base, cur);
+    expect(r.warnings.join(" ")).toMatch(/one-shot/);
+    expect(gateFailures(r).join(" ")).toMatch(/one-shot/);
+  });
+
+  it("warns when the two runs declare different file scopes (not gateable info, just a caveat)", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov());
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov({ scope: ["src/domain/**"] }));
+    const r = compareRuns(base, cur);
+    expect(r.warnings.join(" ")).toMatch(/scope/);
+    expect(gateFailures(r)).toEqual([]);
+  });
+
+  it("two one-shot runs compare without a profile warning", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov({ profile: "oneshot" }));
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov({ profile: "oneshot" }));
+    const r = compareRuns(base, cur);
+    expect(r.warnings.join(" ")).not.toMatch(/one-shot/);
+    expect(gateFailures(r)).toEqual([]);
+  });
+});
+
 describe("compare — two eval runs", () => {
   it("reports score delta, resolved and introduced findings", () => {
     const base = runDir([f("bug A", "a:1"), f("bug B", "a:2")], 70);

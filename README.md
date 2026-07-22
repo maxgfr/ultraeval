@@ -50,6 +50,8 @@ init → plan → run(research → test-plan → execute+gates → judge → res
 ```bash
 ENGINE=node scripts/ultraeval.mjs
 $ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep   # add --since origin/main for a diff-scoped PR-gating run
+$ENGINE init --target ../my-app --out ../my-app/.ultraeval/metier --category métier --scope "src/domain/**"   # business-only eval: métier rubric + file scope (check fails out-of-scope findings)
+$ENGINE oneshot --target ../my-app --out /tmp/quick [--category ...] [--scope ...]   # single-pass quick eval: ONESHOT.md contract, structural gate kept, indicative verdict; plan --run upgrades it
 $ENGINE status --run /tmp/eval                      # pipeline checklist + the exact next command
 $ENGINE plan --run /tmp/eval                       # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
 $ENGINE analyze --run /tmp/eval [--since <ref>] [--json]   # deterministic hotspots/deps/churn/test-gaps -> analysis.json
@@ -72,7 +74,11 @@ $ENGINE clean --run /tmp/eval                       # remove derived artifacts (
 
 **Modes.** `--mode audit` (defects, default) · `improve` (grounded improvement **opportunities** — internal health *and* product/capability, rated impact × effort) · `deep` (both). Opportunities are discovered by `analyze` → `brainstorm` and held to the *same* grounding gate, so a lead always anchors to real code or a real metric — never vague "rewrite everything". `render` shows an impact × effort matrix and flags quick wins.
 
-`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `check` also validates the findings record's schema (id/severity/status/evidence/kind), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; métier/business/domain → business-logic dimensions only; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `init --scope "<glob[,glob]>"` file-scopes the eval: agents are bound to the globs and `check` fails a finding cited only outside them (tag `scope-exempt` to keep a justified cross-cutting one). `check` also validates the findings record's schema (id/severity/status/evidence/kind), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+
+**Auto-gitignore.** When the run dir (`--out`) sits inside a git repo, `init`/`oneshot` idempotently add it to that repo's `.gitignore` (the conventional `.ultraeval/` container gets one line covering all runs). `--no-gitignore` opts out; `evals/history.jsonl` — the committed score ledger — is never ignored.
+
+**One-shot evals.** `oneshot` scaffolds a single-pass run (`ONESHOT.md`: one agent, all dimensions in one pass, findings in the same gated schema). The structural `check` gate still applies; verify/judges are out of contract, so the verdict is indicative — the full pipeline stays the default, and `plan --run <run>` upgrades a oneshot run in place.
 
 ## Why the gate matters
 

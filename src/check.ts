@@ -4,7 +4,7 @@ import { extractUnits, findingRefs, isCited } from "./citations.js";
 import { dimensionsHash } from "./init.js";
 import { CAPS, VALID_EFFORT, VALID_IMPACT, VALID_SEVERITIES, VALID_VERDICTS } from "./types.js";
 import type { CheckResult, Effort, EvalConfig, FindingsDoc, Impact, Severity, Verdict, VerifyResult } from "./types.js";
-import { exists, parseEvidenceRef, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
+import { exists, inScope, parseEvidenceRef, readJson, readText, resolveEvidence, resolveTargetAbs } from "./util.js";
 import { buildWorklist, reduceVerdicts } from "./verify.js";
 
 export interface CheckOpts {
@@ -152,7 +152,13 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
   // ADD a failure, never remove one — so a consistent ledger is unaffected while
   // every unadjudicated or newly-refuted claim is caught.
   const verifyPath = join(runDir, "VERIFY.json");
-  if (opts.requireVerify) {
+  if (opts.requireVerify && cfg.oneshot) {
+    // A one-shot run has no verify phase by design — an explicit refusal beats a
+    // confusing "no VERIFY.json" on a run that was never meant to produce one.
+    errors.push(
+      `--require-verify: this is a one-shot run — no verify phase exists; upgrade it (plan --run ${runDir}) and run the verify chain for verified findings`,
+    );
+  } else if (opts.requireVerify) {
     if (!exists(verifyPath)) errors.push("--require-verify: no VERIFY.json — run `ultraeval verify --apply <verdicts>`");
     else {
       try {
@@ -288,6 +294,32 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
           // --strict-scope hard-fails a PR gate on an out-of-scope finding.
           (opts.strictScope ? errors : warnings).push(msg);
         }
+      }
+    }
+  }
+
+  // 4ter. File scope (init --scope): a finding whose target citations all fall
+  // outside the declared globs is out of scope — a structural failure, since a
+  // scoped run (e.g. a métier eval) promised to judge only that code. The
+  // `scope-exempt` tag downgrades a justified cross-cutting finding to a
+  // WARNING — visible in the report, never silent.
+  const scope = cfg.scope ?? cfg.provenance?.scope;
+  if (scope?.length) {
+    for (const f of findings) {
+      if (f.status === "dismissed") continue;
+      const files = (f.evidence ?? [])
+        .map((e) => parseEvidenceRef(e.ref))
+        .filter((p) => p.isTargetRef) // only target-repo paths — run:/url: refs carry no file scope
+        .map((p) => p.path);
+      if (files.length && !files.some((x) => inScope(x, scope))) {
+        if (Array.isArray(f.tags) && f.tags.includes("scope-exempt"))
+          warnings.push(
+            `${f.id} is scope-exempt: cites only files outside the declared scope (${scope.join(", ")}) — kept as a justified cross-cutting finding`,
+          );
+        else
+          errors.push(
+            `${f.id} cites only files outside the declared scope (${scope.join(", ")}) — out of scope for this run; drop it or tag it scope-exempt with a justification`,
+          );
       }
     }
   }

@@ -64,3 +64,27 @@ describe("init — run provenance", () => {
     expect(existsSync(join(runDir, "eval.config.json"))).toBe(true);
   });
 });
+
+describe("init — file scope (--scope)", () => {
+  it("stores the globs in the config AND stamps them into provenance", () => {
+    const { cfg } = initRun({ target: tmp(), out: tmp(), scope: ["src/domain/**", "src/billing/**"] });
+    expect(cfg.scope).toEqual(["src/domain/**", "src/billing/**"]);
+    expect(cfg.provenance?.scope).toEqual(["src/domain/**", "src/billing/**"]);
+  });
+
+  it("trims, drops empties, and dedupes entries", () => {
+    const { cfg } = initRun({ target: tmp(), out: tmp(), scope: [" src/**", "src/**", "", "   "] });
+    expect(cfg.scope).toEqual(["src/**"]);
+  });
+
+  it("no scope given → no scope fields written", () => {
+    const { cfg } = initRun({ target: tmp(), out: tmp() });
+    expect(cfg.scope).toBeUndefined();
+    expect(cfg.provenance?.scope).toBeUndefined();
+  });
+
+  it("rejects absolute paths and .. traversal in scope entries", () => {
+    expect(() => initRun({ target: tmp(), out: tmp(), scope: ["/abs/**"] })).toThrow(/--scope/);
+    expect(() => initRun({ target: tmp(), out: tmp(), scope: ["../up/**"] })).toThrow(/--scope/);
+  });
+});

@@ -69,9 +69,39 @@ prints a Stability line (|Δoverall| at constant target SHA) — test-retest for
 ## Rubrics
 
 `init` seeds dimensions from the target kind and specializes by `--category` (see
-`skills/ultraeval/references/rubric-library.md`): security → precision/recall/false-positive-rate; web →
-+accessibility/auth; research/RAG → faithfulness/retrieval; requirements → ISO/IEC/IEEE 29148. Weights
-need not sum to 1 — `score` normalizes.
+`skills/ultraeval/references/rubric-library.md`): security → precision/recall/false-positive-rate;
+métier/business/domain → the business-logic set (business-correctness, domain-model, invariants,
+edge-cases-metier, rule-traceability — no generic axes); web → +accessibility/auth; research/RAG →
+faithfulness/retrieval; requirements → ISO/IEC/IEEE 29148. Weights need not sum to 1 — `score` normalizes.
+
+### File scope (`init --scope`)
+
+`init --scope "src/domain/**,src/billing/**"` restricts the eval to target-relative globs: the scope is
+stored in `eval.config.json` + provenance, every generated contract binds agents to it, and `check` FAILS
+a finding whose target citations all fall outside it (a `tags: ["scope-exempt"]` finding downgrades to a
+visible warning — reserved for a justified cross-cutting issue). A **métier-only eval** combines
+`--category métier` (the business rubric) with a domain-code `--scope`. Scope entries are validated at
+init (no absolute paths, no `..`); the glob dialect is minimal: `**` crosses directories, `*` stays in a
+segment, `?` one char, `{a,b}` literal alternation, and a glob-free entry is a directory prefix.
+
+### Auto-gitignore of the run dir
+
+When `--out` resolves inside a git repo, `init`/`oneshot` idempotently append the run dir to that repo's
+`.gitignore` (a run under a `.ultraeval/` container collapses to one `.ultraeval/` line). `--no-gitignore`
+opts out; a run dir outside any repo is a no-op; `evals/` is never ignored — `evals/history.jsonl` is the
+committed score ledger. Only exact-line idempotency is promised: an existing broader pattern that already
+covers the run dir still gets the conventional line appended (harmless).
+
+### One-shot evals (`oneshot`)
+
+`oneshot --target <p> --out <run> [--kind] [--category] [--scope] [--bar] [--no-gitignore]` scaffolds a
+single-pass run instead of the multi-agent plan: `eval.config.json` carries `oneshot: true` +
+`provenance.profile: "oneshot"`, and `<run>/ONESHOT.md` is ONE self-contained contract (skim → evaluate
+all dimensions in one pass → `findings.json` in the same gated schema → `SUMMARY.md`). The structural
+`check` gate still applies verbatim; `check --require-verify` refuses explicitly (no verify phase), `status`
+shows the shorter checklist, `score` stamps `oneshot` into the scorecard and the ledger row, and
+`compare --gate` refuses a one-shot vs full pairing. The full pipeline stays the default —
+`plan --run <run>` upgrades a oneshot run in place (removes ONESHOT.md, clears the profile).
 
 ## The normed process
 

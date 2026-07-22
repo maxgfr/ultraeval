@@ -19,6 +19,7 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
       ],
       "failureScenario": "GET /u?id=1 OR 1=1 dumps all users.",
       "recommendation": "Use a parameterized query.",
+      "tags": ["scope-exempt"],          // optional; scope-exempt = justified cross-cutting finding cited outside a declared file scope (downgrades the scope failure to a warning)
       "status": "confirmed"              // open | confirmed | dismissed
     }
   ]
@@ -45,6 +46,8 @@ FAILS when:
 - `RESULTS.md` has a **dangling `[F#]`** (no such finding), or its citation coverage < `--coverage-min` (default 0.6; `--strict` = 1.0). Flag genuine narrative with `[M]`.
 - `BACKLOG.json` references a missing or dismissed finding.
 - `--min-findings N` and fewer findings exist.
+- the run declares a **file scope** (`init --scope`) and a non-dismissed finding's target citations all fall **outside the scope** — unless the finding carries `tags: ["scope-exempt"]` (justified cross-cutting issue), which downgrades to a visible warning.
+- `--require-verify` on a **one-shot run** (`oneshot`): refused explicitly — no verify phase exists; `plan --run <RUN>` upgrades the run.
 
 WARNS (never fails the gate): a finding still `open`, a `confirmed` finding with no `recommendation` (its backlog card will be vague), or `RESULTS.md` present without `SUMMARY.md`.
 

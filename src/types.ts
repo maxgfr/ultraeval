@@ -87,8 +87,13 @@ export interface Dimension {
 // v2: honeypot skeptic-checks gate --require-verify; a judge panel with zero
 // passed calibrations cannot green-light meets-expectations; a budgeted run
 // must record its coverage cut.
-export const PROTOCOL_VERSION = "2";
-export const RUBRIC_VERSION = "1";
+// v3: a file-scoped run (init --scope) fails findings cited only out of scope
+// (scope-exempt downgrades to a warning); the oneshot profile keeps the
+// structural gate but refuses --require-verify and is never a normed verdict.
+export const PROTOCOL_VERSION = "3";
+// rubric v2: business/domain ("métier") starter set — business-correctness /
+// domain-model / invariants / edge-cases-metier / rule-traceability.
+export const RUBRIC_VERSION = "2";
 
 // Who/what/when of a run — makes runs attributable to a code state and a rubric
 // revision, and lets `compare` refuse to read a delta across incompatible runs.
@@ -103,6 +108,8 @@ export interface Provenance {
   dimensionsHash: string; // sha256 (12 hex) of the dimensions at init
   targetGit?: { commit: string; branch?: string; dirty: boolean };
   sinceRef?: string; // diff-scoped eval (PR gating): only behavior changed since this git ref is in scope
+  scope?: string[]; // file-scoped eval (e.g. métier/domain-only): findings must cite files matching these target-relative globs
+  profile?: "oneshot"; // absent = full pipeline; "oneshot" = single-pass quick eval (structural gate only, no verify/judges)
 }
 
 export interface EvalConfig {
@@ -112,6 +119,8 @@ export interface EvalConfig {
   category: string;
   mode?: Mode; // audit (default) | improve | deep
   dimensions: Dimension[];
+  scope?: string[]; // target-relative globs restricting which files this eval judges (mirror of provenance.scope)
+  oneshot?: boolean; // single-pass quick eval (ONESHOT.md contract); cleared when `plan` upgrades the run
   note?: string;
   version: string;
   provenance?: Provenance; // absent on legacy (pre-protocol) runs
@@ -139,6 +148,7 @@ export interface Finding {
   evidence: Evidence[];
   failureScenario?: string;
   recommendation?: string;
+  tags?: string[]; // "scope-exempt": justified cross-cutting finding cited outside the declared file scope
   status: Status;
 }
 
@@ -281,6 +291,7 @@ export interface Scorecard {
   // Verdict stability under ±0.05 per-dimension weight perturbation (renormalized
   // like the score): flips lists the dimensions whose shift flips meetsExpectations.
   sensitivity?: { robust: boolean; flips: string[] };
+  oneshot?: boolean; // single-pass run — the verdict is indicative, not the normed pipeline's
   judgesCalibrated?: string; // "n/N" — judges whose calibration.passed is true
   judgesIndependent?: boolean; // false = every judge line shares one author (agreement is not independence); unset when authors unknown
   provenance?: Provenance; // copied from eval.config.json when present

@@ -59,3 +59,11 @@ Each block defines: **golden path** (the documented main journey), **error path*
 - **Help contract**: the documented modes/flags exist; citation format matches the docs.
 - **Expected artifact**: the cited report under `runs/live-*`.
 - **Pass criteria**: every claim attributable to a fetched source; the unanswerable question is refused, not hallucinated.
+
+## Business / métier
+
+- **Golden path**: drive the core business rules end-to-end on realistic domain inputs — the documented outcomes come out.
+- **Error path**: feed a boundary/rule-violating input — the business rule rejects it and state stays consistent.
+- **Help contract**: the documented domain behavior (rules, invariants, edge cases) matches what the code actually does.
+- **Expected artifact**: the exercised rule inputs/outputs transcript under `runs/live-*` plus the `runs/live.md` narrative.
+- **Pass criteria**: rules behave per the documented domain semantics; invariants hold on every exercised path.

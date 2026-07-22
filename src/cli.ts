@@ -9,6 +9,7 @@ import { gateFailures, runCompare } from "./compare.js";
 import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
+import { oneshotRun } from "./oneshot.js";
 import { planRun } from "./plan.js";
 import { emitFixAgents, formatVerifyFix, verifyFix } from "./fix.js";
 import { rejudgeRun } from "./rejudge.js";
@@ -27,9 +28,18 @@ Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
   init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>] [--since <ref>]
+             [--scope <glob[,glob]>] [--no-gitignore]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
              --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
              --since <git-ref> diff-scopes the eval (PR gating): contracts target the changed set; check warns on out-of-scope findings.
+             --scope file-scopes the eval to target-relative globs (e.g. a métier eval: --category métier --scope "src/domain/**");
+             check hard-fails findings cited only outside the scope (tag scope-exempt to keep a justified cross-cutting one).
+             When the run dir sits inside a git repo, init gitignores it there (idempotent; never evals/ — the committed
+             score ledger lives under evals/history.jsonl); --no-gitignore opts out.
+  oneshot  --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--scope <glob[,glob]>] [--bar <n>] [--no-gitignore]
+             Single-pass quick eval: init + ONESHOT.md (one agent, one pass, no subagents/verify/judges).
+             The structural check gate still applies; the result is indicative, never a normed verdict.
+             The full pipeline stays the default — plan --run <run> upgrades a oneshot run in place.
   plan     --run <run> [--eco]        (alias: orchestrate — the family verb)
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
              --eco skips the workflow and writes RUNBOOK.md instead — the sequential low-token
@@ -43,6 +53,7 @@ Commands:
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--strict-scope] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
+             A file-scoped run (init --scope) also fails findings cited only outside the scope (tag scope-exempt to downgrade to a warning).
              --strict-scope hard-fails a diff-scoped (init --since) run whose findings cite only unchanged files.
              --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
   verify   --run <run> [--apply <verdicts[,v2,…]>] [--max-verify n] [--shards n --shard i] [--honeypots n]
@@ -115,11 +126,22 @@ function rejectUnknownFlags(cmd: string, args: Args): void {
 // Extracting per-command bodies isolates per-command churn and makes each handler
 // unit-testable without invoking process side effects.
 
+// --scope is one comma-separated value flag (the parser is last-wins on a
+// repeated flag, so a repeatable form would silently drop earlier globs).
+const parseScope = (raw: string | undefined): string[] | undefined => (raw ? raw.split(",").map((s) => s.trim()) : undefined);
+
+const gitignoreLine = (g: NonNullable<ReturnType<typeof initRun>["gitignore"]>): string =>
+  g.action === "added"
+    ? `gitignore: added "${g.entry}" to ${g.path}`
+    : g.action === "already"
+      ? `gitignore: "${g.entry}" already covered`
+      : `gitignore: skipped — ${g.reason}`;
+
 function cmdInit(args: Args): void {
   const target = str(args.target);
   const out = str(args.out);
   if (!target || !out) throw new Error("init requires --target <path> and --out <run>");
-  const { cfg, runDir } = initRun({
+  const { cfg, runDir, gitignore } = initRun({
     target,
     out,
     kind: str(args.kind) as Kind | undefined,
@@ -127,8 +149,38 @@ function cmdInit(args: Args): void {
     mode: str(args.mode) as Mode | undefined,
     bar: num(args.bar),
     since: str(args.since),
+    scope: parseScope(str(args.scope)),
+    gitignore: args["no-gitignore"] !== true,
   });
-  console.log(`ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions -> ${runDir}`);
+  console.log(
+    `ultraeval init: ${cfg.kind} · ${cfg.category} · mode ${cfg.mode} · ${cfg.dimensions.length} dimensions${cfg.scope ? ` · scope ${cfg.scope.join(",")}` : ""} -> ${runDir}`,
+  );
+  if (gitignore) console.log(gitignoreLine(gitignore));
+}
+
+function cmdOneshot(args: Args): void {
+  const target = str(args.target);
+  const out = str(args.out);
+  if (!target || !out) throw new Error("oneshot requires --target <path> and --out <run>");
+  const engine = fileURLToPath(import.meta.url);
+  const { cfg, runDir, gitignore } = oneshotRun(
+    {
+      target,
+      out,
+      kind: str(args.kind) as Kind | undefined,
+      category: str(args.category),
+      bar: num(args.bar),
+      scope: parseScope(str(args.scope)),
+      gitignore: args["no-gitignore"] !== true,
+    },
+    engine,
+  );
+  console.log(
+    `ultraeval oneshot: ${cfg.kind} · ${cfg.category} · ${cfg.dimensions.length} dimensions${cfg.scope ? ` · scope ${cfg.scope.join(",")}` : ""} -> ${runDir}`,
+  );
+  if (gitignore) console.log(gitignoreLine(gitignore));
+  console.log(`\nSingle pass: follow ${runDir}/ONESHOT.md, then gate with: check --run ${runDir}`);
+  console.log(`Full pipeline instead: plan --run ${runDir} (upgrades this run in place).`);
 }
 
 // `orchestrate` is the family-wide verb (every sibling skill's engine has it);
@@ -350,6 +402,7 @@ function cmdClean(args: Args): void {
 // a command the parser dispatches always has a handler (asserted in cli.test.ts).
 export const commandHandlers: Record<string, (args: Args, cmd: string) => void> = {
   init: cmdInit,
+  oneshot: cmdOneshot,
   plan: cmdPlan,
   orchestrate: cmdPlan,
   analyze: cmdAnalyze,

@@ -164,6 +164,50 @@ const REQUIREMENTS_DIMS: Dimension[] = [
   },
 ];
 
+// Business/domain ("métier") evals judge ONLY the business logic — no generic
+// security/perf/docs axes. Pairs with the `scope` config (init --scope) that
+// narrows the eval to the domain code itself.
+const BUSINESS_DIMS: Dimension[] = [
+  {
+    id: "business-correctness",
+    name: "Business-rule correctness",
+    weight: 0.35,
+    whatPerfectLooksLike: "every business rule computes the documented outcome on realistic domain inputs; no logic bugs",
+    anchors: [iso25010("Functional suitability — functional correctness")],
+  },
+  {
+    id: "domain-model",
+    name: "Domain-model coherence",
+    weight: 0.25,
+    whatPerfectLooksLike: "entities/terms match the domain language; one concept, one representation; boundaries make sense",
+    anchors: [
+      iso25010("Functional suitability — functional appropriateness"),
+      informative("Domain-Driven Design (Evans 2003)", "ubiquitous language, bounded contexts"),
+    ],
+  },
+  {
+    id: "invariants",
+    name: "Invariants & consistency",
+    weight: 0.15,
+    whatPerfectLooksLike: "domain invariants hold on every path; a rule-violating input is rejected with state left consistent",
+    anchors: [iso25010("Reliability — faultlessness"), REQ_29148("verifiable")],
+  },
+  {
+    id: "edge-cases-metier",
+    name: "Functional edge cases",
+    weight: 0.15,
+    whatPerfectLooksLike: "boundary values, empty/overflow cases, and rule interactions are handled, not just the happy path",
+    anchors: [iso25010("Functional suitability — functional completeness")],
+  },
+  {
+    id: "rule-traceability",
+    name: "Rule traceability",
+    weight: 0.1,
+    whatPerfectLooksLike: "each implemented rule traces to a documented business requirement and back",
+    anchors: [REQ_29148("traceable")],
+  },
+];
+
 const RESEARCH_DIMS: Dimension[] = [
   {
     id: "faithfulness",
@@ -228,6 +272,7 @@ export function defaultDimensions(kind: Kind, category = ""): Dimension[] {
   const key = categoryKey(category);
   if (key === "security") return SECURITY_DIMS;
   if (key === "requirements") return REQUIREMENTS_DIMS;
+  if (key === "business") return BUSINESS_DIMS;
   if (key === "research") return RESEARCH_DIMS;
   const base = kind === "skill" ? SKILL_DIMS : CODEBASE_DIMS;
   if (key === "web") return webFlavored(base);

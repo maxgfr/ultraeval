@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { exists, readText } from "./util.js";
+import type { EvalConfig } from "./types.js";
+import { exists, readJson, readText } from "./util.js";
 
 // Where is this run in the pipeline, and what is the EXACT next command?
 // Purely artifact-based (no engine state): each step names the artifact that
@@ -18,6 +19,24 @@ export interface RunStatus {
 
 export function statusRun(runDir: string): RunStatus {
   const has = (rel: string) => exists(join(runDir, rel));
+  // Oneshot runs walk a shorter pipeline. Guarded read: a missing/broken config
+  // degrades to the full artifact-based checklist (status never throws).
+  let oneshot = false;
+  try {
+    if (has("eval.config.json")) oneshot = readJson<EvalConfig>(join(runDir, "eval.config.json")).oneshot === true;
+  } catch {
+    oneshot = false;
+  }
+  if (oneshot) {
+    const steps: StatusStep[] = [
+      { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
+      { artifact: "ONESHOT.md", present: has("ONESHOT.md"), stage: "oneshot" },
+      { artifact: "findings.json", present: has("findings.json"), stage: "findings" },
+      { artifact: "SUMMARY.md", present: has("SUMMARY.md"), stage: "findings" },
+      { artifact: "scorecard.json", present: has("scorecard.json"), stage: "score" },
+    ];
+    return { steps, next: oneshotNextHint(steps, runDir) };
+  }
   const judgesPresent = has("judges.jsonl") && readText(join(runDir, "judges.jsonl")).trim().length > 0;
   const steps: StatusStep[] = [
     { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
@@ -32,6 +51,13 @@ export function statusRun(runDir: string): RunStatus {
     { artifact: "index.html", present: has("index.html"), stage: "render" },
   ];
   return { steps, next: nextHint(steps, runDir) };
+}
+
+function oneshotNextHint(steps: StatusStep[], runDir: string): string {
+  const missing = (stage: string) => steps.some((s) => s.stage === stage && !s.present);
+  if (missing("oneshot")) return `oneshot --target <target> --out ${runDir} (regenerates ONESHOT.md)`;
+  if (missing("findings")) return `follow ${runDir}/ONESHOT.md — one pass, then check --run ${runDir}`;
+  return `check --run ${runDir} until exit 0 — then optional: score --run ${runDir}, backlog --run ${runDir} --tdd, or plan --run ${runDir} to upgrade to the full pipeline`;
 }
 
 function nextHint(steps: StatusStep[], runDir: string): string {

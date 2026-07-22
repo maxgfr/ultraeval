@@ -42,6 +42,97 @@ const genuine = {
   status: "confirmed",
 };
 
+describe("check — file scope (init --scope)", () => {
+  function scopedScaffold(findings: unknown[], scope?: string[]): string {
+    const root = mkdtempSync(join(tmpdir(), "ue-check-scope-"));
+    tmps.push(root);
+    const target = join(root, "target");
+    mkdirSync(join(target, "src", "domain"), { recursive: true });
+    mkdirSync(join(target, "tools"), { recursive: true });
+    writeFileSync(join(target, "src", "domain", "rules.js"), "r1\nr2\nr3\n");
+    writeFileSync(join(target, "tools", "helper.js"), "h1\nh2\n");
+    const run = join(root, "run");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({
+        target: "target",
+        targetAbs: target,
+        kind: "codebase",
+        category: "métier",
+        dimensions: [],
+        version: "0.0.0",
+        ...(scope ? { scope } : {}),
+      }),
+    );
+    writeFileSync(join(run, "findings.json"), JSON.stringify({ findings }));
+    return run;
+  }
+  const f = (evidence: { ref: string }[], extra: Record<string, unknown> = {}) => ({
+    id: "F1",
+    severity: "P1",
+    title: "rule bug",
+    statement: "a business rule misfires",
+    evidence,
+    status: "confirmed",
+    ...extra,
+  });
+
+  it("passes a finding citing an in-scope file", () => {
+    expect(checkRun(scopedScaffold([f([{ ref: "src/domain/rules.js:2" }])], ["src/domain/**"])).ok).toBe(true);
+  });
+
+  it("fails a finding whose target citations are all out of scope", () => {
+    const r = checkRun(scopedScaffold([f([{ ref: "tools/helper.js:1" }])], ["src/domain/**"]));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/outside the declared scope/);
+  });
+
+  it("a scope-exempt tag downgrades the violation to a visible warning", () => {
+    const r = checkRun(scopedScaffold([f([{ ref: "tools/helper.js:1" }], { tags: ["scope-exempt"] })], ["src/domain/**"]));
+    expect(r.ok).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/scope-exempt/);
+  });
+
+  it("mixed evidence with at least one in-scope citation passes", () => {
+    expect(checkRun(scopedScaffold([f([{ ref: "tools/helper.js:1" }, { ref: "src/domain/rules.js:1" }])], ["src/domain/**"])).ok).toBe(true);
+  });
+
+  it("skips dismissed findings", () => {
+    expect(checkRun(scopedScaffold([f([{ ref: "tools/helper.js:1" }], { status: "dismissed" })], ["src/domain/**"])).ok).toBe(true);
+  });
+
+  it("no scope declared → out-of-scope citations stay legal (unchanged behavior)", () => {
+    expect(checkRun(scopedScaffold([f([{ ref: "tools/helper.js:1" }])])).ok).toBe(true);
+  });
+});
+
+describe("check — oneshot runs and --require-verify", () => {
+  it("--require-verify on a oneshot run fails with the explicit upgrade message", () => {
+    const root = mkdtempSync(join(tmpdir(), "ue-check-oneshot-"));
+    tmps.push(root);
+    const target = join(root, "target");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "app.js"), "line1\nline2\n");
+    const run = join(root, "run");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(
+      join(run, "eval.config.json"),
+      JSON.stringify({ target: "target", targetAbs: target, kind: "codebase", category: "library", dimensions: [], version: "0.0.0", oneshot: true }),
+    );
+    writeFileSync(
+      join(run, "findings.json"),
+      JSON.stringify({ findings: [{ id: "F1", severity: "P1", title: "t", statement: "s", evidence: [{ ref: "app.js:1" }], status: "confirmed" }] }),
+    );
+    const plain = checkRun(run);
+    expect(plain.ok).toBe(true); // the structural gate stays mandatory and passes
+    const r = checkRun(run, { requireVerify: true });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(" ")).toMatch(/one-shot.*verify|verify.*one-shot/i);
+    expect(r.errors.join(" ")).toMatch(/plan --run/); // names the upgrade path
+  });
+});
+
 describe("check — grounding gate", () => {
   it("passes when every finding cites a resolvable file:line", () => {
     expect(checkRun(scaffold([genuine])).ok).toBe(true);

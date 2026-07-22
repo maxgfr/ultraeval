@@ -47,6 +47,15 @@ function comparabilityWarnings(base: Side, cur: Side): string[] {
       warnings.push(`protocol versions differ (${bp.protocolVersion} → ${cp.protocolVersion}) — score delta is not comparable across protocol versions`);
     if (bp.rubricVersion !== cp.rubricVersion)
       warnings.push(`rubric versions differ (${bp.rubricVersion} → ${cp.rubricVersion}) — score delta is not comparable across rubric versions`);
+    // Profile mismatch is the one caveat --gate refuses outright (gateFailures
+    // keys on this exact phrase): a single-pass indicative read cannot gate —
+    // or be gated by — the normed full pipeline.
+    if ((bp.profile ?? "full") !== (cp.profile ?? "full"))
+      warnings.push("one-shot vs full-pipeline comparison — the two runs have different rigor; the delta is indicative only");
+    if (JSON.stringify(bp.scope ?? []) !== JSON.stringify(cp.scope ?? []))
+      warnings.push(
+        `file scopes differ (${(bp.scope ?? []).join(", ") || "unscoped"} → ${(cp.scope ?? []).join(", ") || "unscoped"}) — the runs judged different subsets of the target`,
+      );
   }
   return warnings;
 }
@@ -63,6 +72,10 @@ export interface CompareResult {
 // The CI regression gate: a comparison fails when quality regressed.
 export function gateFailures(r: CompareResult): string[] {
   const fails: string[] = [];
+  // Ungateable pairing (comparabilityWarnings stamps this exact phrase): a
+  // one-shot run and a full run measure with different rigor — refuse the gate.
+  if (r.warnings.some((w) => w.includes("one-shot vs full-pipeline")))
+    fails.push("one-shot vs full-pipeline comparison is not gateable — rerun both sides at the same rigor");
   if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
   const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
   if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);

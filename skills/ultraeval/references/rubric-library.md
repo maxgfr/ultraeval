@@ -28,14 +28,27 @@
 | maintainability | Maintainability | .20 | maintainability — modularity, analysability, modifiability | clear boundaries, low duplication |
 | performance | Performance | .10 | performance efficiency | no hot-path waste; scales to realistic inputs |
 
+## Business / domain — "métier" (both kinds) — ISO/IEC 25010:2023 functional suitability + ISO/IEC/IEEE 29148:2018
+
+A category matching métier/business/domain/DDD replaces the base entirely (like the security set): the eval judges ONLY the business logic — no generic security/perf/docs/a11y axes. Pair it with `init --scope` to also restrict the files under evaluation (a métier-only eval = this category + a domain-code scope).
+
+| id | dimension | w | anchor | perfect |
+|----|-----------|---|--------|---------|
+| business-correctness | Business-rule correctness | .35 | ISO/IEC 25010:2023 — functional correctness | every business rule computes the documented outcome on realistic domain inputs; no logic bugs |
+| domain-model | Domain-model coherence | .25 | ISO/IEC 25010:2023 — functional appropriateness (informative: DDD, Evans 2003) | entities/terms match the domain language; one concept, one representation |
+| invariants | Invariants & consistency | .15 | ISO/IEC 25010:2023 — faultlessness; 29148 — verifiable | domain invariants hold on every path; violating inputs rejected with consistent state |
+| edge-cases-metier | Functional edge cases | .15 | ISO/IEC 25010:2023 — functional completeness | boundary values, empty/overflow cases, and rule interactions handled, not just the happy path |
+| rule-traceability | Rule traceability | .10 | ISO/IEC/IEEE 29148:2018 — traceable | each implemented rule traces to a documented business requirement and back |
+
 ## Category tweaks
 
-`init --category "<c>"` now auto-selects the right set: a category matching security/SAST → precision/recall/false-positive-rate; web/frontend → base + accessibility + auth; research/RAG/retrieval → faithfulness/retrieval/coverage/hallucination; requirements/PRD/SRD → completeness/consistency/verifiable-acceptance/traceability; CLI → base + ergonomics. Otherwise the kind base applies. The research stage still refines weights/anchors.
+`init --category "<c>"` now auto-selects the right set: a category matching security/SAST → precision/recall/false-positive-rate; métier/business/domain/DDD → the business set above; web/frontend → base + accessibility + auth; research/RAG/retrieval → faithfulness/retrieval/coverage/hallucination; requirements/PRD/SRD → completeness/consistency/verifiable-acceptance/traceability; CLI → base + ergonomics. Otherwise the kind base applies. The research stage still refines weights/anchors.
 
 
 - **CLI tool** — add `ergonomics` (help, error messages, exit codes); weight `ux` up.
 - **Web app** — add `accessibility` (WCAG 2.2 AA) and `auth` (authz/session); weight `security` up.
 - **Security/analysis tool** — split `correctness` into `precision` and `recall` (measure against a labelled corpus: OWASP Benchmark, Juliet); add `false-positive-rate`.
+- **Business / métier** — the full-replacement set above; combine with `--scope "src/domain/**"` for a domain-only périmètre.
 - **Research / RAG / doc tool** — replace `correctness` with `faithfulness` (attributable-to-source) + `retrieval` (recall@k, MRR).
 - **Requirements / PRD generator** — dimensions from ISO/IEC/IEEE 29148: `completeness`, `consistency`, `verifiable-acceptance`, `traceability`.
 

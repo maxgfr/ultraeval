@@ -79,6 +79,13 @@ const LIVE_SCENARIOS: Record<string, LiveScenario> = {
     artifact: "the cited report under runs/live-*",
     pass: "every claim attributable to a fetched source; the unanswerable question is refused",
   },
+  business: {
+    golden: "drive the core business rules end-to-end on realistic domain inputs — the documented outcomes come out",
+    error: "feed a boundary/rule-violating input — the business rule rejects it and state stays consistent",
+    help: "the documented domain behavior (rules, invariants, edge cases) matches what the code actually does",
+    artifact: "the exercised rule inputs/outputs transcript under runs/live-* plus the runs/live.md narrative",
+    pass: "rules behave per the documented domain semantics; invariants hold on every exercised path",
+  },
 };
 
 // Category → scenario, via the shared categoryKey() ladder (single source, no
@@ -88,6 +95,7 @@ function liveScenarioFor(cfg: EvalConfig): LiveScenario {
   const key = categoryKey(cfg.category ?? "");
   if (key === "security") return LIVE_SCENARIOS.security as LiveScenario;
   if (key === "requirements") return LIVE_SCENARIOS.requirements as LiveScenario;
+  if (key === "business") return LIVE_SCENARIOS.business as LiveScenario;
   if (key === "research") return LIVE_SCENARIOS.research as LiveScenario;
   if (key === "web") return LIVE_SCENARIOS["web app"] as LiveScenario;
   if (key === "cli") return LIVE_SCENARIOS.cli as LiveScenario;
@@ -99,6 +107,13 @@ function liveScenarioFor(cfg: EvalConfig): LiveScenario {
 const diffScopeBlock = (cfg: EvalConfig): string =>
   cfg.provenance?.sinceRef
     ? `\n**DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings — \`check\` warns on out-of-scope citations, and \`check --strict-scope\` hard-fails them). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.\n`
+    : "";
+
+// File-scoped eval (init --scope <glob[,glob]>): e.g. a métier/business-domain
+// eval judges only the domain code. Everything else is context, not findings.
+const fileScopeBlock = (cfg: EvalConfig): string =>
+  cfg.scope?.length
+    ? `\n**FILE SCOPE (binding).** This eval is scoped to the target-relative globs \`${cfg.scope.join(", ")}\`. Read anything for context, but exercise and report ONLY behavior implemented inside the scope: every finding MUST cite at least one in-scope file. \`check\` hard-fails a finding whose target citations are all out of scope, unless the finding carries the tag \`scope-exempt\` (reserved for a cross-cutting issue that genuinely breaks the in-scope behavior — justify it in the statement). Infra/config/tooling/tests outside the scope are context, not findings.\n`
     : "";
 
 const liveScenarioBlock = (cfg: EvalConfig): string =>
@@ -148,6 +163,7 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `const CATEGORY = ${JSON.stringify(cfg.category)}`,
     `const KIND = ${JSON.stringify(cfg.kind)}`,
     `const DIMENSIONS = ${JSON.stringify(cfg.dimensions)}`,
+    ...(cfg.scope?.length ? [`const SCOPE = ${JSON.stringify(cfg.scope)}`] : []),
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
@@ -161,6 +177,9 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     `  return 'Read and follow the dispatch contract at ' + AGENTS + '/' + name + '.md VERBATIM.\\n'`,
     `    + 'Constants: TARGET=' + TARGET + '  ENGINE=' + ENGINE + '  RUN=' + RUN + '  KIND=' + KIND + '  CATEGORY=' + CATEGORY + '.\\n'`,
     `    + 'Invoke the engine only by its ABSOLUTE path: node ' + ENGINE + ' <cmd>. Write every artifact under RUN. Do not stop early.'`,
+    ...(cfg.scope?.length
+      ? [`    + '\\nFILE SCOPE (binding): ' + SCOPE.join(', ') + ' — every finding must cite at least one in-scope file (tag scope-exempt otherwise).'`]
+      : []),
     `    + (extra ? '\\n' + extra : '')`,
     `}`,
     ``,
@@ -258,7 +277,7 @@ Dimensions in scope:
 ${dims}
 `,
     testplan: `# Contract: testplan
-
+${cfg.scope?.length ? `\nFile scope: enumerate ONLY functionality implemented inside \`${cfg.scope.join(", ")}\` — out-of-scope behavior is context, not a test row.\n` : ""}
 Read \`${cfg.targetAbs}\` (its SKILL.md/README/CLI \`--help\`, or its source) and the research notes under \`${runDirAbs}/research/\`.
 
 Enumerate EVERY functionality worth testing — modes, subcommands, flags, gates, and the live end-to-end behavior — mapped to the dimensions. For each: id, what it is, the concrete command or user prompt that tests it, and explicit pass criteria.
@@ -268,7 +287,7 @@ The live rows MUST map to the category's normed scenario set (golden path, error
 Write \`${runDirAbs}/TEST-PLAN.md\` (a reviewable checklist with the rubric embedded). Be exhaustive about the CLI/behavior surface.
 `,
     executor: `# Contract: executor
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 You produce the raw evidence an eval stands on. Two MODES; do the one named in your prompt.
 
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
@@ -289,7 +308,7 @@ SAFETY:
 Record exact command lines and exit codes verbatim — later stages cite \`run:runs/core.md#Lnn\` as evidence, so line numbers matter.
 `,
     findings: `# Contract: findings
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 Consolidate the test-plan results and the run logs into \`${runDirAbs}/findings.json\` following \`${runDirAbs}/findings.schema.json\`.
 
 RULES (the grounding gate will enforce these):
@@ -311,7 +330,7 @@ ${GATE_CHEATSHEET(engineAbs, runDirAbs)}
 If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings — do not weaken the gate) and re-run. If a finding is \`refuted\` by verification, set its status to \`dismissed\`. Report the final exit codes of \`check --run ${runDirAbs} --semantic --require-verify\` — it MUST be 0 before results.
 `,
     judge: `# Contract: judge
-
+${cfg.scope?.length ? `\nThis is a file-scoped eval (\`${cfg.scope.join(", ")}\`): score in-scope behavior only — out-of-scope code never lowers (or raises) a dimension score.\n` : ""}
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
 **Step 0 — CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0–5 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields — read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
@@ -342,7 +361,7 @@ Produce deterministic signal for the brainstorm stage.
 Run \`node ${engineAbs} analyze --run ${runDirAbs}\` → writes \`analysis.json\` + \`ANALYSIS.md\` (size/complexity hotspots, import graph + cycles, git churn, test/doc gaps). Then read \`ANALYSIS.md\` and note the 5-8 highest-signal hotspots the brainstorm should anchor on. This stage is deterministic — do not invent metrics; report what the tool found.
 `,
     brainstormer: `# Contract: brainstormer
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 Discover grounded improvement leads (both internal health AND product/capability) — be divergent, then keep the grounded ones.
 
 1. \`node ${engineAbs} brainstorm --run ${runDirAbs}\` → emits \`BRAINSTORM.todo.md\` (lenses + hotspots).
@@ -387,7 +406,7 @@ export function runbookMd(cfg: EvalConfig, runDirAbs: string, engineAbs: string)
   const steps = stages.map((s, i) => `${i + 1}. **${s.title}** — play \`${runDirAbs}/agents/${s.contract}.md\` yourself. ${s.note}`).join("\n");
   return `# ultraeval — sequential RUNBOOK (eco / no-subagent fallback)
 
-Run: \`${runDirAbs}\` · Target: \`${cfg.targetAbs}\` · Engine: \`node ${engineAbs}\` · mode: ${mode}
+Run: \`${runDirAbs}\` · Target: \`${cfg.targetAbs}\` · Engine: \`node ${engineAbs}\` · mode: ${mode}${cfg.scope?.length ? ` · scope: \`${cfg.scope.join(", ")}\`` : ""}
 
 Generated by \`ultraeval plan --eco\`. Same stages, same contracts, same gates as the
 multi-agent \`eval.workflow.mjs\` — played sequentially by ONE agent. Correctness-identical;
@@ -400,6 +419,37 @@ artifact under the run dir.
 ${steps}
 
 **Exit gate**: \`node ${engineAbs} check --run ${runDirAbs} --semantic --require-verify\` must exit 0 before presenting results.
+`;
+}
+
+// The one-shot contract: ONE agent, ONE pass, the structural gate kept, the
+// verify/judge machinery explicitly out of contract. The findings schema and
+// evidence grammar are IDENTICAL to a full run, so every downstream command
+// (check/score/backlog/render) works unchanged — and `plan` upgrades in place.
+export function oneshotMd(cfg: EvalConfig, runDirAbs: string, engineAbs: string): string {
+  const dims = cfg.dimensions
+    .map((d) => `- **${d.id}** ${d.name} (w=${d.weight}${anchorText(d) ? `, anchored to ${anchorText(d)}` : ""}): ${d.whatPerfectLooksLike}`)
+    .join("\n");
+  return `# ultraeval — ONE-SHOT eval contract
+
+Run: \`${runDirAbs}\` · Target: \`${cfg.targetAbs}\` · Engine: \`node ${engineAbs}\` · kind: ${cfg.kind} · category: ${cfg.category}${cfg.scope?.length ? ` · scope: \`${cfg.scope.join(", ")}\`` : ""}
+${fileScopeBlock(cfg)}
+A quick single-pass read by ONE agent — no subagents, no fan-out, no research stage,
+no verify/honeypots, no judge panel. The result is **indicative, not a normed verdict**:
+never present it as verified. For the full pipeline, upgrade with \`node ${engineAbs} plan --run ${runDirAbs}\`.
+
+## Dimensions (sketch each 0–5 in SUMMARY.md)
+
+${dims}
+
+## The pass (ONE pass, timeboxed — a stuck step is recorded and skipped, never a hang)
+
+1. **Skim** the target${cfg.scope?.length ? " within the scope" : ""}: README/SKILL.md/docs, entry points, the load-bearing files. Run the cheap obvious probe (test suite entry, \`--help\`, the main flow) when it costs seconds.
+2. **Evaluate every dimension together**, collecting concrete defects as you go — no per-dimension sub-passes.
+3. **Write \`${runDirAbs}/findings.json\`** following \`${runDirAbs}/findings.schema.json\` — the SAME grounding grammar as a full run: every finding cites \`path:line\` in the target (or \`run:relpath#Lnn\`); NEVER invent line numbers. severity: ${severityLegend()}.
+4. **Write \`${runDirAbs}/SUMMARY.md\`** — open with "One-shot eval — indicative, not a normed verdict.", then a per-dimension sketch (0–5 + one line each) citing \`[F#]\`.
+5. **Gate (required):** \`node ${engineAbs} check --run ${runDirAbs}\` until exit 0 — repair or delete ungrounded findings; never weaken the gate.
+6. **Optional:** \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` for TDD fix cards; \`node ${engineAbs} score --run ${runDirAbs}\` after appending ONE self-judge line to \`judges.jsonl\` (set \`author\` to yourself — the scorecard is flagged non-independent).
 `;
 }
 
@@ -466,6 +516,11 @@ export function findingsSchema(): unknown {
             },
             failureScenario: { type: "string" },
             recommendation: { type: "string" },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "scope-exempt — a justified cross-cutting finding whose citations sit outside the declared file scope",
+            },
             status: { enum: ["open", "confirmed", "dismissed"] },
           },
           allOf: [

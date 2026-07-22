@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Provenance } from "../src/types.js";
-import { extractContext, type LineCache, parseEvidenceRef, provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
+import { extractContext, inScope, type LineCache, parseEvidenceRef, provLine, readText, resolveEvidence, SEV_ORDER, titleKey, writeText } from "../src/util.js";
 
 const tmps: string[] = [];
 
@@ -23,6 +23,39 @@ function scaffold(): { targetAbs: string; runDir: string; outside: string } {
   writeFileSync(outside, "secret\n");
   return { targetAbs, runDir, outside };
 }
+
+describe("inScope — file-scope glob matcher", () => {
+  it("an empty or absent scope matches everything", () => {
+    expect(inScope("src/anything.ts", [])).toBe(true);
+  });
+  it("a glob-free entry is a directory prefix (or exact file)", () => {
+    expect(inScope("src/domain/rules.ts", ["src/domain"])).toBe(true);
+    expect(inScope("src/domain", ["src/domain"])).toBe(true);
+    expect(inScope("src/domainx/rules.ts", ["src/domain"])).toBe(false);
+  });
+  it("** crosses directories", () => {
+    expect(inScope("src/domain/deep/nested/rule.ts", ["src/domain/**"])).toBe(true);
+    expect(inScope("lib/a.ts", ["src/domain/**"])).toBe(false);
+  });
+  it("* stays within one path segment", () => {
+    expect(inScope("src/a.ts", ["src/*.ts"])).toBe(true);
+    expect(inScope("src/sub/a.ts", ["src/*.ts"])).toBe(false);
+  });
+  it("? matches exactly one character", () => {
+    expect(inScope("src/a1.ts", ["src/a?.ts"])).toBe(true);
+    expect(inScope("src/a12.ts", ["src/a?.ts"])).toBe(false);
+  });
+  it("{a,b} alternation", () => {
+    expect(inScope("src/billing/x.ts", ["src/{domain,billing}/**"])).toBe(true);
+    expect(inScope("src/infra/x.ts", ["src/{domain,billing}/**"])).toBe(false);
+  });
+  it("any of several globs suffices", () => {
+    expect(inScope("core/x.ts", ["src/**", "core/**"])).toBe(true);
+  });
+  it("normalizes backslashes and a leading ./", () => {
+    expect(inScope("src\\domain\\a.ts", ["./src/domain/**"])).toBe(true);
+  });
+});
 
 describe("shared ranking/identity helpers", () => {
   it("SEV_ORDER ranks P0 before P1 before P2 and titleKey normalizes titles", () => {

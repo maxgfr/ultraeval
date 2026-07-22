@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+import { ensureGitignored, type GitignoreResult } from "./gitignore.js";
 import { defaultDimensions } from "./rubrics.js";
 import type { Dimension, EvalConfig, Kind, Mode, Provenance } from "./types.js";
 import { PROTOCOL_VERSION, RUBRIC_VERSION, VERSION } from "./types.js";
@@ -14,6 +15,24 @@ export interface InitOpts {
   mode?: Mode;
   bar?: number; // category-calibrated meets-expectations bar
   since?: string; // diff-scope the eval to changes since this git ref (PR gating)
+  scope?: string[]; // file-scope the eval to target-relative globs (e.g. métier eval: src/domain/**)
+  gitignore?: boolean; // default true: gitignore the run dir in the repo containing it (--no-gitignore opts out)
+  oneshot?: boolean; // stamp the single-pass profile (the `oneshot` command sets this; `plan` clears it on upgrade)
+}
+
+// Scope entries are target-relative globs; an absolute path or a `..` escape
+// would let a "scoped" eval cite files outside the target — reject at init.
+function normalizeScope(scope: string[] | undefined): string[] | undefined {
+  if (!scope) return undefined;
+  const clean: string[] = [];
+  for (const raw of scope) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    if (isAbsolute(entry) || entry.split(/[\\/]/).includes(".."))
+      throw new Error(`--scope ${entry}: entries must be target-relative globs (no absolute paths, no ..)`);
+    if (!clean.includes(entry)) clean.push(entry);
+  }
+  return clean.length ? clean : undefined;
 }
 
 // A target is a "skill" if it exposes a SKILL.md (at root or under skills/<x>/).
@@ -50,13 +69,14 @@ function gitInfo(targetAbs: string): Provenance["targetGit"] {
 // recompute lives next to the definition and cannot drift from it.
 export const dimensionsHash = (dims: Dimension[]): string => createHash("sha256").update(JSON.stringify(dims)).digest("hex").slice(0, 12);
 
-export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
+export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string; gitignore?: GitignoreResult } {
   const targetAbs = resolve(process.cwd(), opts.target);
   if (!exists(targetAbs)) throw new Error(`target not found: ${opts.target}`);
   const kind = opts.kind ?? detectKind(targetAbs);
   const category = opts.category ?? (kind === "skill" ? "agent skill" : "software project");
   const mode = opts.mode ?? "audit";
   const dimensions = defaultDimensions(kind, category);
+  const scope = normalizeScope(opts.scope);
   const targetGit = gitInfo(targetAbs);
   // --since must be a ref the TARGET repo can resolve — a typo'd ref would
   // silently scope the eval to nothing.
@@ -78,6 +98,8 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
     dimensionsHash: dimensionsHash(dimensions),
     ...(targetGit ? { targetGit } : {}),
     ...(opts.since ? { sinceRef: opts.since } : {}),
+    ...(scope ? { scope } : {}),
+    ...(opts.oneshot ? { profile: "oneshot" as const } : {}),
   };
   const cfg: EvalConfig = {
     target: opts.target,
@@ -86,6 +108,8 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
     category,
     mode,
     dimensions,
+    ...(scope ? { scope } : {}),
+    ...(opts.oneshot ? { oneshot: true } : {}),
     note: "starter dimensions — the research stage refines them",
     version: VERSION,
     provenance,
@@ -95,5 +119,6 @@ export function initRun(opts: InitOpts): { cfg: EvalConfig; runDir: string } {
   ensureDir(join(runDir, "runs"));
   ensureDir(join(runDir, "research"));
   writeJson(join(runDir, "eval.config.json"), cfg);
-  return { cfg, runDir };
+  const gitignore = opts.gitignore === false ? undefined : ensureGitignored(runDir);
+  return { cfg, runDir, ...(gitignore ? { gitignore } : {}) };
 }

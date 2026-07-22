@@ -303,3 +303,45 @@ describe("cli — status names the pipeline state and the next command", () => {
     expect(typeof s.next).toBe("string");
   });
 });
+
+describe("cli — oneshot command + init --scope / --no-gitignore", () => {
+  it("oneshot scaffolds a single-pass run (métier + scope) through the bundle", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-cli-oneshot-"));
+    tmps.push(out);
+    const r = run(["oneshot", "--target", join(FIX, "target-lib"), "--out", join(out, "run"), "--category", "métier", "--scope", "src/**"]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/oneshot/i);
+    expect(existsSync(join(out, "run", "ONESHOT.md"))).toBe(true);
+    const cfg = JSON.parse(readFileSync(join(out, "run", "eval.config.json"), "utf8"));
+    expect(cfg.oneshot).toBe(true);
+    expect(cfg.scope).toEqual(["src/**"]);
+    expect(cfg.dimensions.map((d: { id: string }) => d.id)).toContain("business-correctness");
+  });
+
+  it("init --scope splits comma-separated globs and --no-gitignore passes validation", () => {
+    const out = mkdtempSync(join(tmpdir(), "ue-cli-scope-"));
+    tmps.push(out);
+    const r = run(["init", "--target", join(FIX, "target-lib"), "--out", join(out, "run"), "--scope", "src/**, lib/**", "--no-gitignore"]);
+    expect(r.status).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(out, "run", "eval.config.json"), "utf8"));
+    expect(cfg.scope).toEqual(["src/**", "lib/**"]);
+  });
+
+  it("init reports the gitignore action when the run dir sits inside a git repo", () => {
+    const target = mkdtempSync(join(tmpdir(), "ue-cli-gi-"));
+    tmps.push(target);
+    execFileSync("git", ["init", "-q"], { cwd: target });
+    writeFileSync(join(target, "a.js"), "x\n");
+    const r = run(["init", "--target", target, "--out", join(target, ".ultraeval", "r1")]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/gitignore/);
+    expect(readFileSync(join(target, ".gitignore"), "utf8")).toContain(".ultraeval/");
+  });
+
+  it("help documents the oneshot command and the new init flags", () => {
+    const r = run(["help"]);
+    expect(r.out).toMatch(/oneshot\s+--target/);
+    expect(r.out).toMatch(/--scope/);
+    expect(r.out).toMatch(/--no-gitignore/);
+  });
+});

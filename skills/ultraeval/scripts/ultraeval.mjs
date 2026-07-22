@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { realpathSync } from "fs";
-import { join as join18 } from "path";
+import { realpathSync as realpathSync2 } from "fs";
+import { join as join20 } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
 // src/analyze.ts
@@ -187,10 +187,49 @@ function categoryKey(category) {
   const cat = (category ?? "").toLowerCase();
   if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return "security";
   if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return "requirements";
+  if (/\bm[ée]tier\b|\bbusiness\b|\bdomain\b|\bddd\b/.test(cat)) return "business";
   if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return "research";
   if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return "web";
   if (/\bcli\b|command.?line|terminal/.test(cat)) return "cli";
   return null;
+}
+var escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var normPath = (p) => p.replace(/\\/g, "/").replace(/^\.\//, "");
+function globToRegExp(glob) {
+  const g = normPath(glob);
+  let re = "";
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === "*") {
+      if (g[i + 1] === "*") {
+        i++;
+        if (g[i + 1] === "/") {
+          i++;
+          re += "(?:[^/]+/)*";
+        } else re += ".*";
+      } else re += "[^/]*";
+    } else if (c === "?") {
+      re += "[^/]";
+    } else if (c === "{") {
+      const end = g.indexOf("}", i);
+      if (end === -1) {
+        re += "\\{";
+      } else {
+        re += `(?:${g.slice(i + 1, end).split(",").map(escapeRe).join("|")})`;
+        i = end;
+      }
+    } else re += escapeRe(c);
+  }
+  return new RegExp(`^${re}$`);
+}
+function inScope(relPath, scope) {
+  if (!scope?.length) return true;
+  const p = normPath(relPath);
+  return scope.some((entry) => {
+    const g = normPath(entry).replace(/\/+$/, "");
+    if (!/[*?{]/.test(g)) return p === g || p.startsWith(`${g}/`);
+    return globToRegExp(g).test(p);
+  });
 }
 function opportunityValue(impact, effort) {
   const i = impact === "high" ? 3 : impact === "med" ? 2 : 1;
@@ -498,8 +537,8 @@ var SEVERITY_DEFS = {
 };
 var VALID_IMPACT = ["high", "med", "low"];
 var VALID_EFFORT = ["S", "M", "L"];
-var PROTOCOL_VERSION = "2";
-var RUBRIC_VERSION = "1";
+var PROTOCOL_VERSION = "3";
+var RUBRIC_VERSION = "2";
 var MEETS_BAR = 80;
 
 // src/backlog.ts
@@ -815,8 +854,8 @@ function rankBrainstorm(runDir) {
 }
 
 // src/check.ts
-import { execFileSync as execFileSync3 } from "child_process";
-import { join as join7 } from "path";
+import { execFileSync as execFileSync4 } from "child_process";
+import { join as join8 } from "path";
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -875,9 +914,49 @@ function findingRefs(md) {
 }
 
 // src/init.ts
-import { execFileSync as execFileSync2 } from "child_process";
+import { execFileSync as execFileSync3 } from "child_process";
 import { createHash } from "crypto";
-import { join as join5, resolve as resolve2 } from "path";
+import { isAbsolute as isAbsolute2, join as join6, resolve as resolve2 } from "path";
+
+// src/gitignore.ts
+import { execFileSync as execFileSync2 } from "child_process";
+import { existsSync as existsSync2, realpathSync } from "fs";
+import { join as join5, relative as relative4, sep } from "path";
+function gitRootOf(dir) {
+  try {
+    const out = execFileSync2("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+var HEADER = "# ultraeval runs";
+function ensureGitignored(runDirAbs) {
+  const root = gitRootOf(runDirAbs);
+  if (!root) return { action: "skipped", reason: "run dir is not inside a git repo" };
+  const rel = relative4(realpathSync(root), realpathSync(runDirAbs)).split(sep).join("/");
+  if (!rel || rel.startsWith("..")) return { action: "skipped", reason: "run dir is the repo root" };
+  const segments = rel.split("/");
+  const container = segments.indexOf(".ultraeval");
+  const entry = container >= 0 ? `${segments.slice(0, container + 1).join("/")}/` : `${rel}/`;
+  if (entry === "evals/") return { action: "skipped", entry, reason: "refusing \u2014 the committed score ledger lives under evals/" };
+  const path = join5(root, ".gitignore");
+  const existing = existsSync2(path) ? readText(path) : "";
+  const bare = entry.replace(/\/$/, "");
+  const covered = existing.split(/\r?\n/).map((l) => l.trim()).some((l) => l === entry || l === bare || l === `/${entry}` || l === `/${bare}`);
+  if (covered) return { action: "already", path, entry };
+  const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+  const lines = [];
+  if (existing && !existing.endsWith("\n")) lines.push("");
+  if (!existing.includes(HEADER)) lines.push(HEADER);
+  lines.push(entry);
+  try {
+    writeText(path, existing + lines.join(eol) + eol);
+  } catch (err) {
+    return { action: "skipped", path, entry, reason: `could not write .gitignore: ${err.message}` };
+  }
+  return { action: "added", path, entry };
+}
 
 // src/rubrics.ts
 var iso25010 = (ref, note) => ({ standard: "ISO/IEC 25010:2023", ref, ...note ? { note } : {} });
@@ -1028,6 +1107,46 @@ var REQUIREMENTS_DIMS = [
     anchors: [REQ_29148("traceable")]
   }
 ];
+var BUSINESS_DIMS = [
+  {
+    id: "business-correctness",
+    name: "Business-rule correctness",
+    weight: 0.35,
+    whatPerfectLooksLike: "every business rule computes the documented outcome on realistic domain inputs; no logic bugs",
+    anchors: [iso25010("Functional suitability \u2014 functional correctness")]
+  },
+  {
+    id: "domain-model",
+    name: "Domain-model coherence",
+    weight: 0.25,
+    whatPerfectLooksLike: "entities/terms match the domain language; one concept, one representation; boundaries make sense",
+    anchors: [
+      iso25010("Functional suitability \u2014 functional appropriateness"),
+      informative("Domain-Driven Design (Evans 2003)", "ubiquitous language, bounded contexts")
+    ]
+  },
+  {
+    id: "invariants",
+    name: "Invariants & consistency",
+    weight: 0.15,
+    whatPerfectLooksLike: "domain invariants hold on every path; a rule-violating input is rejected with state left consistent",
+    anchors: [iso25010("Reliability \u2014 faultlessness"), REQ_29148("verifiable")]
+  },
+  {
+    id: "edge-cases-metier",
+    name: "Functional edge cases",
+    weight: 0.15,
+    whatPerfectLooksLike: "boundary values, empty/overflow cases, and rule interactions are handled, not just the happy path",
+    anchors: [iso25010("Functional suitability \u2014 functional completeness")]
+  },
+  {
+    id: "rule-traceability",
+    name: "Rule traceability",
+    weight: 0.1,
+    whatPerfectLooksLike: "each implemented rule traces to a documented business requirement and back",
+    anchors: [REQ_29148("traceable")]
+  }
+];
 var RESEARCH_DIMS = [
   {
     id: "faithfulness",
@@ -1089,6 +1208,7 @@ function defaultDimensions(kind, category = "") {
   const key2 = categoryKey(category);
   if (key2 === "security") return SECURITY_DIMS;
   if (key2 === "requirements") return REQUIREMENTS_DIMS;
+  if (key2 === "business") return BUSINESS_DIMS;
   if (key2 === "research") return RESEARCH_DIMS;
   const base = kind === "skill" ? SKILL_DIMS : CODEBASE_DIMS;
   if (key2 === "web") return webFlavored(base);
@@ -1097,16 +1217,28 @@ function defaultDimensions(kind, category = "") {
 }
 
 // src/init.ts
+function normalizeScope(scope) {
+  if (!scope) return void 0;
+  const clean2 = [];
+  for (const raw of scope) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    if (isAbsolute2(entry) || entry.split(/[\\/]/).includes(".."))
+      throw new Error(`--scope ${entry}: entries must be target-relative globs (no absolute paths, no ..)`);
+    if (!clean2.includes(entry)) clean2.push(entry);
+  }
+  return clean2.length ? clean2 : void 0;
+}
 function detectKind(targetAbs) {
-  if (exists(join5(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join5(targetAbs, "skills");
+  if (exists(join6(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join6(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
   return "codebase";
 }
 function gitInfo(targetAbs) {
-  const git = (args) => execFileSync2("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  const git = (args) => execFileSync3("git", ["-C", targetAbs, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   try {
     const commit = git(["rev-parse", "HEAD"]);
     const dirty = git(["status", "--porcelain"]).length > 0;
@@ -1129,10 +1261,11 @@ function initRun(opts) {
   const category = opts.category ?? (kind === "skill" ? "agent skill" : "software project");
   const mode = opts.mode ?? "audit";
   const dimensions = defaultDimensions(kind, category);
+  const scope = normalizeScope(opts.scope);
   const targetGit = gitInfo(targetAbs);
   if (opts.since) {
     try {
-      execFileSync2("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
+      execFileSync3("git", ["-C", targetAbs, "rev-parse", "--verify", `${opts.since}^{commit}`], { stdio: ["ignore", "ignore", "ignore"] });
     } catch {
       throw new Error(`--since ${opts.since}: not a resolvable git ref in ${targetAbs}`);
     }
@@ -1147,7 +1280,9 @@ function initRun(opts) {
     category,
     dimensionsHash: dimensionsHash(dimensions),
     ...targetGit ? { targetGit } : {},
-    ...opts.since ? { sinceRef: opts.since } : {}
+    ...opts.since ? { sinceRef: opts.since } : {},
+    ...scope ? { scope } : {},
+    ...opts.oneshot ? { profile: "oneshot" } : {}
   };
   const cfg = {
     target: opts.target,
@@ -1156,21 +1291,24 @@ function initRun(opts) {
     category,
     mode,
     dimensions,
+    ...scope ? { scope } : {},
+    ...opts.oneshot ? { oneshot: true } : {},
     note: "starter dimensions \u2014 the research stage refines them",
     version: VERSION,
     provenance,
     ...opts.bar !== void 0 && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}
   };
   const runDir = resolve2(process.cwd(), opts.out);
-  ensureDir(join5(runDir, "runs"));
-  ensureDir(join5(runDir, "research"));
-  writeJson(join5(runDir, "eval.config.json"), cfg);
-  return { cfg, runDir };
+  ensureDir(join6(runDir, "runs"));
+  ensureDir(join6(runDir, "research"));
+  writeJson(join6(runDir, "eval.config.json"), cfg);
+  const gitignore = opts.gitignore === false ? void 0 : ensureGitignored(runDir);
+  return { cfg, runDir, ...gitignore ? { gitignore } : {} };
 }
 
 // src/verify.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { isAbsolute as isAbsolute2, join as join6, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute3, join as join7, resolve as resolve3 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -1181,8 +1319,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join6(runDir, "eval.config.json"));
-  const doc = readJson(join6(runDir, "findings.json"));
+  const cfg = readJson(join7(runDir, "eval.config.json"));
+  const doc = readJson(join7(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
@@ -1209,15 +1347,15 @@ function runVerify(runDir, opts = {}) {
     planted = h.planted;
   }
   const out = { run: runDir, pairs };
-  writeJson(join6(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
-  writeText(join6(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
+  writeJson(join7(runDir, sh ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out);
+  writeText(join7(runDir, sh ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out));
   if (planted !== void 0) out.planted = planted;
   return out;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return { pairs, planted: 0 };
-  const cfg = readJson(join6(runDir, "eval.config.json"));
-  const doc = readJson(join6(runDir, "findings.json"));
+  const cfg = readJson(join7(runDir, "eval.config.json"));
+  const doc = readJson(join7(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -1242,7 +1380,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   if (traps.length) {
     const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-    writeJson(join6(runDir, truthName), {
+    writeJson(join7(runDir, truthName), {
       note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
       claimIds: traps.map((t) => t.claimId)
     });
@@ -1251,9 +1389,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join6(runDir, "VERIFY.honeypots.json")];
+  const files = [join7(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join6(runDir, e));
+    for (const e of readdirSync4(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join7(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -1310,7 +1448,7 @@ function loadVerdicts(runDir, spec) {
   const files = spec.includes(",") ? spec.split(",").map((s) => s.trim()) : [spec];
   const merged = /* @__PURE__ */ new Map();
   for (const f of files) {
-    const p = exists(f) ? f : isAbsolute2(f) ? f : resolve3(runDir, f);
+    const p = exists(f) ? f : isAbsolute3(f) ? f : resolve3(runDir, f);
     if (!exists(p)) throw new Error(`verdicts file not found: ${p} \u2014 pass the filled VERIFY.todo.json or a {"pairs":[...]} file`);
     const data = readJson(p);
     const items = Array.isArray(data) ? data : Array.isArray(data.pairs) ? data.pairs : null;
@@ -1324,7 +1462,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join6(runDir, "findings.json"));
+  const doc = readJson(join7(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -1339,7 +1477,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed };
     if (failed.length) result.ok = false;
   }
-  writeJson(join6(runDir, "VERIFY.json"), result);
+  writeJson(join7(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -1359,7 +1497,7 @@ var SOFT_FILES = ["SUMMARY.md"];
 function checkRun(runDir, opts = {}) {
   const errors = [];
   const warnings = [];
-  const cfgPath = join7(runDir, "eval.config.json");
+  const cfgPath = join8(runDir, "eval.config.json");
   if (!exists(cfgPath)) {
     errors.push("no eval.config.json \u2014 run `ultraeval init` first");
     return { ok: false, errors, warnings };
@@ -1371,7 +1509,7 @@ function checkRun(runDir, opts = {}) {
     errors.push("eval.config.json is not valid JSON");
     return { ok: false, errors, warnings, usageError: true };
   }
-  const findingsPath = join7(runDir, "findings.json");
+  const findingsPath = join8(runDir, "findings.json");
   if (!exists(findingsPath)) {
     errors.push("no findings.json \u2014 the eval produced no findings record");
     return { ok: false, errors, warnings };
@@ -1424,7 +1562,7 @@ function checkRun(runDir, opts = {}) {
   }
   const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
   for (const file of [...HARD_FILES, ...SOFT_FILES]) {
-    const p = join7(runDir, file);
+    const p = join8(runDir, file);
     if (!exists(p)) continue;
     const md = readText(p);
     for (const id of findingRefs(md)) if (!ids.has(id)) errors.push(`${file} cites ${id} but no such finding exists (dangling citation)`);
@@ -1440,7 +1578,7 @@ function checkRun(runDir, opts = {}) {
       }
     }
   }
-  const backlogPath = join7(runDir, "BACKLOG.json");
+  const backlogPath = join8(runDir, "BACKLOG.json");
   if (exists(backlogPath)) {
     try {
       const bl = readJson(backlogPath);
@@ -1455,8 +1593,12 @@ function checkRun(runDir, opts = {}) {
       errors.push("BACKLOG.json is not valid JSON");
     }
   }
-  const verifyPath = join7(runDir, "VERIFY.json");
-  if (opts.requireVerify) {
+  const verifyPath = join8(runDir, "VERIFY.json");
+  if (opts.requireVerify && cfg.oneshot) {
+    errors.push(
+      `--require-verify: this is a one-shot run \u2014 no verify phase exists; upgrade it (plan --run ${runDir}) and run the verify chain for verified findings`
+    );
+  } else if (opts.requireVerify) {
     if (!exists(verifyPath)) errors.push("--require-verify: no VERIFY.json \u2014 run `ultraeval verify --apply <verdicts>`");
     else {
       try {
@@ -1530,7 +1672,7 @@ function checkRun(runDir, opts = {}) {
     let changed = null;
     try {
       changed = new Set(
-        execFileSync3("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").map((l) => l.trim()).filter(Boolean)
+        execFileSync4("git", ["-C", targetAbs, "diff", "--name-only", sinceRef], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n").map((l) => l.trim()).filter(Boolean)
       );
     } catch {
       warnings.push(`diff scope: could not resolve ${sinceRef} in the target \u2014 out-of-scope findings not checked`);
@@ -1546,14 +1688,31 @@ function checkRun(runDir, opts = {}) {
       }
     }
   }
+  const scope = cfg.scope ?? cfg.provenance?.scope;
+  if (scope?.length) {
+    for (const f of findings) {
+      if (f.status === "dismissed") continue;
+      const files = (f.evidence ?? []).map((e) => parseEvidenceRef(e.ref)).filter((p) => p.isTargetRef).map((p) => p.path);
+      if (files.length && !files.some((x) => inScope(x, scope))) {
+        if (Array.isArray(f.tags) && f.tags.includes("scope-exempt"))
+          warnings.push(
+            `${f.id} is scope-exempt: cites only files outside the declared scope (${scope.join(", ")}) \u2014 kept as a justified cross-cutting finding`
+          );
+        else
+          errors.push(
+            `${f.id} cites only files outside the declared scope (${scope.join(", ")}) \u2014 out of scope for this run; drop it or tag it scope-exempt with a justification`
+          );
+      }
+    }
+  }
   for (const f of findings) {
     if (f.status === "dismissed") continue;
     if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
   }
-  if (exists(join7(runDir, "RESULTS.md")) && !exists(join7(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
-  if (exists(join7(runDir, "runs", "budget.md"))) {
-    const summaryPath = join7(runDir, "SUMMARY.md");
+  if (exists(join8(runDir, "RESULTS.md")) && !exists(join8(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (exists(join8(runDir, "runs", "budget.md"))) {
+    const summaryPath = join8(runDir, "SUMMARY.md");
     if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
       warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
   }
@@ -1577,11 +1736,11 @@ function formatCheckReport(r, runDir) {
 }
 
 // src/compare.ts
-import { join as join8 } from "path";
+import { join as join9 } from "path";
 function load(dir) {
-  const findings = exists(join8(dir, "findings.json")) ? readJson(join8(dir, "findings.json")).findings ?? [] : [];
-  const score = exists(join8(dir, "scorecard.json")) ? readJson(join8(dir, "scorecard.json")) : null;
-  const cfg = exists(join8(dir, "eval.config.json")) ? readJson(join8(dir, "eval.config.json")) : null;
+  const findings = exists(join9(dir, "findings.json")) ? readJson(join9(dir, "findings.json")).findings ?? [] : [];
+  const score = exists(join9(dir, "scorecard.json")) ? readJson(join9(dir, "scorecard.json")) : null;
+  const cfg = exists(join9(dir, "eval.config.json")) ? readJson(join9(dir, "eval.config.json")) : null;
   return { findings, score, cfg };
 }
 var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
@@ -1605,11 +1764,19 @@ function comparabilityWarnings(base, cur) {
       warnings.push(`protocol versions differ (${bp.protocolVersion} \u2192 ${cp.protocolVersion}) \u2014 score delta is not comparable across protocol versions`);
     if (bp.rubricVersion !== cp.rubricVersion)
       warnings.push(`rubric versions differ (${bp.rubricVersion} \u2192 ${cp.rubricVersion}) \u2014 score delta is not comparable across rubric versions`);
+    if ((bp.profile ?? "full") !== (cp.profile ?? "full"))
+      warnings.push("one-shot vs full-pipeline comparison \u2014 the two runs have different rigor; the delta is indicative only");
+    if (JSON.stringify(bp.scope ?? []) !== JSON.stringify(cp.scope ?? []))
+      warnings.push(
+        `file scopes differ (${(bp.scope ?? []).join(", ") || "unscoped"} \u2192 ${(cp.scope ?? []).join(", ") || "unscoped"}) \u2014 the runs judged different subsets of the target`
+      );
   }
   return warnings;
 }
 function gateFailures(r) {
   const fails = [];
+  if (r.warnings.some((w) => w.includes("one-shot vs full-pipeline")))
+    fails.push("one-shot vs full-pipeline comparison is not gateable \u2014 rerun both sides at the same rigor");
   if (r.scoreDelta !== null && r.scoreDelta < 0) fails.push(`score dropped by ${-r.scoreDelta}`);
   const p0 = r.introduced.filter((f) => f.kind !== "opportunity" && f.severity === "P0");
   if (p0.length) fails.push(`introduced P0 defect(s): ${p0.map((f) => f.title).join("; ")}`);
@@ -1673,12 +1840,12 @@ ${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "-
 }
 function runCompare(baseDir, newDir, outDir) {
   const r = compareRuns(baseDir, newDir);
-  writeText(join8(outDir, "COMPARE.md"), r.md);
+  writeText(join9(outDir, "COMPARE.md"), r.md);
   return r;
 }
 
 // src/sarif.ts
-import { join as join9, relative as relative4, sep } from "path";
+import { join as join10, relative as relative5, sep as sep2 } from "path";
 var LEVEL = { P0: "error", P1: "warning", P2: "note" };
 function buildSarif(cfg, doc, runDir) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
@@ -1689,7 +1856,7 @@ function buildSarif(cfg, doc, runDir) {
     const locations = (f.evidence ?? []).map((e) => resolveEvidence(e.ref, { targetAbs, runDir, lineCache })).filter((r) => r.resolved && r.kind === "file" && r.absPath).map((r) => ({
       physicalLocation: {
         artifactLocation: {
-          uri: relative4(targetAbs, r.absPath).split(sep).join("/")
+          uri: relative5(targetAbs, r.absPath).split(sep2).join("/")
         },
         ...r.lineStart ? { region: { startLine: r.lineStart, ...r.lineEnd && r.lineEnd !== r.lineStart ? { endLine: r.lineEnd } : {} } } : {}
       }
@@ -1728,20 +1895,20 @@ function buildSarif(cfg, doc, runDir) {
   };
 }
 function writeSarif(runDir, out) {
-  const cfg = readJson(join9(runDir, "eval.config.json"));
-  const doc = readJson(join9(runDir, "findings.json"));
-  const p = join9(out ?? runDir, "eval.sarif");
+  const cfg = readJson(join10(runDir, "eval.config.json"));
+  const doc = readJson(join10(runDir, "findings.json"));
+  const p = join10(out ?? runDir, "eval.sarif");
   writeJson(p, buildSarif(cfg, doc, runDir));
   return p;
 }
 
 // src/clean.ts
 import { readdirSync as readdirSync5, rmSync as rmSync2 } from "fs";
-import { join as join10 } from "path";
+import { join as join11 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "VERIFY.honeypots.json", "index.html", "index.md", "eval.sarif"];
 function clean(runDir, opts = {}) {
   const removed = [];
-  if (exists(runDir) && !exists(join10(runDir, "eval.config.json"))) {
+  if (exists(runDir) && !exists(join11(runDir, "eval.config.json"))) {
     throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
   }
   if (opts.all) {
@@ -1752,7 +1919,7 @@ function clean(runDir, opts = {}) {
     return removed;
   }
   for (const name of DERIVED) {
-    const p = join10(runDir, name);
+    const p = join11(runDir, name);
     if (exists(p)) {
       rmSync2(p, { force: true });
       removed.push(p);
@@ -1761,24 +1928,23 @@ function clean(runDir, opts = {}) {
   if (exists(runDir)) {
     for (const e of readdirSync5(runDir)) {
       if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync2(join10(runDir, e), { force: true });
-        removed.push(join10(runDir, e));
+        rmSync2(join11(runDir, e), { force: true });
+        removed.push(join11(runDir, e));
       }
     }
   }
   return removed;
 }
 
-// src/plan.ts
-import { rmSync as rmSync3 } from "fs";
-import { join as join12 } from "path";
+// src/oneshot.ts
+import { join as join13 } from "path";
 
 // src/templates.ts
-import { dirname as dirname2, join as join11 } from "path";
+import { dirname as dirname2, join as join12 } from "path";
 function calibrationFixturePath(engineAbs) {
   const candidates = [
-    join11(dirname2(engineAbs), "..", "references", "calibration-run.json"),
-    join11(dirname2(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
+    join12(dirname2(engineAbs), "..", "references", "calibration-run.json"),
+    join12(dirname2(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
   ];
   return candidates.find(exists) ?? candidates[0];
 }
@@ -1833,12 +1999,20 @@ var LIVE_SCENARIOS = {
     help: "the documented modes/flags exist; citation format matches the docs",
     artifact: "the cited report under runs/live-*",
     pass: "every claim attributable to a fetched source; the unanswerable question is refused"
+  },
+  business: {
+    golden: "drive the core business rules end-to-end on realistic domain inputs \u2014 the documented outcomes come out",
+    error: "feed a boundary/rule-violating input \u2014 the business rule rejects it and state stays consistent",
+    help: "the documented domain behavior (rules, invariants, edge cases) matches what the code actually does",
+    artifact: "the exercised rule inputs/outputs transcript under runs/live-* plus the runs/live.md narrative",
+    pass: "rules behave per the documented domain semantics; invariants hold on every exercised path"
   }
 };
 function liveScenarioFor(cfg) {
   const key2 = categoryKey(cfg.category ?? "");
   if (key2 === "security") return LIVE_SCENARIOS.security;
   if (key2 === "requirements") return LIVE_SCENARIOS.requirements;
+  if (key2 === "business") return LIVE_SCENARIOS.business;
   if (key2 === "research") return LIVE_SCENARIOS.research;
   if (key2 === "web") return LIVE_SCENARIOS["web app"];
   if (key2 === "cli") return LIVE_SCENARIOS.cli;
@@ -1846,6 +2020,9 @@ function liveScenarioFor(cfg) {
 }
 var diffScopeBlock = (cfg) => cfg.provenance?.sinceRef ? `
 **DIFF SCOPE (binding).** This eval is scoped to changes since \`${cfg.provenance.sinceRef}\` (run \`git -C ${cfg.targetAbs} diff --name-only ${cfg.provenance.sinceRef}\` for the changed set). Exercise and report ONLY changed behavior; findings MUST cite changed files (unchanged files are context, not findings \u2014 \`check\` warns on out-of-scope citations, and \`check --strict-scope\` hard-fails them). Finish with \`compare --run <RUN> --base <previous-run> --gate\` semantics in mind: this run gates a delta, not the whole repo.
+` : "";
+var fileScopeBlock = (cfg) => cfg.scope?.length ? `
+**FILE SCOPE (binding).** This eval is scoped to the target-relative globs \`${cfg.scope.join(", ")}\`. Read anything for context, but exercise and report ONLY behavior implemented inside the scope: every finding MUST cite at least one in-scope file. \`check\` hard-fails a finding whose target citations are all out of scope, unless the finding carries the tag \`scope-exempt\` (reserved for a cross-cutting issue that genuinely breaks the in-scope behavior \u2014 justify it in the statement). Infra/config/tooling/tests outside the scope are context, not findings.
 ` : "";
 var liveScenarioBlock = (cfg) => [
   `**Normed live scenario for this category** (full library: \`references/live-scenarios.md\` next to the engine):`,
@@ -1881,6 +2058,7 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
     `const CATEGORY = ${JSON.stringify(cfg.category)}`,
     `const KIND = ${JSON.stringify(cfg.kind)}`,
     `const DIMENSIONS = ${JSON.stringify(cfg.dimensions)}`,
+    ...cfg.scope?.length ? [`const SCOPE = ${JSON.stringify(cfg.scope)}`] : [],
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
@@ -1894,6 +2072,7 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
     `  return 'Read and follow the dispatch contract at ' + AGENTS + '/' + name + '.md VERBATIM.\\n'`,
     `    + 'Constants: TARGET=' + TARGET + '  ENGINE=' + ENGINE + '  RUN=' + RUN + '  KIND=' + KIND + '  CATEGORY=' + CATEGORY + '.\\n'`,
     `    + 'Invoke the engine only by its ABSOLUTE path: node ' + ENGINE + ' <cmd>. Write every artifact under RUN. Do not stop early.'`,
+    ...cfg.scope?.length ? [`    + '\\nFILE SCOPE (binding): ' + SCOPE.join(', ') + ' \u2014 every finding must cite at least one in-scope file (tag scope-exempt otherwise).'`] : [],
     `    + (extra ? '\\n' + extra : '')`,
     `}`,
     ``,
@@ -1986,7 +2165,9 @@ Dimensions in scope:
 ${dims}
 `,
     testplan: `# Contract: testplan
-
+${cfg.scope?.length ? `
+File scope: enumerate ONLY functionality implemented inside \`${cfg.scope.join(", ")}\` \u2014 out-of-scope behavior is context, not a test row.
+` : ""}
 Read \`${cfg.targetAbs}\` (its SKILL.md/README/CLI \`--help\`, or its source) and the research notes under \`${runDirAbs}/research/\`.
 
 Enumerate EVERY functionality worth testing \u2014 modes, subcommands, flags, gates, and the live end-to-end behavior \u2014 mapped to the dimensions. For each: id, what it is, the concrete command or user prompt that tests it, and explicit pass criteria.
@@ -1996,7 +2177,7 @@ The live rows MUST map to the category's normed scenario set (golden path, error
 Write \`${runDirAbs}/TEST-PLAN.md\` (a reviewable checklist with the rubric embedded). Be exhaustive about the CLI/behavior surface.
 `,
     executor: `# Contract: executor
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 You produce the raw evidence an eval stands on. Two MODES; do the one named in your prompt.
 
 **MODE=core (deterministic).** Drive the target's own engine/tests and, if the target ships anti-hallucination gates, prove them in BOTH directions: pass on a genuine artifact, fail on a hand-doctored one. Record every command + exit code into \`${runDirAbs}/runs/core.md\`. If the target has a test suite, run it and record the result.
@@ -2017,7 +2198,7 @@ SAFETY:
 Record exact command lines and exit codes verbatim \u2014 later stages cite \`run:runs/core.md#Lnn\` as evidence, so line numbers matter.
 `,
     findings: `# Contract: findings
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 Consolidate the test-plan results and the run logs into \`${runDirAbs}/findings.json\` following \`${runDirAbs}/findings.schema.json\`.
 
 RULES (the grounding gate will enforce these):
@@ -2039,7 +2220,9 @@ ${GATE_CHEATSHEET(engineAbs, runDirAbs)}
 If \`check\` fails, FIX \`findings.json\` (remove/repair ungrounded findings \u2014 do not weaken the gate) and re-run. If a finding is \`refuted\` by verification, set its status to \`dismissed\`. Report the final exit codes of \`check --run ${runDirAbs} --semantic --require-verify\` \u2014 it MUST be 0 before results.
 `,
     judge: `# Contract: judge
-
+${cfg.scope?.length ? `
+This is a file-scoped eval (\`${cfg.scope.join(", ")}\`): score in-scope behavior only \u2014 out-of-scope code never lowers (or raises) a dimension score.
+` : ""}
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
 
 **Step 0 \u2014 CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0\u20135 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields \u2014 read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
@@ -2070,7 +2253,7 @@ Produce deterministic signal for the brainstorm stage.
 Run \`node ${engineAbs} analyze --run ${runDirAbs}\` \u2192 writes \`analysis.json\` + \`ANALYSIS.md\` (size/complexity hotspots, import graph + cycles, git churn, test/doc gaps). Then read \`ANALYSIS.md\` and note the 5-8 highest-signal hotspots the brainstorm should anchor on. This stage is deterministic \u2014 do not invent metrics; report what the tool found.
 `,
     brainstormer: `# Contract: brainstormer
-${diffScopeBlock(cfg)}
+${diffScopeBlock(cfg)}${fileScopeBlock(cfg)}
 Discover grounded improvement leads (both internal health AND product/capability) \u2014 be divergent, then keep the grounded ones.
 
 1. \`node ${engineAbs} brainstorm --run ${runDirAbs}\` \u2192 emits \`BRAINSTORM.todo.md\` (lenses + hotspots).
@@ -2111,7 +2294,7 @@ function runbookMd(cfg, runDirAbs, engineAbs) {
   const steps = stages.map((s, i) => `${i + 1}. **${s.title}** \u2014 play \`${runDirAbs}/agents/${s.contract}.md\` yourself. ${s.note}`).join("\n");
   return `# ultraeval \u2014 sequential RUNBOOK (eco / no-subagent fallback)
 
-Run: \`${runDirAbs}\` \xB7 Target: \`${cfg.targetAbs}\` \xB7 Engine: \`node ${engineAbs}\` \xB7 mode: ${mode}
+Run: \`${runDirAbs}\` \xB7 Target: \`${cfg.targetAbs}\` \xB7 Engine: \`node ${engineAbs}\` \xB7 mode: ${mode}${cfg.scope?.length ? ` \xB7 scope: \`${cfg.scope.join(", ")}\`` : ""}
 
 Generated by \`ultraeval plan --eco\`. Same stages, same contracts, same gates as the
 multi-agent \`eval.workflow.mjs\` \u2014 played sequentially by ONE agent. Correctness-identical;
@@ -2124,6 +2307,30 @@ artifact under the run dir.
 ${steps}
 
 **Exit gate**: \`node ${engineAbs} check --run ${runDirAbs} --semantic --require-verify\` must exit 0 before presenting results.
+`;
+}
+function oneshotMd(cfg, runDirAbs, engineAbs) {
+  const dims = cfg.dimensions.map((d) => `- **${d.id}** ${d.name} (w=${d.weight}${anchorText(d) ? `, anchored to ${anchorText(d)}` : ""}): ${d.whatPerfectLooksLike}`).join("\n");
+  return `# ultraeval \u2014 ONE-SHOT eval contract
+
+Run: \`${runDirAbs}\` \xB7 Target: \`${cfg.targetAbs}\` \xB7 Engine: \`node ${engineAbs}\` \xB7 kind: ${cfg.kind} \xB7 category: ${cfg.category}${cfg.scope?.length ? ` \xB7 scope: \`${cfg.scope.join(", ")}\`` : ""}
+${fileScopeBlock(cfg)}
+A quick single-pass read by ONE agent \u2014 no subagents, no fan-out, no research stage,
+no verify/honeypots, no judge panel. The result is **indicative, not a normed verdict**:
+never present it as verified. For the full pipeline, upgrade with \`node ${engineAbs} plan --run ${runDirAbs}\`.
+
+## Dimensions (sketch each 0\u20135 in SUMMARY.md)
+
+${dims}
+
+## The pass (ONE pass, timeboxed \u2014 a stuck step is recorded and skipped, never a hang)
+
+1. **Skim** the target${cfg.scope?.length ? " within the scope" : ""}: README/SKILL.md/docs, entry points, the load-bearing files. Run the cheap obvious probe (test suite entry, \`--help\`, the main flow) when it costs seconds.
+2. **Evaluate every dimension together**, collecting concrete defects as you go \u2014 no per-dimension sub-passes.
+3. **Write \`${runDirAbs}/findings.json\`** following \`${runDirAbs}/findings.schema.json\` \u2014 the SAME grounding grammar as a full run: every finding cites \`path:line\` in the target (or \`run:relpath#Lnn\`); NEVER invent line numbers. severity: ${severityLegend()}.
+4. **Write \`${runDirAbs}/SUMMARY.md\`** \u2014 open with "One-shot eval \u2014 indicative, not a normed verdict.", then a per-dimension sketch (0\u20135 + one line each) citing \`[F#]\`.
+5. **Gate (required):** \`node ${engineAbs} check --run ${runDirAbs}\` until exit 0 \u2014 repair or delete ungrounded findings; never weaken the gate.
+6. **Optional:** \`node ${engineAbs} backlog --run ${runDirAbs} --tdd\` for TDD fix cards; \`node ${engineAbs} score --run ${runDirAbs}\` after appending ONE self-judge line to \`judges.jsonl\` (set \`author\` to yourself \u2014 the scorecard is flagged non-independent).
 `;
 }
 function testPlanTemplate(cfg) {
@@ -2191,6 +2398,11 @@ function findingsSchema() {
             },
             failureScenario: { type: "string" },
             recommendation: { type: "string" },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              description: "scope-exempt \u2014 a justified cross-cutting finding whose citations sit outside the declared file scope"
+            },
             status: { enum: ["open", "confirmed", "dismissed"] }
           },
           allOf: [
@@ -2205,20 +2417,50 @@ function findingsSchema() {
   };
 }
 
-// src/plan.ts
-function planRun(runDir, engineAbs, opts = {}) {
-  const cfg = readJson(join12(runDir, "eval.config.json"));
-  const written = [];
+// src/oneshot.ts
+function oneshotRun(opts, engineAbs) {
+  const { cfg, runDir, gitignore } = initRun({ ...opts, mode: "audit", oneshot: true });
+  const written = [join13(runDir, "eval.config.json")];
   const w = (rel, content) => {
-    const p = join12(runDir, rel);
+    const p = join13(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
+  w("ONESHOT.md", oneshotMd(cfg, runDir, engineAbs));
+  w("dimensions.json", `${JSON.stringify(cfg.dimensions, null, 2)}
+`);
+  w("findings.schema.json", `${JSON.stringify(findingsSchema(), null, 2)}
+`);
+  return { cfg, runDir, written, ...gitignore ? { gitignore } : {} };
+}
+
+// src/plan.ts
+import { rmSync as rmSync3 } from "fs";
+import { join as join14 } from "path";
+function planRun(runDir, engineAbs, opts = {}) {
+  let cfg = readJson(join14(runDir, "eval.config.json"));
+  const written = [];
+  const w = (rel, content) => {
+    const p = join14(runDir, rel);
+    writeText(p, content);
+    written.push(p);
+  };
+  if (cfg.oneshot || cfg.provenance?.profile) {
+    rmSync3(join14(runDir, "ONESHOT.md"), { force: true });
+    const { oneshot: _oneshot, ...rest } = cfg;
+    cfg = rest;
+    if (cfg.provenance?.profile) {
+      const { profile: _profile, ...prov } = cfg.provenance;
+      cfg = { ...cfg, provenance: prov };
+    }
+    writeJson(join14(runDir, "eval.config.json"), cfg);
+    written.push(join14(runDir, "eval.config.json"));
+  }
   if (opts.eco === true) {
-    rmSync3(join12(runDir, "eval.workflow.mjs"), { force: true });
+    rmSync3(join14(runDir, "eval.workflow.mjs"), { force: true });
     w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
   } else {
-    rmSync3(join12(runDir, "RUNBOOK.md"), { force: true });
+    rmSync3(join14(runDir, "RUNBOOK.md"), { force: true });
     w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
   }
   for (const [name, content] of Object.entries(agentContracts(cfg, runDir, engineAbs))) w(`agents/${name}.md`, content);
@@ -2232,15 +2474,15 @@ function planRun(runDir, engineAbs, opts = {}) {
 
 // src/fix.ts
 import { spawnSync } from "child_process";
-import { isAbsolute as isAbsolute3, join as join13, resolve as resolve4 } from "path";
+import { isAbsolute as isAbsolute4, join as join15, resolve as resolve4 } from "path";
 function loadBacklog(runDir) {
-  const blPath = join13(runDir, "BACKLOG.json");
+  const blPath = join15(runDir, "BACKLOG.json");
   if (!exists(blPath)) throw new Error("no BACKLOG.json \u2014 run `backlog --run <run> --tdd` first, then fix");
-  return { cfg: readJson(join13(runDir, "eval.config.json")), backlog: readJson(blPath) };
+  return { cfg: readJson(join15(runDir, "eval.config.json")), backlog: readJson(blPath) };
 }
 function targetInvariants(targetAbs) {
   const lines = [];
-  const pkgPath = join13(targetAbs, "package.json");
+  const pkgPath = join15(targetAbs, "package.json");
   if (exists(pkgPath)) {
     const pkg = readJson(pkgPath);
     if (pkg.scripts?.test) lines.push(`- Full test suite green before committing: run the target's \`test\` script (\`${pkg.scripts.test}\`).`);
@@ -2251,10 +2493,10 @@ function targetInvariants(targetAbs) {
 }
 function agentContract(t, cfg, runDir, engineAbs) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-  const absTargets = t.targets.map((x) => isAbsolute3(x) ? x : join13(targetAbs, x));
-  const redFile = isAbsolute3(t.red.testFile) ? t.red.testFile : join13(targetAbs, t.red.testFile);
+  const absTargets = t.targets.map((x) => isAbsolute4(x) ? x : join15(targetAbs, x));
+  const redFile = isAbsolute4(t.red.testFile) ? t.red.testFile : join15(targetAbs, t.red.testFile);
   const deps = t.dependsOn.length ? `
-Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join13(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
+Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join15(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
   return `# Fix agent: ${t.id} \u2014 ${t.title}  (${t.priority} \xB7 ${t.kind})
 
 You are an AUTONOMOUS fix agent. Fix exactly ONE task in the target repo, test-first. Do not widen scope; do not stop early.
@@ -2298,12 +2540,12 @@ function emitFixAgents(runDir, engineAbs, opts = {}) {
   }
   const written = [];
   for (const t of tasks) {
-    const p = join13(runDir, "fixes", "agents", `${t.id}.agent.md`);
+    const p = join15(runDir, "fixes", "agents", `${t.id}.agent.md`);
     writeText(p, agentContract(t, cfg, runDir, engineAbs));
     written.push(p);
   }
   if (opts.workflow) {
-    const p = join13(runDir, "fix.workflow.mjs");
+    const p = join15(runDir, "fix.workflow.mjs");
     writeText(p, fixWorkflow(tasks, runDir, engineAbs));
     written.push(p);
   }
@@ -2345,7 +2587,7 @@ function verifyFix(runDir, taskId, opts = {}) {
   const task = backlog.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`no such task ${taskId} in BACKLOG.json`);
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-  const redFile = isAbsolute3(task.red.testFile) ? task.red.testFile : resolve4(targetAbs, task.red.testFile);
+  const redFile = isAbsolute4(task.red.testFile) ? task.red.testFile : resolve4(targetAbs, task.red.testFile);
   const redTestExists = exists(redFile);
   const expectedNew = task.red.expectedNew;
   let testFirst = true;
@@ -2373,7 +2615,7 @@ function verifyFix(runDir, taskId, opts = {}) {
     task.status = "done";
     task.verifiedAt = (/* @__PURE__ */ new Date()).toISOString();
     result.verifiedAt = task.verifiedAt;
-    writeJson(join13(runDir, "BACKLOG.json"), backlog);
+    writeJson(join15(runDir, "BACKLOG.json"), backlog);
   }
   return result;
 }
@@ -2383,27 +2625,27 @@ function formatVerifyFix(r) {
 
 // src/rejudge.ts
 import { cpSync, mkdirSync as mkdirSync2 } from "fs";
-import { join as join14 } from "path";
+import { join as join16 } from "path";
 var COPY_FILES = ["eval.config.json", "dimensions.json", "findings.json", "RESULTS.md", "SUMMARY.md", "TEST-PLAN.md", "VERIFY.json"];
 var COPY_DIRS = ["research", "runs"];
 function rejudgeRun(runDir, outDir, engineAbs) {
-  if (!exists(join14(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
-  const cfg = readJson(join14(runDir, "eval.config.json"));
+  if (!exists(join16(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
+  const cfg = readJson(join16(runDir, "eval.config.json"));
   mkdirSync2(outDir, { recursive: true });
   const copied = [];
   for (const f of COPY_FILES) {
-    if (!exists(join14(runDir, f))) continue;
-    cpSync(join14(runDir, f), join14(outDir, f));
+    if (!exists(join16(runDir, f))) continue;
+    cpSync(join16(runDir, f), join16(outDir, f));
     copied.push(f);
   }
   for (const d of COPY_DIRS) {
-    if (!exists(join14(runDir, d))) continue;
-    cpSync(join14(runDir, d), join14(outDir, d), { recursive: true });
+    if (!exists(join16(runDir, d))) continue;
+    cpSync(join16(runDir, d), join16(outDir, d), { recursive: true });
     copied.push(`${d}/`);
   }
-  writeText(join14(outDir, "judges.jsonl"), "");
-  writeText(join14(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
-  writeText(join14(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
+  writeText(join16(outDir, "judges.jsonl"), "");
+  writeText(join16(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
+  writeText(join16(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
   return copied;
 }
 function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
@@ -2451,17 +2693,17 @@ function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
 }
 
 // src/render.ts
-import { join as join15 } from "path";
+import { join as join17 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 function load2(runDir) {
-  const cfg = readJson(join15(runDir, "eval.config.json"));
-  const doc = readJson(join15(runDir, "findings.json"));
-  const verify = exists(join15(runDir, "VERIFY.json")) ? readJson(join15(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join15(runDir, "BACKLOG.json")) ? readJson(join15(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join15(runDir, "scorecard.json")) ? readJson(join15(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join17(runDir, "eval.config.json"));
+  const doc = readJson(join17(runDir, "findings.json"));
+  const verify = exists(join17(runDir, "VERIFY.json")) ? readJson(join17(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join17(runDir, "BACKLOG.json")) ? readJson(join17(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join17(runDir, "scorecard.json")) ? readJson(join17(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -2469,12 +2711,12 @@ function render(runDir, opts = {}) {
   const out = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join15(out, "index.md");
+    const p = join17(out, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join15(out, "index.html");
+    const p = join17(out, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -2578,11 +2820,11 @@ function esc(s) {
 }
 
 // src/score.ts
-import { execFileSync as execFileSync4 } from "child_process";
+import { execFileSync as execFileSync5 } from "child_process";
 import { appendFileSync, mkdirSync as mkdirSync3 } from "fs";
-import { dirname as dirname3, join as join16 } from "path";
+import { dirname as dirname3, join as join18 } from "path";
 function readJudges(runDir) {
-  const p = join16(runDir, "judges.jsonl");
+  const p = join18(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -2638,21 +2880,22 @@ function computeScore(cfg, judges, doc) {
   };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join16(runDir, "eval.config.json"));
-  const doc = exists(join16(runDir, "findings.json")) ? readJson(join16(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join18(runDir, "eval.config.json"));
+  const doc = exists(join18(runDir, "findings.json")) ? readJson(join18(runDir, "findings.json")) : { findings: [] };
   const judges = readJudges(runDir);
   if (!judges.length) throw new Error("no judge verdicts in judges.jsonl \u2014 the Judge phase has not run; dispatch judges (agents/judge.md) first");
   const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
+  if (cfg.oneshot) sc.oneshot = true;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join16(runDir, "scorecard.json"), sc);
+  writeJson(join18(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join16(runDir, "scorecard.json");
+  const scPath = join18(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join16(runDir, "findings.json")) ? readJson(join16(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join18(runDir, "findings.json")) ? readJson(join18(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const protocol = sc.provenance?.protocolVersion;
@@ -2671,7 +2914,8 @@ function appendHistory(runDir, file) {
       opps: live.filter((f) => f.kind === "opportunity").length
     },
     ...protocol ? { protocol } : {},
-    ...rubric ? { rubric } : {}
+    ...rubric ? { rubric } : {},
+    ...sc.oneshot ? { oneshot: true } : {}
   };
   mkdirSync3(dirname3(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}
@@ -2680,16 +2924,16 @@ function appendHistory(runDir, file) {
 }
 function targetGitRoot(dir) {
   try {
-    return execFileSync4("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+    return execFileSync5("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
   } catch {
     return null;
   }
 }
 function defaultLedgerPath(runDir) {
-  const cfg = readJson(join16(runDir, "eval.config.json"));
+  const cfg = readJson(join18(runDir, "eval.config.json"));
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const base = targetGitRoot(targetAbs) ?? process.cwd();
-  return join16(base, "evals", "history.jsonl");
+  return join18(base, "evals", "history.jsonl");
 }
 function readHistory(file) {
   if (!exists(file)) return [];
@@ -2740,10 +2984,26 @@ function formatScore(sc) {
 }
 
 // src/status.ts
-import { join as join17 } from "path";
+import { join as join19 } from "path";
 function statusRun(runDir) {
-  const has = (rel) => exists(join17(runDir, rel));
-  const judgesPresent = has("judges.jsonl") && readText(join17(runDir, "judges.jsonl")).trim().length > 0;
+  const has = (rel) => exists(join19(runDir, rel));
+  let oneshot = false;
+  try {
+    if (has("eval.config.json")) oneshot = readJson(join19(runDir, "eval.config.json")).oneshot === true;
+  } catch {
+    oneshot = false;
+  }
+  if (oneshot) {
+    const steps2 = [
+      { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
+      { artifact: "ONESHOT.md", present: has("ONESHOT.md"), stage: "oneshot" },
+      { artifact: "findings.json", present: has("findings.json"), stage: "findings" },
+      { artifact: "SUMMARY.md", present: has("SUMMARY.md"), stage: "findings" },
+      { artifact: "scorecard.json", present: has("scorecard.json"), stage: "score" }
+    ];
+    return { steps: steps2, next: oneshotNextHint(steps2, runDir) };
+  }
+  const judgesPresent = has("judges.jsonl") && readText(join19(runDir, "judges.jsonl")).trim().length > 0;
   const steps = [
     { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
     { artifact: "agents/", present: has("agents"), stage: "plan" },
@@ -2757,6 +3017,12 @@ function statusRun(runDir) {
     { artifact: "index.html", present: has("index.html"), stage: "render" }
   ];
   return { steps, next: nextHint(steps, runDir) };
+}
+function oneshotNextHint(steps, runDir) {
+  const missing = (stage) => steps.some((s) => s.stage === stage && !s.present);
+  if (missing("oneshot")) return `oneshot --target <target> --out ${runDir} (regenerates ONESHOT.md)`;
+  if (missing("findings")) return `follow ${runDir}/ONESHOT.md \u2014 one pass, then check --run ${runDir}`;
+  return `check --run ${runDir} until exit 0 \u2014 then optional: score --run ${runDir}, backlog --run ${runDir} --tdd, or plan --run ${runDir} to upgrade to the full pipeline`;
 }
 function nextHint(steps, runDir) {
   const missing = (stage) => steps.some((s) => s.stage === stage && !s.present);
@@ -2781,7 +3047,18 @@ function formatStatus(s, runDir) {
 
 // src/cliargs.ts
 var FLAG_SPEC = {
-  init: { target: "value", out: "value", kind: "value", category: "value", mode: "value", bar: "value", since: "value" },
+  init: {
+    target: "value",
+    out: "value",
+    kind: "value",
+    category: "value",
+    mode: "value",
+    bar: "value",
+    since: "value",
+    scope: "value",
+    "no-gitignore": "boolean"
+  },
+  oneshot: { target: "value", out: "value", kind: "value", category: "value", bar: "value", scope: "value", "no-gitignore": "boolean" },
   plan: { run: "value", eco: "boolean" },
   orchestrate: { run: "value", eco: "boolean" },
   // family-wide alias for plan
@@ -2848,9 +3125,18 @@ Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
   init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>] [--since <ref>]
+             [--scope <glob[,glob]>] [--no-gitignore]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
              --bar calibrates the meets-expectations threshold (default 80); the applied bar is recorded in the scorecard.
              --since <git-ref> diff-scopes the eval (PR gating): contracts target the changed set; check warns on out-of-scope findings.
+             --scope file-scopes the eval to target-relative globs (e.g. a m\xE9tier eval: --category m\xE9tier --scope "src/domain/**");
+             check hard-fails findings cited only outside the scope (tag scope-exempt to keep a justified cross-cutting one).
+             When the run dir sits inside a git repo, init gitignores it there (idempotent; never evals/ \u2014 the committed
+             score ledger lives under evals/history.jsonl); --no-gitignore opts out.
+  oneshot  --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--scope <glob[,glob]>] [--bar <n>] [--no-gitignore]
+             Single-pass quick eval: init + ONESHOT.md (one agent, one pass, no subagents/verify/judges).
+             The structural check gate still applies; the result is indicative, never a normed verdict.
+             The full pipeline stays the default \u2014 plan --run <run> upgrades a oneshot run in place.
   plan     --run <run> [--eco]        (alias: orchestrate \u2014 the family verb)
              Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
              --eco skips the workflow and writes RUNBOOK.md instead \u2014 the sequential low-token
@@ -2864,6 +3150,7 @@ Commands:
              --json prints the result; --gate exits 1 when the score dropped or a new P0 defect appeared.
   check    --run <run> [--semantic] [--require-verify] [--strict] [--strict-scope] [--min-findings n] [--coverage-min f] [--json]
              Grounding gate: every finding must resolve to a real file:line in the target (or a run: artifact).
+             A file-scoped run (init --scope) also fails findings cited only outside the scope (tag scope-exempt to downgrade to a warning).
              --strict-scope hard-fails a diff-scoped (init --since) run whose findings cite only unchanged files.
              --json prints the CheckResult ({ ok, errors, warnings }) verbatim (exit code unchanged) for CI.
   verify   --run <run> [--apply <verdicts[,v2,\u2026]>] [--max-verify n] [--shards n --shard i] [--honeypots n]
@@ -2922,20 +3209,52 @@ function rejectUnknownFlags(cmd, args) {
     throw new Error(`unknown flag --${k} for ${cmd}${hint}`);
   }
 }
+var parseScope = (raw) => raw ? raw.split(",").map((s) => s.trim()) : void 0;
+var gitignoreLine = (g) => g.action === "added" ? `gitignore: added "${g.entry}" to ${g.path}` : g.action === "already" ? `gitignore: "${g.entry}" already covered` : `gitignore: skipped \u2014 ${g.reason}`;
 function cmdInit(args) {
   const target = str(args.target);
   const out = str(args.out);
   if (!target || !out) throw new Error("init requires --target <path> and --out <run>");
-  const { cfg, runDir } = initRun({
+  const { cfg, runDir, gitignore } = initRun({
     target,
     out,
     kind: str(args.kind),
     category: str(args.category),
     mode: str(args.mode),
     bar: num(args.bar),
-    since: str(args.since)
+    since: str(args.since),
+    scope: parseScope(str(args.scope)),
+    gitignore: args["no-gitignore"] !== true
   });
-  console.log(`ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions -> ${runDir}`);
+  console.log(
+    `ultraeval init: ${cfg.kind} \xB7 ${cfg.category} \xB7 mode ${cfg.mode} \xB7 ${cfg.dimensions.length} dimensions${cfg.scope ? ` \xB7 scope ${cfg.scope.join(",")}` : ""} -> ${runDir}`
+  );
+  if (gitignore) console.log(gitignoreLine(gitignore));
+}
+function cmdOneshot(args) {
+  const target = str(args.target);
+  const out = str(args.out);
+  if (!target || !out) throw new Error("oneshot requires --target <path> and --out <run>");
+  const engine = fileURLToPath(import.meta.url);
+  const { cfg, runDir, gitignore } = oneshotRun(
+    {
+      target,
+      out,
+      kind: str(args.kind),
+      category: str(args.category),
+      bar: num(args.bar),
+      scope: parseScope(str(args.scope)),
+      gitignore: args["no-gitignore"] !== true
+    },
+    engine
+  );
+  console.log(
+    `ultraeval oneshot: ${cfg.kind} \xB7 ${cfg.category} \xB7 ${cfg.dimensions.length} dimensions${cfg.scope ? ` \xB7 scope ${cfg.scope.join(",")}` : ""} -> ${runDir}`
+  );
+  if (gitignore) console.log(gitignoreLine(gitignore));
+  console.log(`
+Single pass: follow ${runDir}/ONESHOT.md, then gate with: check --run ${runDir}`);
+  console.log(`Full pipeline instead: plan --run ${runDir} (upgrades this run in place).`);
 }
 function cmdPlan(args, cmd) {
   const run = str(args.run);
@@ -2956,7 +3275,7 @@ function cmdAnalyze(args) {
   let targetAbs;
   let out;
   if (run) {
-    const cfg = readJson(join18(run, "eval.config.json"));
+    const cfg = readJson(join20(run, "eval.config.json"));
     targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run);
     out = run;
   } else {
@@ -3015,7 +3334,7 @@ function cmdCompare(args) {
 function cmdCheck(args) {
   const run = str(args.run);
   if (!run) throw new Error("check requires --run <run>");
-  if (!exists(join18(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+  if (!exists(join20(run, "eval.config.json"))) throw new Error(`no eval.config.json under ${run} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
   const r = checkRun(run, {
     semantic: !!args.semantic,
     requireVerify: !!args["require-verify"],
@@ -3128,6 +3447,7 @@ ${removed.map((w) => `  ${w}`).join("\n")}` : "ultraeval clean: nothing to remov
 }
 var commandHandlers = {
   init: cmdInit,
+  oneshot: cmdOneshot,
   plan: cmdPlan,
   orchestrate: cmdPlan,
   analyze: cmdAnalyze,
@@ -3179,7 +3499,7 @@ ${HELP}`);
 }
 function isEntrypoint() {
   try {
-    return import.meta.url === pathToFileURL(realpathSync(process.argv[1] ?? "")).href;
+    return import.meta.url === pathToFileURL(realpathSync2(process.argv[1] ?? "")).href;
   } catch {
     return false;
   }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { agentContracts, workflowScript } from "../src/templates.js";
+import { agentContracts, runbookMd, workflowScript } from "../src/templates.js";
 import type { EvalConfig } from "../src/types.js";
 
 const tmps: string[] = [];
@@ -114,6 +114,44 @@ describe("templates — diff-scoped eval (init --since)", () => {
 
   it("emits no diff-scope block without sinceRef", () => {
     expect(agentContracts(cfg(), "/run", "/engine.mjs").executor).not.toMatch(/DIFF SCOPE/);
+  });
+});
+
+describe("templates — file-scoped eval (init --scope)", () => {
+  const scoped = () => cfg({ scope: ["src/domain/**", "src/billing/**"] });
+
+  it("scopes the executor/findings/brainstormer contracts when the config carries scope", () => {
+    const contracts = agentContracts(scoped(), "/run", "/engine.mjs");
+    for (const name of ["executor", "findings", "brainstormer"]) {
+      expect(contracts[name], `${name} contract is file-scoped`).toMatch(/FILE SCOPE/);
+      expect(contracts[name]).toContain("src/domain/**");
+    }
+  });
+
+  it("testplan and judge contracts carry the scope constraint too", () => {
+    const contracts = agentContracts(scoped(), "/run", "/engine.mjs");
+    expect(contracts.testplan).toContain("src/domain/**");
+    expect(contracts.judge).toContain("src/domain/**");
+  });
+
+  it("the findings contract names the scope-exempt escape hatch", () => {
+    expect(agentContracts(scoped(), "/run", "/engine.mjs").findings).toMatch(/scope-exempt/);
+  });
+
+  it("embeds a SCOPE constant in the generated workflow", () => {
+    const script = workflowScript(scoped(), "/run", "/engine.mjs");
+    expect(script).toContain(`const SCOPE = ${JSON.stringify(["src/domain/**", "src/billing/**"])}`);
+    expect(script).toMatch(/FILE SCOPE/);
+  });
+
+  it("an unscoped config emits identical output to before (no scope block, no SCOPE const)", () => {
+    expect(workflowScript(cfg(), "/run", "/engine.mjs")).not.toContain("const SCOPE");
+    expect(workflowScript(cfg(), "/run", "/engine.mjs")).not.toMatch(/FILE SCOPE/);
+    expect(agentContracts(cfg(), "/run", "/engine.mjs").executor).not.toMatch(/FILE SCOPE/);
+  });
+
+  it("the eco runbook names the file scope", () => {
+    expect(runbookMd(scoped(), "/run", "/engine.mjs")).toContain("src/domain/**");
   });
 });
 

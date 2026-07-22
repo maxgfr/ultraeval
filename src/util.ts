@@ -305,15 +305,71 @@ export function provLine(p?: Provenance, emptyText = ""): string {
 // that had to be kept in sync by hand; this is the one source. Returns null for
 // a category that matches no specialization — each caller supplies its own
 // kind-based fallback (skill vs codebase). Order is significant and preserved.
-export type CategoryKey = "security" | "requirements" | "research" | "web" | "cli";
+export type CategoryKey = "security" | "requirements" | "business" | "research" | "web" | "cli";
 export function categoryKey(category: string): CategoryKey | null {
   const cat = (category ?? "").toLowerCase();
   if (/secur|sast|vuln|taint|pentest|appsec/.test(cat)) return "security";
   if (/requirement|\bprd\b|\bsrd\b|\bspec\b|specification/.test(cat)) return "requirements";
+  // Before research: a "domain documentation" category is a métier eval, not a
+  // docs one — when the user names the business domain, that intent wins.
+  if (/\bm[ée]tier\b|\bbusiness\b|\bdomain\b|\bddd\b/.test(cat)) return "business";
   if (/research|\brag\b|retrieval|search|documentation|\bq&a\b|\bqa\b/.test(cat)) return "research";
   if (/\bweb\b|frontend|browser|website|\bsite\b|web app|webapp/.test(cat)) return "web";
   if (/\bcli\b|command.?line|terminal/.test(cat)) return "cli";
   return null;
+}
+
+// ---- file-scope matching --------------------------------------------------
+// A run may declare a file scope (eval.config.json `scope`: target-relative
+// globs). Zero-dep minimal dialect — `**` crosses directories, `*` stays within
+// one segment, `?` is one char, `{a,b}` alternates literals; a glob-free entry
+// is a directory prefix (or exact file). Anything fancier (negation, nested
+// braces) is deliberately unsupported.
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normPath = (p: string): string => p.replace(/\\/g, "/").replace(/^\.\//, "");
+
+export function globToRegExp(glob: string): RegExp {
+  const g = normPath(glob);
+  let re = "";
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i] as string;
+    if (c === "*") {
+      if (g[i + 1] === "*") {
+        // `**` — swallow a following "/" so "a/**/b" also matches "a/b".
+        i++;
+        if (g[i + 1] === "/") {
+          i++;
+          re += "(?:[^/]+/)*";
+        } else re += ".*";
+      } else re += "[^/]*";
+    } else if (c === "?") {
+      re += "[^/]";
+    } else if (c === "{") {
+      const end = g.indexOf("}", i);
+      if (end === -1) {
+        re += "\\{";
+      } else {
+        re += `(?:${g
+          .slice(i + 1, end)
+          .split(",")
+          .map(escapeRe)
+          .join("|")})`;
+        i = end;
+      }
+    } else re += escapeRe(c);
+  }
+  return new RegExp(`^${re}$`);
+}
+
+export function inScope(relPath: string, scope: string[]): boolean {
+  if (!scope?.length) return true;
+  const p = normPath(relPath);
+  return scope.some((entry) => {
+    const g = normPath(entry).replace(/\/+$/, "");
+    if (!/[*?{]/.test(g)) return p === g || p.startsWith(`${g}/`);
+    return globToRegExp(g).test(p);
+  });
 }
 
 // ---- opportunity ranking -------------------------------------------------

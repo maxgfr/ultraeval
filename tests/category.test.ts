@@ -33,7 +33,10 @@ const GOLDEN = {
   cli: "run the README's first documented command sequence",
   skill: "follow SKILL.md's quickstart",
   library: "import the package and run the README quickstart snippet",
+  business: "drive the core business rules end-to-end on realistic domain inputs",
 };
+
+const BUSINESS_IDS = ["business-correctness", "domain-model", "invariants", "edge-cases-metier", "rule-traceability"];
 
 describe("category buckets — defaultDimensions (rubric) output is pinned", () => {
   it("security", () => {
@@ -54,6 +57,10 @@ describe("category buckets — defaultDimensions (rubric) output is pinned", () 
   it("cli (codebase base + ergonomics)", () => {
     expect(ids("codebase", "CLI tool")).toEqual(["correctness", "tests", "security", "maintainability", "performance", "ergonomics"]);
   });
+  it("business/métier replaces the base for both kinds (like security)", () => {
+    expect(ids("codebase", "métier")).toEqual(BUSINESS_IDS);
+    expect(ids("skill", "business rules engine")).toEqual(BUSINESS_IDS);
+  });
   it("none → codebase base", () => {
     expect(ids("codebase", "library")).toEqual(["correctness", "tests", "security", "maintainability", "performance"]);
   });
@@ -68,6 +75,7 @@ describe("category buckets — live-scenario (executor contract) output is pinne
   it("research", () => expect(executor("skill", "research / RAG tool")).toContain(GOLDEN.research));
   it("web", () => expect(executor("codebase", "web app")).toContain(GOLDEN.web));
   it("cli", () => expect(executor("codebase", "CLI tool")).toContain(GOLDEN.cli));
+  it("business", () => expect(executor("codebase", "métier")).toContain(GOLDEN.business));
   it("none + skill kind → agent-skill scenario", () => expect(executor("skill", "agent skill")).toContain(GOLDEN.skill));
   it("none + codebase kind → library scenario", () => expect(executor("codebase", "library")).toContain(GOLDEN.library));
 });
@@ -80,6 +88,16 @@ describe("categoryKey — the shared matcher", () => {
     expect(categoryKey("research / RAG tool")).toBe("research");
     expect(categoryKey("web app")).toBe("web");
     expect(categoryKey("CLI tool")).toBe("cli");
+  });
+  it("maps business/métier categories to the business bucket", () => {
+    expect(categoryKey("métier")).toBe("business");
+    expect(categoryKey("metier")).toBe("business");
+    expect(categoryKey("business rules")).toBe("business");
+    expect(categoryKey("domain model")).toBe("business");
+    expect(categoryKey("ddd")).toBe("business");
+  });
+  it("business is tested before research (e.g. 'domain documentation' → business)", () => {
+    expect(categoryKey("domain documentation")).toBe("business");
   });
   it("returns null for a category matching no specialization", () => {
     expect(categoryKey("library")).toBeNull();
@@ -98,6 +116,7 @@ describe("both consumers are driven by the same categoryKey (no drift)", () => {
     research: GOLDEN.research,
     web: GOLDEN.web,
     cli: GOLDEN.cli,
+    business: GOLDEN.business,
   };
   const DIMS: Record<string, string[]> = {
     security: ["precision", "recall", "false-positive-rate", "reachability", "maintainability"],
@@ -105,8 +124,9 @@ describe("both consumers are driven by the same categoryKey (no drift)", () => {
     research: ["faithfulness", "retrieval", "coverage", "hallucination"],
     web: ["correctness", "tests", "security", "maintainability", "performance", "accessibility", "auth"],
     cli: ["correctness", "tests", "security", "maintainability", "performance", "ergonomics"],
+    business: BUSINESS_IDS,
   };
-  for (const c of ["security tool", "PRD / requirements generator", "research / RAG tool", "web app", "CLI tool"]) {
+  for (const c of ["security tool", "PRD / requirements generator", "research / RAG tool", "web app", "CLI tool", "métier / business rules"]) {
     it(`"${c}" resolves to one shared bucket in both the rubric and the scenario`, () => {
       const key = categoryKey(c) as string;
       expect(ids("codebase", c)).toEqual(DIMS[key]);

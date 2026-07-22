@@ -27,6 +27,24 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 - Honeypots (skeptic quality control): `verify --honeypots N` plants N deterministic trap pairs — one finding's claim glued to another finding's evidence — seeded on the run's `dimensionsHash`. Ground truth lives in `VERIFY.honeypots.json` and MUST NOT be shown to a skeptic. A trap graded `supported`/`partial` fails `verify --apply` and blocks `check --require-verify` until a fresh skeptic re-verifies; trap verdicts never reach the findings ledger.
 - `MEETS_BAR = 80`. `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < 80 · the judge panel has zero passed calibrations (`scorecard.judgesCalibrated`).
 
+## Scoped runs (init --scope)
+
+A run MAY declare a **file scope**: target-relative globs (`init --scope "src/domain/**"`, e.g. a métier/business-domain eval) recorded in `eval.config.json` and in provenance.
+
+- The generated contracts MUST bind agents to the scope: out-of-scope code is context, never a finding.
+- `check` MUST fail a finding whose target citations all fall outside the scope. The `tags: ["scope-exempt"]` escape MUST be reserved for a cross-cutting issue that genuinely breaks in-scope behavior, MUST be justified in the finding's statement, and downgrades the failure to a visible warning — never silence.
+- Judges MUST score in-scope behavior only.
+- Two runs with different scopes are not directly comparable; `compare` MUST surface the mismatch.
+
+## One-shot profile (oneshot)
+
+The `oneshot` command scaffolds a **single-pass** run: `provenance.profile = "oneshot"`, one self-contained `ONESHOT.md` contract, no research fan-out, no verify/honeypots, no judge panel. The full pipeline remains the default; one-shot is opt-in only.
+
+- The structural gate is NOT relaxed: `check --run <RUN>` MUST pass before results are presented.
+- `check --require-verify` MUST refuse on a one-shot run (there is no verify phase) and MUST name the upgrade path.
+- A one-shot verdict is **indicative**: it MUST NOT be presented as verified or normed; `scorecard.oneshot` and the ledger's `oneshot` field mark it.
+- A one-shot vs full-pipeline `compare --gate` MUST fail (different rigor); `plan --run <RUN>` upgrades the run in place (removes `ONESHOT.md`, clears the profile).
+
 ## Budget discipline
 
 A budgeted run (the harness set a token target) MAY scale coverage down — fewer judge lenses, grouped research — but it MUST record every coverage cut in `runs/budget.md` and report the cuts in `SUMMARY.md` (`check` warns when the summary omits them). A silent cut reads as full coverage and is a protocol violation.
@@ -56,7 +74,7 @@ Opportunities are rated **impact × effort**, not severity; a live opportunity M
 - `score` MUST copy the provenance into `scorecard.json` and stamp `scoredAt`.
 - Two runs are directly comparable ONLY when their `protocolVersion`, `rubricVersion`, and dimension ids/weights all match; `compare` MUST surface a warning otherwise and MUST print both sides' provenance in `COMPARE.md`.
 - A run without provenance is a *legacy run*: `check` emits a warning (never an error).
-- Run directories are typically gitignored; the committed history ledger is where the score trend survives. A release self-eval SHOULD append its verdict: `score --run <RUN> --history [file]` (default `evals/history.jsonl` under the working directory).
+- Run directories are typically gitignored — `init` does this automatically when the run dir sits inside a git repo (idempotent; `--no-gitignore` opts out) and MUST NOT gitignore the ledger path. The committed history ledger is where the score trend survives. A release self-eval SHOULD append its verdict: `score --run <RUN> --history [file]` (default `evals/history.jsonl` under the working directory).
 
 ## Self-evaluation constraint
 

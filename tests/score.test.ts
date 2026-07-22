@@ -553,4 +553,27 @@ describe("history — reading and formatting the score-trend ledger (FIX-022)", 
     expect(e.protocol).toBe("2");
     expect(e.rubric).toBe("1");
   });
+
+  it("stamps oneshot on the scorecard and the ledger entry for a one-shot run", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const cfgPath = join(run, "eval.config.json");
+    const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+    cfg.oneshot = true;
+    writeFileSync(cfgPath, JSON.stringify(cfg));
+    const sc = scoreRun(run);
+    expect(sc.oneshot).toBe(true);
+    const file = join(run, "ledger.jsonl");
+    appendHistory(run, file);
+    const e = JSON.parse(readFileSync(file, "utf8").trim());
+    expect(e.oneshot).toBe(true);
+  });
+
+  it("a full run stamps no oneshot marker anywhere", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const sc = scoreRun(run);
+    expect(sc.oneshot).toBeUndefined();
+    const file = join(run, "ledger.jsonl");
+    appendHistory(run, file);
+    expect(JSON.parse(readFileSync(file, "utf8").trim()).oneshot).toBeUndefined();
+  });
 });

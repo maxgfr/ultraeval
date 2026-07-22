@@ -32,8 +32,10 @@ At any point, `status --run <RUN>` prints the pipeline checklist (which artifact
 
 - **Target** — a path to the skill/repo to evaluate (or a git URL the user has already cloned locally).
 - **Kind** — `skill` or `codebase` (auto-detected: a SKILL.md ⇒ skill). Override with `--kind`.
-- **Category** — e.g. "agent skill", "CLI", "library", "web app", "security tool". Steers the starter rubric.
+- **Category** — e.g. "agent skill", "CLI", "library", "web app", "security tool", "métier". Steers the starter rubric (a business/métier category selects the business-logic dimensions and drops the generic axes).
 - **Mode** — `audit` (defects, default) · `improve` (grounded improvement opportunities) · `deep` (both). Set with `--mode`.
+- **Scope** (optional) — target-relative globs when only part of the repo is under evaluation (`--scope "src/domain/**"`). A **métier-only eval** combines both: `--category métier --scope "src/domain/**"`. The generated contracts bind agents to the scope and `check` fails findings cited only outside it (tag `scope-exempt` to keep a justified cross-cutting one).
+- **Depth** — the full pipeline is the default. Offer the **one-shot** path only when the user explicitly asks for a quick/light single-pass read (see "One-shot path" below); never silently downgrade.
 
 ## Modes & improvement discovery
 
@@ -47,9 +49,9 @@ For `improve`/`deep`, `plan` adds **Analyze** and **Brainstorm** stages to the g
 
 **1. Scaffold the run.**
 ```
-node <skill-dir>/scripts/ultraeval.mjs init --target <PATH> --out <RUN> [--kind skill|codebase] [--category "<c>"]
+node <skill-dir>/scripts/ultraeval.mjs init --target <PATH> --out <RUN> [--kind skill|codebase] [--category "<c>"] [--scope "<glob[,glob]>"]
 ```
-Writes `eval.config.json` with starter dimensions (see `references/rubric-library.md`) and the run's **provenance** (engine/protocol/rubric versions, target git SHA + dirty flag, dimensions hash) — the audit trail `score` stamps into the scorecard and `compare` uses to refuse non-comparable deltas.
+Writes `eval.config.json` with starter dimensions (see `references/rubric-library.md`) and the run's **provenance** (engine/protocol/rubric versions, target git SHA + dirty flag, dimensions hash, scope) — the audit trail `score` stamps into the scorecard and `compare` uses to refuse non-comparable deltas. When `<RUN>` sits inside a git repo, `init` **gitignores the run dir there** (idempotent, one conventional `.ultraeval/` line; it never touches `evals/` — the committed score ledger lives at `evals/history.jsonl`); `--no-gitignore` opts out. Métier-only eval example: `init --target . --out .ultraeval/metier --category métier --scope "src/domain/**"`.
 
 **2. Generate the workflow + subagent contracts.**
 ```
@@ -102,6 +104,14 @@ Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `depends
 
 **PR gating (diff-scoped runs).** `init --target <repo> --out <RUN> --since origin/main` scopes the eval to the changed set: the executor/findings/brainstormer contracts work only on changed behavior and `check` warns on findings citing unchanged files. Gate the PR with `compare --run <RUN> --base <previous-run> --gate` (exit 1 on score drop or a new P0).
 
+## One-shot path (opt-in quick eval)
+
+When the user explicitly asks for a quick single-pass read (a pre-check, a small target, a tight budget) — never as a silent default:
+```
+node <skill-dir>/scripts/ultraeval.mjs oneshot --target <PATH> --out <RUN> [--category "<c>"] [--scope "<glob[,glob]>"]
+```
+Scaffolds the run (config stamped `profile: oneshot`) and writes `<RUN>/ONESHOT.md` — ONE self-contained contract: skim the target, evaluate every dimension in one pass, write `findings.json` (same schema, same evidence grammar) + `SUMMARY.md`, then gate with `check --run <RUN>` until exit 0. **The structural gate is not optional**; the verify/honeypot/judge machinery is out of contract (`check --require-verify` refuses with the upgrade path). Present the result as **indicative — never as a verified or normed verdict**. Upgrading to the full pipeline is in-place: `plan --run <RUN>` removes ONESHOT.md and clears the profile.
+
 ## The grounding contract
 
 A finding is only trustworthy if its evidence resolves. `check` opens each `path:line` in the target and confirms the line exists and is in range; a stale/invented line is a hard failure. `verify` then asks a skeptic whether the cited content actually *supports* the claim. This two-layer gate (structural + semantic) is the whole point — full grammar and pass/fail rules in `references/gate-contract.md`.
@@ -119,5 +129,5 @@ A finding is only trustworthy if its evidence resolves. `check` opens each `path
 
 ## Safety
 
-- ultraeval only **reads** the target and writes under `<RUN>`. It never executes the target's code; the executor subagent may run the target's *own* commands (tests, gates) — sandbox untrusted repos.
+- ultraeval only **reads** the target and writes under `<RUN>` — plus, by default, one idempotent line in the `.gitignore` of the repo containing `<RUN>` (`--no-gitignore` opts out; `evals/` is never ignored). It never executes the target's code; the executor subagent may run the target's *own* commands (tests, gates) — sandbox untrusted repos.
 - `clean --run <RUN>` removes only derived gate/render artifacts and keeps the deliverables; `--all` removes the whole run.
