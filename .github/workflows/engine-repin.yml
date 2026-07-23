@@ -102,7 +102,7 @@ jobs:
           LATEST="${{ steps.detect.outputs.latest }}"
           COUNTS=$(grep -E '^\s*(Test Files|Tests)\s' test-output.log || echo "test counts unavailable")
           git add -A
-          git commit -m "chore(engine): re-pin codeindex ${LATEST}" \
+          git commit -m "feat(engine): re-pin codeindex ${LATEST}" \
             -m "automated re-pin, all gates green, goldens byte-identical" \
             -m "$COUNTS"
           git push origin HEAD:main
