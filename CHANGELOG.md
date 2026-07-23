@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.12.1](https://github.com/maxgfr/ultraeval/compare/v1.12.0...v1.12.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **engine:** ship the codeindex v2.12.0 re-pin in a release ([1c5e980](https://github.com/maxgfr/ultraeval/commit/1c5e980fd2200d3cdf612c6852fdbc63142e0254)), closes [#9](https://github.com/maxgfr/ultraeval/issues/9)
+
 # [1.12.0](https://github.com/maxgfr/ultraeval/compare/v1.11.0...v1.12.0) (2026-07-23)
 
 
