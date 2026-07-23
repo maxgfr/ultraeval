@@ -1,0 +1,156 @@
+name: Engine re-pin
+
+# Watches maxgfr/codeindex for a new engine release and re-pins it here.
+# All gates green -> pushed straight to main (no PR, no human in the loop).
+# Any gate red -> the synced state is pushed to a branch and a PR is opened
+# for manual adjudication (never auto-regenerate goldens — see step below).
+on:
+  schedule:
+    - cron: "24 6 * * *" # daily; minute offset staggered per repo to spread load
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+concurrency: engine-repin
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  repin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect current pin vs. latest codeindex release
+        id: detect
+        run: |
+          set -euo pipefail
+          PINNED=$(node -p "require('./src/vendor/engine.meta.json').tag")
+          # NOT releases/latest: the codeindex repo also carries the
+          # embed-model-v1 asset release, which /releases/latest could surface.
+          LATEST=$(gh api repos/maxgfr/codeindex/releases --jq '[.[] | select(.tag_name | test("^v[0-9]")) | .tag_name] | first')
+          echo "pinned=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          if [ "$PINNED" = "$LATEST" ]; then
+            echo "up to date ($PINNED)"
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new release: $PINNED -> $LATEST"
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-pin engine
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: |
+          node scripts/sync-engine.mjs --ref "${{ steps.detect.outputs.latest }}"
+          node scripts/sync-engine.mjs --check
+
+      # Gate order below mirrors this cycle's local flow: test, typecheck,
+      # lint, then rebuild+stage the bundle BEFORE check:build. check:build
+      # itself reruns tsup+copy-bundle and diffs the *working tree against the
+      # index* (`git diff --exit-code`) — staging the freshly rebuilt bundle
+      # first is what makes that diff clean, exactly like the local flow.
+      - name: Test
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: pnpm test 2>&1 | tee test-output.log
+
+      - name: Typecheck
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: pnpm run typecheck
+
+      - name: Lint
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: pnpm run lint
+
+      - name: Rebuild bundle and stage it
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: |
+          pnpm run build
+          git add -A
+
+      - name: Build is reproducible + install-bundle shape + engine pin (check:build)
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: pnpm run check:build
+
+      - name: Configure git identity
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push re-pin to main (all gates green)
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: |
+          set -euo pipefail
+          LATEST="${{ steps.detect.outputs.latest }}"
+          COUNTS=$(grep -E '^\s*(Test Files|Tests)\s' test-output.log || echo "test counts unavailable")
+          git add -A
+          git commit -m "chore(engine): re-pin codeindex ${LATEST}" \
+            -m "automated re-pin, all gates green, goldens byte-identical" \
+            -m "$COUNTS"
+          git push origin HEAD:main
+
+      # A push authenticated with the default GITHUB_TOKEN does not trigger
+      # other workflows (known GH Actions limitation) — trigger them explicitly.
+      - name: Trigger release and CI on the new main
+        if: steps.detect.outputs.up_to_date != 'true'
+        run: |
+          gh workflow run release.yml --ref main
+          gh workflow run ci.yml --ref main
+
+      - name: On gate failure — push sync branch and open adjudication PR
+        if: failure()
+        run: |
+          set -euo pipefail
+          LATEST="${{ steps.detect.outputs.latest }}"
+          BRANCH="repin/${LATEST}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(engine): re-pin codeindex ${LATEST} (gates failed)" \
+            -m "Automated sync pushed for manual adjudication — see the failed run for gate output." \
+            || echo "nothing new to commit — pushing existing state"
+          git push origin "HEAD:refs/heads/${BRANCH}" --force
+
+          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open for $BRANCH — not duplicating."
+            exit 0
+          fi
+
+          cat > /tmp/repin-pr-body.md <<EOF
+          Automated re-pin of codeindex \`${LATEST}\` failed one or more gates.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          **Doctrine (golden-first discipline):** classify every golden/snapshot
+          diff before regenerating it. Mechanical/reformat-only noise may be
+          blessed; a genuine change in engine output is real signal — investigate
+          it, and if the codeindex engine itself is wrong, file an issue against
+          maxgfr/codeindex instead of papering over it here. Never regenerate
+          goldens in the automated job itself.
+          EOF
+          sed -i 's/^ *//' /tmp/repin-pr-body.md
+
+          gh pr create \
+            --title "engine re-pin ${LATEST}: gates failed — manual adjudication needed" \
+            --head "$BRANCH" \
+            --base main \
+            --body-file /tmp/repin-pr-body.md
