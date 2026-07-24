@@ -2,8 +2,8 @@ name: Engine re-pin
 
 # Watches maxgfr/codeindex for a new engine release and re-pins it here.
 # All gates green -> pushed straight to main (no PR, no human in the loop).
-# Any gate red -> the synced state is pushed to a branch and a PR is opened
-# for manual adjudication (never auto-regenerate goldens — see step below).
+# Any gate red -> nothing is pushed and no PR is opened; the run just fails
+# and the next daily cron retries. A red run is the signal to investigate.
 on:
   schedule:
     - cron: "24 6 * * *" # daily; minute offset staggered per repo to spread load
@@ -12,7 +12,6 @@ on:
 permissions:
   contents: write
   actions: write
-  pull-requests: write
 
 concurrency: engine-repin
 
@@ -120,45 +119,3 @@ jobs:
         run: |
           gh workflow run release.yml --ref main
           gh workflow run ci.yml --ref main
-
-      - name: On gate failure — push sync branch and open adjudication PR
-        if: failure() && steps.push.outputs.pushed != 'true' && steps.detect.outputs.latest != ''
-        env:
-          LATEST: ${{ steps.detect.outputs.latest }}
-        run: |
-          set -euo pipefail
-          git rebase --abort 2>/dev/null || true
-          BRANCH="repin/${LATEST}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore(engine): re-pin codeindex ${LATEST} (gates failed)" \
-            -m "Automated sync pushed for manual adjudication — see the failed run for gate output." \
-            || echo "nothing new to commit — pushing existing state"
-          git push origin "HEAD:refs/heads/${BRANCH}" --force
-
-          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // empty')
-          if [ -n "$EXISTING" ]; then
-            echo "PR #$EXISTING already open for $BRANCH — not duplicating."
-            exit 0
-          fi
-
-          cat > /tmp/repin-pr-body.md <<EOF
-          Automated re-pin of codeindex \`${LATEST}\` failed one or more gates.
-
-          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          **Doctrine (golden-first discipline):** classify every golden/snapshot
-          diff before regenerating it. Mechanical/reformat-only noise may be
-          blessed; a genuine change in engine output is real signal — investigate
-          it, and if the codeindex engine itself is wrong, file an issue against
-          maxgfr/codeindex instead of papering over it here. Never regenerate
-          goldens in the automated job itself.
-          EOF
-          sed -i 's/^ *//' /tmp/repin-pr-body.md
-
-          gh pr create \
-            --title "engine re-pin ${LATEST}: gates failed — manual adjudication needed" \
-            --head "$BRANCH" \
-            --base main \
-            --body-file /tmp/repin-pr-body.md
