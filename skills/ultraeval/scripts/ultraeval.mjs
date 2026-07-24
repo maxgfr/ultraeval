@@ -2,11 +2,11 @@
 
 // src/cli.ts
 import { realpathSync as realpathSync3 } from "fs";
-import { join as join32 } from "path";
+import { join as join33 } from "path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "url";
 
 // src/analyze.ts
-import { join as join13 } from "path";
+import { join as join14 } from "path";
 
 // src/util.ts
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
@@ -262,11 +262,13 @@ import { createHash as createHash2 } from "crypto";
 import { existsSync as existsSync3, readFileSync as readFileSync5 } from "fs";
 import { join as join10 } from "path";
 import { join as join11 } from "path";
+import { statSync as statSync4 } from "fs";
+import { join as join12 } from "path";
 import { createInterface } from "readline";
 import { basename as basename22 } from "path";
 import { join as join9 } from "path";
 import { existsSync as existsSync4, mkdirSync as mkdirSync22, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "fs";
-import { join as join12, resolve as resolve2 } from "path";
+import { join as join13, resolve as resolve2 } from "path";
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __esm = (fn, res) => function __init() {
@@ -282,9 +284,9 @@ var EXTRACTOR_VERSION;
 var init_types = __esm({
   "src/types.ts"() {
     "use strict";
-    ENGINE_VERSION = "2.12.0";
+    ENGINE_VERSION = "2.13.0";
     SCHEMA_VERSION = 4;
-    EXTRACTOR_VERSION = 9;
+    EXTRACTOR_VERSION = 10;
   }
 });
 function sh(cmd, args2, opts = {}) {
@@ -580,6 +582,7 @@ function walk(root, opts = {}) {
   const maxFileBytes = opts.maxFileBytes ?? 1024 * 1024;
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
   const useGitignore = opts.gitignore !== false;
+  const ignoreDirs = opts.ignoreDirs ? new Set(opts.ignoreDirs) : IGNORE_DIRS;
   const out2 = [];
   let capped = false;
   let excluded = 0;
@@ -628,7 +631,7 @@ function walk(root, opts = {}) {
         continue;
       }
       if (st.isDirectory()) {
-        if (IGNORE_DIRS.has(name2)) continue;
+        if (ignoreDirs.has(name2)) continue;
         if (isLink) continue;
         if (useGitignore && rules.length && isIgnored(rules, rel, true)) continue;
         stack.push({ dir: abs, rel, rules });
@@ -726,6 +729,7 @@ var init_walk = __esm({
       ".cache",
       "tmp",
       ".ultraindex",
+      ".codeindex",
       "Pods",
       "DerivedData",
       ".terraform",
@@ -1163,7 +1167,7 @@ var init_js_ts = __esm({
     RULES = [
       { re: /^\s*export\s+(?:async\s+)?function\s+(?<name>[\w$]+)/, kind: "function", exported: true },
       { re: /^\s*export\s+default\s+(?:async\s+)?function\s+(?<name>[\w$]+)/, kind: "function", exported: true },
-      { re: /^\s*export\s+default\s+(?:abstract\s+)?class\s+(?<name>[\w$]+)/, kind: "class", exported: true },
+      { re: /^\s*export\s+default\s+(?:abstract\s+)?class\s+(?!extends\b)(?<name>[\w$]+)/, kind: "class", exported: true },
       { re: /^\s*(?:async\s+)?function\s+(?<name>[\w$]+)/, kind: "function", exported: false },
       { re: /^\s*export\s+(?:abstract\s+)?class\s+(?<name>[\w$]+)/, kind: "class", exported: true },
       { re: /^\s*(?:abstract\s+)?class\s+(?<name>[\w$]+)/, kind: "class", exported: false },
@@ -5998,7 +6002,7 @@ function readReceiver(node) {
   const name2 = obj ? readName(obj) : void 0;
   return name2 && /^[A-Za-z_]\w*$/.test(name2) ? name2 : void 0;
 }
-function collectCalls(root, spec) {
+function collectCalls(root, spec, maxCalls = MAX_CALLS) {
   if (!spec.calls) return [];
   const out2 = [];
   const seen = /* @__PURE__ */ new Set();
@@ -6029,7 +6033,7 @@ function collectCalls(root, spec) {
   };
   visit(root);
   out2.sort((a, b) => byStr(a.name, b.name) || a.line - b.line);
-  return out2.slice(0, MAX_CALLS);
+  return out2.slice(0, maxCalls);
 }
 function collectImportedNames(root, spec) {
   if (!spec.imports?.import_statement) return [];
@@ -6056,7 +6060,7 @@ function collectImportedNames(root, spec) {
   visit(root);
   return [...found].sort(byStr).slice(0, MAX_IMPORTED_NAMES);
 }
-function extractAst(rel, ext, content) {
+function extractAst(rel, ext, content, opts = {}) {
   const key2 = grammarKeyForExt(ext);
   if (!key2 || !grammarReady(key2)) return void 0;
   const spec = SPECS[key2];
@@ -6242,7 +6246,7 @@ function extractAst(rel, ext, content) {
     }
     const refs = collectImports(root, spec);
     const idents = collectRefIdents(root, new Set(symbols.map((s) => s.name)));
-    const calls = collectCalls(root, spec);
+    const calls = collectCalls(root, spec, opts.maxCalls);
     const importedNames = collectImportedNames(root, spec);
     let pkg;
     if (spec.lang === "java") {
@@ -6691,12 +6695,12 @@ function extractImports(ext, content) {
   }
   return [...specs].map((spec) => ({ kind: "import", spec }));
 }
-function collectCallsRegex(content, symbols = []) {
+function collectCallsRegex(content, symbols = [], maxCalls = 512) {
   const out2 = /* @__PURE__ */ new Map();
   const ownDefLines = new Set(symbols.map((s) => `${s.name} ${s.line}`));
   const lines = content.split("\n");
   const CALL_RE = /(?:\bnew\s+)?(?:([A-Za-z_$][\w$]*)\s*\.\s*)?([A-Za-z_$][\w$]*)\s*\(/g;
-  for (let i2 = 0; i2 < lines.length && out2.size < 512; i2++) {
+  for (let i2 = 0; i2 < lines.length && out2.size < maxCalls; i2++) {
     const line = lines[i2];
     const trimmed = line.trimStart();
     if (trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("*")) continue;
@@ -6711,7 +6715,7 @@ function collectCallsRegex(content, symbols = []) {
     CALL_RE.lastIndex = 0;
     let m;
     const fallbackExcluded = /* @__PURE__ */ new Set();
-    while ((m = CALL_RE.exec(line)) !== null && out2.size < 512) {
+    while ((m = CALL_RE.exec(line)) !== null && out2.size < maxCalls) {
       const receiver = m[1];
       const name2 = m[2];
       if (name2.length < 2 || CALL_KEYWORDS.has(name2)) continue;
@@ -6728,8 +6732,8 @@ function collectCallsRegex(content, symbols = []) {
   }
   return [...out2.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.line - b.line);
 }
-function extractCode(rel, ext, content) {
-  const ast = extractAst(rel, ext, content);
+function extractCode(rel, ext, content, opts = {}) {
+  const ast = extractAst(rel, ext, content, { maxCalls: opts.maxCallsPerFile });
   const symbols = (ast ? ast.symbols : extractSymbols(rel, ext, content)).slice(0, 400);
   const known = new Set(symbols.map((s) => s.name));
   const reexports = extractReexports(rel, content, symbols).filter((s) => !known.has(s.name));
@@ -6745,7 +6749,7 @@ function extractCode(rel, ext, content) {
     // collector otherwise, so caller indexes exist without the wasm sidecar.
     // `symbols` (this file's own regex-extracted defs) lets the collector
     // exclude a definition's own name+line from its call candidates.
-    calls: ast ? ast.calls : collectCallsRegex(content, symbols),
+    calls: ast ? ast.calls : collectCallsRegex(content, symbols, opts.maxCallsPerFile),
     importedNames: ast?.importedNames
   };
 }
@@ -6821,7 +6825,8 @@ function scanRepo(root, opts = {}) {
   const { files: walked, capped, excluded } = walk(root, {
     maxFileBytes: opts.maxBytes,
     maxFiles: opts.maxFiles,
-    gitignore: opts.gitignore
+    gitignore: opts.gitignore,
+    ignoreDirs: opts.ignoreDirs
   });
   const outPrefix = opts.out ? opts.out.replace(/\/+$/, "") + "/" : null;
   const files = [];
@@ -6870,7 +6875,7 @@ function scanRepo(root, opts = {}) {
       } else if (kind === "doc") {
         record.title = basename2(f.rel);
       } else if (kind === "code") {
-        const code = extractCode(f.rel, f.ext, content);
+        const code = extractCode(f.rel, f.ext, content, { maxCallsPerFile: opts.maxCallsPerFile });
         record.title = basename2(f.rel);
         record.summary = code.summary;
         record.symbols = code.symbols;
@@ -9694,16 +9699,12 @@ function resolveEmbedModelDir(repo) {
 function hasEmbedModel(repo) {
   return resolveEmbedModelDir(repo) !== void 0;
 }
-function loadEmbedModel(dir) {
-  if (!dir) return void 0;
-  const path = join10(dir, "model.json");
-  if (!existsSync3(path)) return void 0;
-  const raw = JSON.parse(readFileSync5(path, "utf8"));
-  const { modelId, dim, vocab, weights } = raw;
-  if (typeof modelId !== "string" || !modelId) throw new Error(`embed model: missing modelId in ${path}`);
-  if (!Number.isInteger(dim) || dim <= 0) throw new Error(`embed model: bad dim ${dim} in ${path}`);
+function parseEmbedModel(raw, source) {
+  const { modelId, dim, vocab, weights, unk: rawUnk } = raw ?? {};
+  if (typeof modelId !== "string" || !modelId) throw new Error(`embed model: missing modelId in ${source}`);
+  if (!Number.isInteger(dim) || dim <= 0) throw new Error(`embed model: bad dim ${dim} in ${source}`);
   if (!Array.isArray(vocab) || !Array.isArray(weights) || vocab.length !== weights.length) {
-    throw new Error(`embed model: vocab/weights length mismatch in ${path}`);
+    throw new Error(`embed model: vocab/weights length mismatch in ${source}`);
   }
   const vocabSize = vocab.length;
   const flat = new Float64Array(vocabSize * dim);
@@ -9718,9 +9719,16 @@ function loadEmbedModel(dir) {
     }
     for (let d = 0; d < dim; d++) flat[i2 * dim + d] = Number(row[d]);
   }
-  const unk = typeof raw.unk === "string" ? raw.unk : "[UNK]";
+  const unk = typeof rawUnk === "string" ? rawUnk : "[UNK]";
   const unkId = vmap.has(unk) ? vmap.get(unk) : -1;
   return { modelId, dim, unk, unkId, vocabSize, vocab: vmap, weights: flat };
+}
+function loadEmbedModel(dir) {
+  if (!dir) return void 0;
+  const path = join10(dir, "model.json");
+  if (!existsSync3(path)) return void 0;
+  const raw = JSON.parse(readFileSync5(path, "utf8"));
+  return parseEmbedModel(raw, path);
 }
 function resolveEmbedPullUrl() {
   const env = process.env.CODEINDEX_EMBED_URL;
@@ -10433,6 +10441,7 @@ var init_viz = __esm({
 });
 var mcp_exports = {};
 __export(mcp_exports, {
+  memoizedEmbedModel: () => memoizedEmbedModel,
   memoizedEmbeddingIndex: () => memoizedEmbeddingIndex,
   runMcpServer: () => runMcpServer,
   scanFingerprint: () => scanFingerprint
@@ -10455,6 +10464,19 @@ async function memoizedEmbeddingIndex(key2, build) {
   const index = await build();
   embeddingIndexCache = { key: cacheKey, index };
   return index;
+}
+function memoizedEmbedModel(modelDir) {
+  let stat;
+  try {
+    stat = statSync4(join12(modelDir, "model.json"));
+  } catch {
+    return void 0;
+  }
+  const key2 = `${modelDir}:${stat.mtimeMs}:${stat.size}`;
+  if (embedModelCache && embedModelCache.key === key2) return embedModelCache.model;
+  const model = loadEmbedModel(modelDir);
+  if (model) embedModelCache = { key: key2, model };
+  return model;
 }
 async function callTool(name2, args2) {
   const repo = str(args2.repo);
@@ -10610,7 +10632,7 @@ async function callTool(name2, args2) {
         }
       }
       const modelDir = resolveEmbedModelDir(repo);
-      const model = modelDir ? loadEmbedModel(modelDir) : void 0;
+      const model = modelDir ? memoizedEmbedModel(modelDir) : void 0;
       if (model) {
         const index = await memoizedEmbeddingIndex(
           { mode: "static", identity: `${modelDir}#${model.modelId}`, scan: scan2 },
@@ -10630,7 +10652,7 @@ async function callTool(name2, args2) {
   }
   if (name2 === "embed_status") {
     const modelDir = resolveEmbedModelDir(repo);
-    const model = modelDir ? loadEmbedModel(modelDir) : void 0;
+    const model = modelDir ? memoizedEmbedModel(modelDir) : void 0;
     const endpoint = resolveEmbedEndpoint();
     const mode = endpoint ? "endpoint" : model ? "static" : "none";
     const status = {
@@ -10709,6 +10731,7 @@ var repoProp;
 var scopeProps;
 var TOOLS;
 var embeddingIndexCache;
+var embedModelCache;
 var init_mcp = __esm({
   "src/mcp.ts"() {
     "use strict";
@@ -11463,8 +11486,11 @@ Flags:
   --exclude <glob>    Exclude matching paths (repeatable)
   --scope <dir>       Restrict to one directory (sugar for --include '<dir>/**')
   --no-gitignore      Do not honor .gitignore files (default: honored)
+  --ignore-dir <name> Directory names to skip (repeatable) \u2014 REPLACES the
+                      default ignored-directory set, never merges with it
   --max-files <n>     Cap walked files (default 20000)
   --max-bytes <n>     Skip files above this size (default 1 MiB)
+  --max-calls <n>     Per-file call-site cap for extraction (default 512)
   --no-ast            Skip tree-sitter grammars even when present (regex tier)
   --config <file>     Rules config for \`rules\` (JSON: [{name, from, to, \u2026}])
   --limit <n>         Max results for \`search\` (default 20)
@@ -11479,7 +11505,7 @@ Flags:
                       each site corroborated|unique-name
 `;
 function parseFlags(args2) {
-  const flags2 = { repo: process.cwd(), include: [], exclude: [], gitignore: true, noAst: false, fuzzy: true, semantic: false };
+  const flags2 = { repo: process.cwd(), include: [], exclude: [], gitignore: true, ignoreDirs: [], noAst: false, fuzzy: true, semantic: false };
   for (let i2 = 0; i2 < args2.length; i2++) {
     const a = args2[i2];
     const next = () => {
@@ -11502,8 +11528,10 @@ function parseFlags(args2) {
     else if (a === "--exclude") flags2.exclude.push(next());
     else if (a === "--scope") flags2.scope = next();
     else if (a === "--no-gitignore") flags2.gitignore = false;
+    else if (a === "--ignore-dir") flags2.ignoreDirs.push(next());
     else if (a === "--max-files") flags2.maxFiles = num2();
     else if (a === "--max-bytes") flags2.maxBytes = num2();
+    else if (a === "--max-calls") flags2.maxCalls = num2();
     else if (a === "--ignore-case") flags2.ignoreCase = true;
     else if (a === "--max-hits") flags2.maxHits = num2();
     else if (a === "--budget-tokens") flags2.budgetTokens = num2();
@@ -11530,8 +11558,10 @@ function scanOptions(flags2) {
     exclude: flags2.exclude.length ? flags2.exclude : void 0,
     scope: flags2.scope,
     gitignore: flags2.gitignore,
+    ignoreDirs: flags2.ignoreDirs.length ? flags2.ignoreDirs : void 0,
     maxFiles: flags2.maxFiles,
-    maxBytes: flags2.maxBytes
+    maxBytes: flags2.maxBytes,
+    maxCallsPerFile: flags2.maxCalls
   };
 }
 async function runCli(argv) {
@@ -11556,7 +11586,7 @@ async function runCli(argv) {
     if (!flags2.out) throw new Error("index needs --out <dir>");
     const outDir = flags2.out;
     mkdirSync22(outDir, { recursive: true });
-    const cachePath = join12(outDir, "cache.json");
+    const cachePath = join13(outDir, "cache.json");
     let cache;
     try {
       const parsed = JSON.parse(readFileSync6(cachePath, "utf8"));
@@ -11566,8 +11596,8 @@ async function runCli(argv) {
     } catch {
     }
     const { scan: scan2, graph, symbols } = buildIndexArtifacts(flags2.repo, { ...scanOptions(flags2), cache, out: outDir });
-    writeFileSync3(join12(outDir, "graph.json"), renderGraphJson(graph));
-    writeFileSync3(join12(outDir, "symbols.json"), renderSymbolsJson(symbols));
+    writeFileSync3(join13(outDir, "graph.json"), renderGraphJson(graph));
+    writeFileSync3(join13(outDir, "symbols.json"), renderSymbolsJson(symbols));
     const files = {};
     for (const f of scan2.files) {
       const entry = { hash: f.hash, record: f, size: f.size };
@@ -11584,7 +11614,7 @@ async function runCli(argv) {
     const model = modelDir ? loadEmbedModel(modelDir) : void 0;
     if (model) {
       const index = buildEmbeddingIndex(scan2, model);
-      writeFileSync3(join12(outDir, "embeddings.bin"), serializeEmbeddings(index));
+      writeFileSync3(join13(outDir, "embeddings.bin"), serializeEmbeddings(index));
       embedNote = ` + embeddings.bin (${index.records.length} records, model ${model.modelId})`;
     }
     process.stderr.write(`codeindex: ${scan2.files.length} files \u2192 ${outDir}/graph.json + symbols.json${embedNote}${scan2.capped ? " (capped)" : ""}
@@ -11716,14 +11746,14 @@ async function runCli(argv) {
       mkdirSync22(flags2.out, { recursive: true });
       const scan2 = scanRepo(flags2.repo, scanOptions(flags2));
       const index = buildEmbeddingIndex(scan2, model);
-      writeFileSync3(join12(flags2.out, "embeddings.bin"), serializeEmbeddings(index));
+      writeFileSync3(join13(flags2.out, "embeddings.bin"), serializeEmbeddings(index));
       process.stderr.write(`codeindex: ${index.records.length} embedding records \u2192 ${flags2.out}/embeddings.bin (model ${model.modelId})
 `);
     } else if (sub === "pull") {
       const { url, sha256 } = resolveEmbedPullUrl();
-      const destDir = process.env.CODEINDEX_EMBED_DIR ?? join12(flags2.repo, ".codeindex", "models");
+      const destDir = process.env.CODEINDEX_EMBED_DIR ?? join13(flags2.repo, ".codeindex", "models");
       mkdirSync22(destDir, { recursive: true });
-      process.stderr.write(`codeindex: fetching model from ${url} \u2192 ${join12(destDir, "model.json")}
+      process.stderr.write(`codeindex: fetching model from ${url} \u2192 ${join13(destDir, "model.json")}
 `);
       let body2;
       try {
@@ -11735,14 +11765,17 @@ async function runCli(argv) {
         return;
       }
       try {
-        JSON.parse(body2);
-      } catch {
-        process.stderr.write("codeindex: pull failed \u2014 response is not a valid model.json (expected JSON)\n");
+        parseEmbedModel(JSON.parse(body2), url);
+      } catch (e) {
+        process.stderr.write(
+          `codeindex: pull failed \u2014 response is not a valid model.json (${e instanceof Error ? e.message : String(e)}) (nothing written)
+`
+        );
         process.exitCode = 1;
         return;
       }
-      writeFileSync3(join12(destDir, "model.json"), body2);
-      process.stderr.write(`codeindex: model written to ${join12(destDir, "model.json")}
+      writeFileSync3(join13(destDir, "model.json"), body2);
+      process.stderr.write(`codeindex: model written to ${join13(destDir, "model.json")}
 `);
     } else {
       throw new Error("embed needs a subcommand: status | build | pull | serve");
@@ -11834,7 +11867,7 @@ function walkFiles(root) {
   const out2 = [];
   for (const rec of scan2.files) {
     if (!CODE_EXT.has(rec.ext)) continue;
-    const content = readText2(join13(root, rec.rel));
+    const content = readText2(join14(root, rec.rel));
     const resolved = [];
     for (const ref of rec.refs) {
       if (ref.kind !== "import") continue;
@@ -11950,7 +11983,7 @@ function analyzeRepo(targetAbs, opts = {}) {
     notes.push("test coverage attributed by filename only (no test\u2192source imports resolved) \u2014 the untested list may overstate gaps");
   const languages = {};
   for (const f of files) languages[f.ext] = (languages[f.ext] ?? 0) + 1;
-  const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join13(targetAbs, d)));
+  const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join14(targetAbs, d)));
   return {
     target: targetAbs,
     files: files.length,
@@ -11966,8 +11999,8 @@ function analyzeRepo(targetAbs, opts = {}) {
 }
 function runAnalyze(targetDir, outDir, opts = {}) {
   const a = analyzeRepo(targetDir, opts);
-  writeJson(join13(outDir, "analysis.json"), a);
-  writeText(join13(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
+  writeJson(join14(outDir, "analysis.json"), a);
+  writeText(join14(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
   return a;
 }
 function renderAnalysisMd(a) {
@@ -11995,7 +12028,7 @@ ${a.tests.untested.map((u) => `- \`${u}\``).join("\n")}
 
 // src/backlog.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { join as join14, relative as relative2 } from "path";
+import { join as join15, relative as relative2 } from "path";
 
 // src/types.ts
 var VERSION = "1.12.1";
@@ -12061,7 +12094,7 @@ function scanTestFiles(targetAbs, limit = 500) {
     }
     for (const e of entries) {
       if (found.length >= limit) return;
-      const p = join14(dir, e.name);
+      const p = join15(dir, e.name);
       if (e.isDirectory()) {
         if (!e.name.startsWith(".") && !CONV_SKIP.has(e.name)) walk2(p);
         continue;
@@ -12110,32 +12143,32 @@ function distinctTestPath(rel, disc) {
   return rel.replace(/\.([^./]+)$/, `.${disc}.$1`);
 }
 function freshTestFile(guess, disc, targetAbs) {
-  if (!exists(join14(targetAbs, guess))) return guess;
+  if (!exists(join15(targetAbs, guess))) return guess;
   let candidate = distinctTestPath(guess, disc);
-  for (let n = 2; exists(join14(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
+  for (let n = 2; exists(join15(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
   return candidate;
 }
 function detectVerifyCommand(targetAbs) {
-  if (exists(join14(targetAbs, "package.json"))) {
-    const pkg = readJson(join14(targetAbs, "package.json"));
+  if (exists(join15(targetAbs, "package.json"))) {
+    const pkg = readJson(join15(targetAbs, "package.json"));
     if (pkg.scripts?.test) {
-      if (exists(join14(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
-      if (exists(join14(targetAbs, "yarn.lock"))) return "yarn test";
+      if (exists(join15(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
+      if (exists(join15(targetAbs, "yarn.lock"))) return "yarn test";
       return "npm test";
     }
   }
-  if (exists(join14(targetAbs, "go.mod"))) return "go test ./...";
-  if (exists(join14(targetAbs, "Cargo.toml"))) return "cargo test";
-  if (exists(join14(targetAbs, "pytest.ini")) || exists(join14(targetAbs, "pyproject.toml"))) return "pytest";
+  if (exists(join15(targetAbs, "go.mod"))) return "go test ./...";
+  if (exists(join15(targetAbs, "Cargo.toml"))) return "cargo test";
+  if (exists(join15(targetAbs, "pytest.ini")) || exists(join15(targetAbs, "pyproject.toml"))) return "pytest";
   return null;
 }
 function buildBacklog(runDir, opts = {}) {
-  const cfg = readJson(join14(runDir, "eval.config.json"));
-  const findingsPath = join14(runDir, "findings.json");
+  const cfg = readJson(join15(runDir, "eval.config.json"));
+  const findingsPath = join15(runDir, "findings.json");
   if (!exists(findingsPath)) throw new Error("no findings.json \u2014 record findings first (see agents/findings.md), then re-run backlog");
   const doc = readJson(findingsPath);
   const failed2 = /* @__PURE__ */ new Set();
-  const vpath = join14(runDir, "VERIFY.json");
+  const vpath = join15(runDir, "VERIFY.json");
   if (exists(vpath)) {
     const v = readJson(vpath);
     for (const id of v.failures ?? []) failed2.add(id);
@@ -12167,7 +12200,7 @@ function buildBacklog(runDir, opts = {}) {
       targets,
       red: {
         testFile,
-        expectedNew: !exists(join14(targetAbs, testFile)),
+        expectedNew: !exists(join15(targetAbs, testFile)),
         description: isOpp ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}` : f.failureScenario ? `Write a failing test that reproduces: ${f.failureScenario}` : `Write a failing test asserting the correct behavior for: ${f.statement}`
       },
       green: {
@@ -12194,11 +12227,11 @@ function buildBacklog(runDir, opts = {}) {
   }
   const out2 = opts.out ?? runDir;
   const backlog = { target: cfg.targetAbs, generatedFrom: runDir, tasks };
-  writeJson(join14(out2, "BACKLOG.json"), backlog);
-  writeText(join14(out2, "REMEDIATION.md"), renderRemediation(backlog, cfg));
+  writeJson(join15(out2, "BACKLOG.json"), backlog);
+  writeText(join15(out2, "REMEDIATION.md"), renderRemediation(backlog, cfg));
   if (opts.tdd) {
     const byId = new Map(doc.findings.map((f) => [f.id, f]));
-    for (const t of tasks) writeText(join14(out2, "fixes", `${t.id}-${slug(t.title)}.md`), renderFixCard(t, byId.get(t.findingId)));
+    for (const t of tasks) writeText(join15(out2, "fixes", `${t.id}-${slug(t.title)}.md`), renderFixCard(t, byId.get(t.findingId)));
   }
   return backlog;
 }
@@ -12249,7 +12282,7 @@ The RED test now passes and no existing test regresses.
 }
 
 // src/brainstorm.ts
-import { join as join15 } from "path";
+import { join as join16 } from "path";
 var LENSES = [
   { id: "simplify", group: "internal", q: "What could be simpler or removed \u2014 dead code, duplication, over-abstraction?" },
   { id: "performance", group: "internal", q: "What does needless work on a hot path or at scale?" },
@@ -12262,9 +12295,9 @@ var LENSES = [
   { id: "adjacent", group: "product", q: "What adjacent use-case is one small step away?" }
 ];
 function runBrainstorm(runDir) {
-  const cfg = readJson(join15(runDir, "eval.config.json"));
-  const analysis = exists(join15(runDir, "analysis.json")) ? readJson(join15(runDir, "analysis.json")) : null;
-  writeText(join15(runDir, "BRAINSTORM.todo.md"), renderTodo(cfg, analysis));
+  const cfg = readJson(join16(runDir, "eval.config.json"));
+  const analysis = exists(join16(runDir, "analysis.json")) ? readJson(join16(runDir, "analysis.json")) : null;
+  writeText(join16(runDir, "BRAINSTORM.todo.md"), renderTodo(cfg, analysis));
   return { lenses: LENSES.length };
 }
 function renderTodo(cfg, a) {
@@ -12300,10 +12333,10 @@ Rules (the gate enforces them after \`brainstorm --rank\`):
 `;
 }
 function rankBrainstorm(runDir) {
-  const oppsPath = join15(runDir, "opportunities.json");
+  const oppsPath = join16(runDir, "opportunities.json");
   if (!exists(oppsPath)) throw new Error("no opportunities.json \u2014 fill the BRAINSTORM.todo.md worklist first");
   const opps = readJson(oppsPath).opportunities ?? [];
-  const doc = exists(join15(runDir, "findings.json")) ? readJson(join15(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join16(runDir, "findings.json")) ? readJson(join16(runDir, "findings.json")) : { findings: [] };
   let maxN = 0;
   for (const f of doc.findings) {
     const m = /^F(\d+)$/.exec(f.id);
@@ -12345,13 +12378,13 @@ function rankBrainstorm(runDir) {
     });
     added++;
   }
-  writeJson(join15(runDir, "findings.json"), doc);
+  writeJson(join16(runDir, "findings.json"), doc);
   return { added, total: doc.findings.length, skipped };
 }
 
 // src/check.ts
 import { execFileSync as execFileSync3 } from "child_process";
-import { join as join19 } from "path";
+import { join as join20 } from "path";
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -12412,12 +12445,12 @@ function findingRefs(md) {
 // src/init.ts
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash as createHash3 } from "crypto";
-import { isAbsolute as isAbsolute2, join as join17, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join18, resolve as resolve3 } from "path";
 
 // src/gitignore.ts
 import { execFileSync } from "child_process";
 import { existsSync as existsSync5, realpathSync as realpathSync2 } from "fs";
-import { join as join16, relative as relative3, sep as sep2 } from "path";
+import { join as join17, relative as relative3, sep as sep2 } from "path";
 function gitRootOf(dir) {
   try {
     const out2 = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -12436,7 +12469,7 @@ function ensureGitignored(runDirAbs) {
   const container = segments.indexOf(".ultraeval");
   const entry = container >= 0 ? `${segments.slice(0, container + 1).join("/")}/` : `${rel}/`;
   if (entry === "evals/") return { action: "skipped", entry, reason: "refusing \u2014 the committed score ledger lives under evals/" };
-  const path = join16(root, ".gitignore");
+  const path = join17(root, ".gitignore");
   const existing = existsSync5(path) ? readText(path) : "";
   const bare = entry.replace(/\/$/, "");
   const covered = existing.split(/\r?\n/).map((l) => l.trim()).some((l) => l === entry || l === bare || l === `/${entry}` || l === `/${bare}`);
@@ -12726,8 +12759,8 @@ function normalizeScope(scope) {
   return clean2.length ? clean2 : void 0;
 }
 function detectKind(targetAbs) {
-  if (exists(join17(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join17(targetAbs, "skills");
+  if (exists(join18(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join18(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
@@ -12795,16 +12828,16 @@ function initRun(opts) {
     ...opts.bar !== void 0 && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}
   };
   const runDir = resolve3(process.cwd(), opts.out);
-  ensureDir(join17(runDir, "runs"));
-  ensureDir(join17(runDir, "research"));
-  writeJson(join17(runDir, "eval.config.json"), cfg);
+  ensureDir(join18(runDir, "runs"));
+  ensureDir(join18(runDir, "research"));
+  writeJson(join18(runDir, "eval.config.json"), cfg);
   const gitignore = opts.gitignore === false ? void 0 : ensureGitignored(runDir);
   return { cfg, runDir, ...gitignore ? { gitignore } : {} };
 }
 
 // src/verify.ts
 import { readdirSync as readdirSync5 } from "fs";
-import { isAbsolute as isAbsolute3, join as join18, resolve as resolve4 } from "path";
+import { isAbsolute as isAbsolute3, join as join19, resolve as resolve4 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -12815,8 +12848,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join18(runDir, "eval.config.json"));
-  const doc = readJson(join18(runDir, "findings.json"));
+  const cfg = readJson(join19(runDir, "eval.config.json"));
+  const doc = readJson(join19(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
@@ -12843,15 +12876,15 @@ function runVerify(runDir, opts = {}) {
     planted = h.planted;
   }
   const out2 = { run: runDir, pairs };
-  writeJson(join18(runDir, sh2 ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out2);
-  writeText(join18(runDir, sh2 ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out2));
+  writeJson(join19(runDir, sh2 ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out2);
+  writeText(join19(runDir, sh2 ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out2));
   if (planted !== void 0) out2.planted = planted;
   return out2;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return { pairs, planted: 0 };
-  const cfg = readJson(join18(runDir, "eval.config.json"));
-  const doc = readJson(join18(runDir, "findings.json"));
+  const cfg = readJson(join19(runDir, "eval.config.json"));
+  const doc = readJson(join19(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -12876,7 +12909,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   if (traps.length) {
     const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-    writeJson(join18(runDir, truthName), {
+    writeJson(join19(runDir, truthName), {
       note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
       claimIds: traps.map((t) => t.claimId)
     });
@@ -12885,9 +12918,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join18(runDir, "VERIFY.honeypots.json")];
+  const files = [join19(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync5(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join18(runDir, e));
+    for (const e of readdirSync5(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join19(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -12958,7 +12991,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join18(runDir, "findings.json"));
+  const doc = readJson(join19(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -12973,7 +13006,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed: failed2 };
     if (failed2.length) result.ok = false;
   }
-  writeJson(join18(runDir, "VERIFY.json"), result);
+  writeJson(join19(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -12993,7 +13026,7 @@ var SOFT_FILES = ["SUMMARY.md"];
 function checkRun(runDir, opts = {}) {
   const errors = [];
   const warnings = [];
-  const cfgPath = join19(runDir, "eval.config.json");
+  const cfgPath = join20(runDir, "eval.config.json");
   if (!exists(cfgPath)) {
     errors.push("no eval.config.json \u2014 run `ultraeval init` first");
     return { ok: false, errors, warnings };
@@ -13005,7 +13038,7 @@ function checkRun(runDir, opts = {}) {
     errors.push("eval.config.json is not valid JSON");
     return { ok: false, errors, warnings, usageError: true };
   }
-  const findingsPath = join19(runDir, "findings.json");
+  const findingsPath = join20(runDir, "findings.json");
   if (!exists(findingsPath)) {
     errors.push("no findings.json \u2014 the eval produced no findings record");
     return { ok: false, errors, warnings };
@@ -13058,7 +13091,7 @@ function checkRun(runDir, opts = {}) {
   }
   const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
   for (const file of [...HARD_FILES, ...SOFT_FILES]) {
-    const p = join19(runDir, file);
+    const p = join20(runDir, file);
     if (!exists(p)) continue;
     const md = readText(p);
     for (const id of findingRefs(md)) if (!ids.has(id)) errors.push(`${file} cites ${id} but no such finding exists (dangling citation)`);
@@ -13074,7 +13107,7 @@ function checkRun(runDir, opts = {}) {
       }
     }
   }
-  const backlogPath = join19(runDir, "BACKLOG.json");
+  const backlogPath = join20(runDir, "BACKLOG.json");
   if (exists(backlogPath)) {
     try {
       const bl = readJson(backlogPath);
@@ -13089,7 +13122,7 @@ function checkRun(runDir, opts = {}) {
       errors.push("BACKLOG.json is not valid JSON");
     }
   }
-  const verifyPath = join19(runDir, "VERIFY.json");
+  const verifyPath = join20(runDir, "VERIFY.json");
   if (opts.requireVerify && cfg.oneshot) {
     errors.push(
       `--require-verify: this is a one-shot run \u2014 no verify phase exists; upgrade it (plan --run ${runDir}) and run the verify chain for verified findings`
@@ -13206,9 +13239,9 @@ function checkRun(runDir, opts = {}) {
     if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
   }
-  if (exists(join19(runDir, "RESULTS.md")) && !exists(join19(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
-  if (exists(join19(runDir, "runs", "budget.md"))) {
-    const summaryPath = join19(runDir, "SUMMARY.md");
+  if (exists(join20(runDir, "RESULTS.md")) && !exists(join20(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (exists(join20(runDir, "runs", "budget.md"))) {
+    const summaryPath = join20(runDir, "SUMMARY.md");
     if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
       warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
   }
@@ -13232,11 +13265,11 @@ function formatCheckReport(r, runDir) {
 }
 
 // src/compare.ts
-import { join as join20 } from "path";
+import { join as join21 } from "path";
 function load(dir) {
-  const findings = exists(join20(dir, "findings.json")) ? readJson(join20(dir, "findings.json")).findings ?? [] : [];
-  const score = exists(join20(dir, "scorecard.json")) ? readJson(join20(dir, "scorecard.json")) : null;
-  const cfg = exists(join20(dir, "eval.config.json")) ? readJson(join20(dir, "eval.config.json")) : null;
+  const findings = exists(join21(dir, "findings.json")) ? readJson(join21(dir, "findings.json")).findings ?? [] : [];
+  const score = exists(join21(dir, "scorecard.json")) ? readJson(join21(dir, "scorecard.json")) : null;
+  const cfg = exists(join21(dir, "eval.config.json")) ? readJson(join21(dir, "eval.config.json")) : null;
   return { findings, score, cfg };
 }
 var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
@@ -13336,12 +13369,12 @@ ${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "-
 }
 function runCompare(baseDir, newDir, outDir) {
   const r = compareRuns(baseDir, newDir);
-  writeText(join20(outDir, "COMPARE.md"), r.md);
+  writeText(join21(outDir, "COMPARE.md"), r.md);
   return r;
 }
 
 // src/sarif.ts
-import { join as join21, relative as relative4, sep as sep3 } from "path";
+import { join as join23, relative as relative4, sep as sep3 } from "path";
 var LEVEL = { P0: "error", P1: "warning", P2: "note" };
 function buildSarif(cfg, doc, runDir) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
@@ -13391,20 +13424,20 @@ function buildSarif(cfg, doc, runDir) {
   };
 }
 function writeSarif(runDir, out2) {
-  const cfg = readJson(join21(runDir, "eval.config.json"));
-  const doc = readJson(join21(runDir, "findings.json"));
-  const p = join21(out2 ?? runDir, "eval.sarif");
+  const cfg = readJson(join23(runDir, "eval.config.json"));
+  const doc = readJson(join23(runDir, "findings.json"));
+  const p = join23(out2 ?? runDir, "eval.sarif");
   writeJson(p, buildSarif(cfg, doc, runDir));
   return p;
 }
 
 // src/clean.ts
 import { readdirSync as readdirSync6, rmSync as rmSync3 } from "fs";
-import { join as join23 } from "path";
+import { join as join24 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "VERIFY.honeypots.json", "index.html", "index.md", "eval.sarif"];
 function clean(runDir, opts = {}) {
   const removed = [];
-  if (exists(runDir) && !exists(join23(runDir, "eval.config.json"))) {
+  if (exists(runDir) && !exists(join24(runDir, "eval.config.json"))) {
     throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
   }
   if (opts.all) {
@@ -13415,7 +13448,7 @@ function clean(runDir, opts = {}) {
     return removed;
   }
   for (const name2 of DERIVED) {
-    const p = join23(runDir, name2);
+    const p = join24(runDir, name2);
     if (exists(p)) {
       rmSync3(p, { force: true });
       removed.push(p);
@@ -13424,8 +13457,8 @@ function clean(runDir, opts = {}) {
   if (exists(runDir)) {
     for (const e of readdirSync6(runDir)) {
       if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync3(join23(runDir, e), { force: true });
-        removed.push(join23(runDir, e));
+        rmSync3(join24(runDir, e), { force: true });
+        removed.push(join24(runDir, e));
       }
     }
   }
@@ -13433,14 +13466,14 @@ function clean(runDir, opts = {}) {
 }
 
 // src/oneshot.ts
-import { join as join25 } from "path";
+import { join as join26 } from "path";
 
 // src/templates.ts
-import { dirname as dirname3, join as join24 } from "path";
+import { dirname as dirname3, join as join25 } from "path";
 function calibrationFixturePath(engineAbs) {
   const candidates = [
-    join24(dirname3(engineAbs), "..", "references", "calibration-run.json"),
-    join24(dirname3(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
+    join25(dirname3(engineAbs), "..", "references", "calibration-run.json"),
+    join25(dirname3(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
   ];
   return candidates.find(exists) ?? candidates[0];
 }
@@ -13916,9 +13949,9 @@ function findingsSchema() {
 // src/oneshot.ts
 function oneshotRun(opts, engineAbs) {
   const { cfg, runDir, gitignore } = initRun({ ...opts, mode: "audit", oneshot: true });
-  const written = [join25(runDir, "eval.config.json")];
+  const written = [join26(runDir, "eval.config.json")];
   const w = (rel, content) => {
-    const p = join25(runDir, rel);
+    const p = join26(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
@@ -13932,31 +13965,31 @@ function oneshotRun(opts, engineAbs) {
 
 // src/plan.ts
 import { rmSync as rmSync4 } from "fs";
-import { join as join26 } from "path";
+import { join as join27 } from "path";
 function planRun(runDir, engineAbs, opts = {}) {
-  let cfg = readJson(join26(runDir, "eval.config.json"));
+  let cfg = readJson(join27(runDir, "eval.config.json"));
   const written = [];
   const w = (rel, content) => {
-    const p = join26(runDir, rel);
+    const p = join27(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
   if (cfg.oneshot || cfg.provenance?.profile) {
-    rmSync4(join26(runDir, "ONESHOT.md"), { force: true });
+    rmSync4(join27(runDir, "ONESHOT.md"), { force: true });
     const { oneshot: _oneshot, ...rest } = cfg;
     cfg = rest;
     if (cfg.provenance?.profile) {
       const { profile: _profile, ...prov } = cfg.provenance;
       cfg = { ...cfg, provenance: prov };
     }
-    writeJson(join26(runDir, "eval.config.json"), cfg);
-    written.push(join26(runDir, "eval.config.json"));
+    writeJson(join27(runDir, "eval.config.json"), cfg);
+    written.push(join27(runDir, "eval.config.json"));
   }
   if (opts.eco === true) {
-    rmSync4(join26(runDir, "eval.workflow.mjs"), { force: true });
+    rmSync4(join27(runDir, "eval.workflow.mjs"), { force: true });
     w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
   } else {
-    rmSync4(join26(runDir, "RUNBOOK.md"), { force: true });
+    rmSync4(join27(runDir, "RUNBOOK.md"), { force: true });
     w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
   }
   for (const [name2, content] of Object.entries(agentContracts(cfg, runDir, engineAbs))) w(`agents/${name2}.md`, content);
@@ -13970,15 +14003,15 @@ function planRun(runDir, engineAbs, opts = {}) {
 
 // src/fix.ts
 import { spawnSync as spawnSync2 } from "child_process";
-import { isAbsolute as isAbsolute4, join as join27, resolve as resolve5 } from "path";
+import { isAbsolute as isAbsolute4, join as join28, resolve as resolve5 } from "path";
 function loadBacklog(runDir) {
-  const blPath = join27(runDir, "BACKLOG.json");
+  const blPath = join28(runDir, "BACKLOG.json");
   if (!exists(blPath)) throw new Error("no BACKLOG.json \u2014 run `backlog --run <run> --tdd` first, then fix");
-  return { cfg: readJson(join27(runDir, "eval.config.json")), backlog: readJson(blPath) };
+  return { cfg: readJson(join28(runDir, "eval.config.json")), backlog: readJson(blPath) };
 }
 function targetInvariants(targetAbs) {
   const lines = [];
-  const pkgPath = join27(targetAbs, "package.json");
+  const pkgPath = join28(targetAbs, "package.json");
   if (exists(pkgPath)) {
     const pkg = readJson(pkgPath);
     if (pkg.scripts?.test) lines.push(`- Full test suite green before committing: run the target's \`test\` script (\`${pkg.scripts.test}\`).`);
@@ -13989,10 +14022,10 @@ function targetInvariants(targetAbs) {
 }
 function agentContract(t, cfg, runDir, engineAbs) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-  const absTargets = t.targets.map((x) => isAbsolute4(x) ? x : join27(targetAbs, x));
-  const redFile = isAbsolute4(t.red.testFile) ? t.red.testFile : join27(targetAbs, t.red.testFile);
+  const absTargets = t.targets.map((x) => isAbsolute4(x) ? x : join28(targetAbs, x));
+  const redFile = isAbsolute4(t.red.testFile) ? t.red.testFile : join28(targetAbs, t.red.testFile);
   const deps = t.dependsOn.length ? `
-Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join27(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
+Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join28(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
   return `# Fix agent: ${t.id} \u2014 ${t.title}  (${t.priority} \xB7 ${t.kind})
 
 You are an AUTONOMOUS fix agent. Fix exactly ONE task in the target repo, test-first. Do not widen scope; do not stop early.
@@ -14036,12 +14069,12 @@ function emitFixAgents(runDir, engineAbs, opts = {}) {
   }
   const written = [];
   for (const t of tasks) {
-    const p = join27(runDir, "fixes", "agents", `${t.id}.agent.md`);
+    const p = join28(runDir, "fixes", "agents", `${t.id}.agent.md`);
     writeText(p, agentContract(t, cfg, runDir, engineAbs));
     written.push(p);
   }
   if (opts.workflow) {
-    const p = join27(runDir, "fix.workflow.mjs");
+    const p = join28(runDir, "fix.workflow.mjs");
     writeText(p, fixWorkflow(tasks, runDir, engineAbs));
     written.push(p);
   }
@@ -14111,7 +14144,7 @@ function verifyFix(runDir, taskId, opts = {}) {
     task.status = "done";
     task.verifiedAt = (/* @__PURE__ */ new Date()).toISOString();
     result.verifiedAt = task.verifiedAt;
-    writeJson(join27(runDir, "BACKLOG.json"), backlog);
+    writeJson(join28(runDir, "BACKLOG.json"), backlog);
   }
   return result;
 }
@@ -14121,27 +14154,27 @@ function formatVerifyFix(r) {
 
 // src/rejudge.ts
 import { cpSync, mkdirSync as mkdirSync3 } from "fs";
-import { join as join28 } from "path";
+import { join as join29 } from "path";
 var COPY_FILES = ["eval.config.json", "dimensions.json", "findings.json", "RESULTS.md", "SUMMARY.md", "TEST-PLAN.md", "VERIFY.json"];
 var COPY_DIRS = ["research", "runs"];
 function rejudgeRun(runDir, outDir, engineAbs) {
-  if (!exists(join28(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
-  const cfg = readJson(join28(runDir, "eval.config.json"));
+  if (!exists(join29(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
+  const cfg = readJson(join29(runDir, "eval.config.json"));
   mkdirSync3(outDir, { recursive: true });
   const copied = [];
   for (const f of COPY_FILES) {
-    if (!exists(join28(runDir, f))) continue;
-    cpSync(join28(runDir, f), join28(outDir, f));
+    if (!exists(join29(runDir, f))) continue;
+    cpSync(join29(runDir, f), join29(outDir, f));
     copied.push(f);
   }
   for (const d of COPY_DIRS) {
-    if (!exists(join28(runDir, d))) continue;
-    cpSync(join28(runDir, d), join28(outDir, d), { recursive: true });
+    if (!exists(join29(runDir, d))) continue;
+    cpSync(join29(runDir, d), join29(outDir, d), { recursive: true });
     copied.push(`${d}/`);
   }
-  writeText(join28(outDir, "judges.jsonl"), "");
-  writeText(join28(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
-  writeText(join28(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
+  writeText(join29(outDir, "judges.jsonl"), "");
+  writeText(join29(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
+  writeText(join29(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
   return copied;
 }
 function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
@@ -14189,17 +14222,17 @@ function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
 }
 
 // src/render.ts
-import { join as join29 } from "path";
+import { join as join30 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 function load2(runDir) {
-  const cfg = readJson(join29(runDir, "eval.config.json"));
-  const doc = readJson(join29(runDir, "findings.json"));
-  const verify = exists(join29(runDir, "VERIFY.json")) ? readJson(join29(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join29(runDir, "BACKLOG.json")) ? readJson(join29(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join29(runDir, "scorecard.json")) ? readJson(join29(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join30(runDir, "eval.config.json"));
+  const doc = readJson(join30(runDir, "findings.json"));
+  const verify = exists(join30(runDir, "VERIFY.json")) ? readJson(join30(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join30(runDir, "BACKLOG.json")) ? readJson(join30(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join30(runDir, "scorecard.json")) ? readJson(join30(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -14207,12 +14240,12 @@ function render(runDir, opts = {}) {
   const out2 = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join29(out2, "index.md");
+    const p = join30(out2, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join29(out2, "index.html");
+    const p = join30(out2, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -14318,9 +14351,9 @@ function esc(s) {
 // src/score.ts
 import { execFileSync as execFileSync4 } from "child_process";
 import { appendFileSync, mkdirSync as mkdirSync4 } from "fs";
-import { dirname as dirname4, join as join30 } from "path";
+import { dirname as dirname4, join as join31 } from "path";
 function readJudges(runDir) {
-  const p = join30(runDir, "judges.jsonl");
+  const p = join31(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -14376,22 +14409,22 @@ function computeScore(cfg, judges, doc) {
   };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join30(runDir, "eval.config.json"));
-  const doc = exists(join30(runDir, "findings.json")) ? readJson(join30(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join31(runDir, "eval.config.json"));
+  const doc = exists(join31(runDir, "findings.json")) ? readJson(join31(runDir, "findings.json")) : { findings: [] };
   const judges = readJudges(runDir);
   if (!judges.length) throw new Error("no judge verdicts in judges.jsonl \u2014 the Judge phase has not run; dispatch judges (agents/judge.md) first");
   const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   if (cfg.oneshot) sc.oneshot = true;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join30(runDir, "scorecard.json"), sc);
+  writeJson(join31(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join30(runDir, "scorecard.json");
+  const scPath = join31(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join30(runDir, "findings.json")) ? readJson(join30(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join31(runDir, "findings.json")) ? readJson(join31(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const protocol = sc.provenance?.protocolVersion;
@@ -14426,10 +14459,10 @@ function targetGitRoot(dir) {
   }
 }
 function defaultLedgerPath(runDir) {
-  const cfg = readJson(join30(runDir, "eval.config.json"));
+  const cfg = readJson(join31(runDir, "eval.config.json"));
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const base = targetGitRoot(targetAbs) ?? process.cwd();
-  return join30(base, "evals", "history.jsonl");
+  return join31(base, "evals", "history.jsonl");
 }
 function readHistory(file) {
   if (!exists(file)) return [];
@@ -14480,12 +14513,12 @@ function formatScore(sc) {
 }
 
 // src/status.ts
-import { join as join31 } from "path";
+import { join as join32 } from "path";
 function statusRun(runDir) {
-  const has = (rel) => exists(join31(runDir, rel));
+  const has = (rel) => exists(join32(runDir, rel));
   let oneshot = false;
   try {
-    if (has("eval.config.json")) oneshot = readJson(join31(runDir, "eval.config.json")).oneshot === true;
+    if (has("eval.config.json")) oneshot = readJson(join32(runDir, "eval.config.json")).oneshot === true;
   } catch {
     oneshot = false;
   }
@@ -14499,7 +14532,7 @@ function statusRun(runDir) {
     ];
     return { steps: steps2, next: oneshotNextHint(steps2, runDir) };
   }
-  const judgesPresent = has("judges.jsonl") && readText(join31(runDir, "judges.jsonl")).trim().length > 0;
+  const judgesPresent = has("judges.jsonl") && readText(join32(runDir, "judges.jsonl")).trim().length > 0;
   const steps = [
     { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
     { artifact: "agents/", present: has("agents"), stage: "plan" },
@@ -14771,7 +14804,7 @@ function cmdAnalyze(args2) {
   let targetAbs;
   let out2;
   if (run2) {
-    const cfg = readJson(join32(run2, "eval.config.json"));
+    const cfg = readJson(join33(run2, "eval.config.json"));
     targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run2);
     out2 = run2;
   } else {
@@ -14830,7 +14863,7 @@ function cmdCompare(args2) {
 function cmdCheck(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("check requires --run <run>");
-  if (!exists(join32(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+  if (!exists(join33(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
   const r = checkRun(run2, {
     semantic: !!args2.semantic,
     requireVerify: !!args2["require-verify"],
