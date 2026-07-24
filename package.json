@@ -1,6 +1,6 @@
 {
   "name": "ultraeval",
-  "version": "1.12.1",
+  "version": "1.13.0",
   "description": "Evaluate a skill or codebase with a multi-agent workflow, then generate grounded, AI-exploitable fix docs and a TDD backlog. A skills.sh agent skill.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",

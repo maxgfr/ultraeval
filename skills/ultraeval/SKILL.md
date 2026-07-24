@@ -3,7 +3,7 @@ name: ultraeval
 description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and generate a fix plan", "find what is wrong and give me a TDD backlog". ultraeval researches how to test that kind of target, generates a multi-agent workflow plus subagent contracts, runs it, and grounds every finding in a real file:line — a check/verify gate rejects hallucinated ones — then emits a prioritized backlog and per-fix TDD cards (failing-test-first) a model can implement. The process is normed: rubrics anchor to external referentials (ISO/IEC 25010/25059, 29148, WCAG, OWASP), severities are codified, and every run records provenance under a versioned protocol. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations, normed evaluation.'
 license: MIT
 metadata:
-  version: 1.12.1
+  version: 1.13.0
 ---
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs

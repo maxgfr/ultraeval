@@ -12031,7 +12031,7 @@ import { readdirSync as readdirSync4 } from "fs";
 import { join as join15, relative as relative2 } from "path";
 
 // src/types.ts
-var VERSION = "1.12.1";
+var VERSION = "1.13.0";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits
