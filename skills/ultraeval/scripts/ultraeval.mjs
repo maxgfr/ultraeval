@@ -2,11 +2,11 @@
 
 // src/cli.ts
 import { realpathSync as realpathSync3 } from "fs";
-import { join as join34 } from "path";
+import { join as join35 } from "path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "url";
 
 // src/analyze.ts
-import { join as join3 } from "path";
+import { join as join16 } from "path";
 
 // src/util.ts
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
@@ -255,26 +255,26 @@ import { join as join5 } from "path";
 import { join as join6 } from "path";
 import { join as join7 } from "path";
 import { join as join8 } from "path";
-import { readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "fs";
+import { readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "fs";
 import { join as join9 } from "path";
-import { mkdirSync as mkdirSync2, readdirSync as readdirSync22, readFileSync as readFileSync4, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync3 } from "fs";
+import { mkdirSync as mkdirSync2, readdirSync as readdirSync22, readFileSync as readFileSync5, rmSync as rmSync2, statSync as statSync2, writeFileSync as writeFileSync3 } from "fs";
 import { dirname as dirname3, join as join10 } from "path";
-import { existsSync as existsSync22, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
+import { existsSync as existsSync3, readdirSync as readdirSync3, statSync as statSync3 } from "fs";
 import { join as join11 } from "path";
 import { createHash as createHash3 } from "crypto";
-import { existsSync as existsSync3, readFileSync as readFileSync5 } from "fs";
+import { existsSync as existsSync4, readFileSync as readFileSync6 } from "fs";
 import { join as join13 } from "path";
-import { readFileSync as readFileSync6, statSync as statSync4 } from "fs";
+import { readFileSync as readFileSync7, statSync as statSync4 } from "fs";
 import { join as join14 } from "path";
 import { createInterface } from "readline";
 import { basename as basename22 } from "path";
 import { createHash as createHash2 } from "crypto";
-import { mkdirSync as mkdirSync3, writeFileSync as writeFileSync4 } from "fs";
-import { dirname as dirname22, resolve as resolve2, sep as sep2 } from "path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync3, mkdtempSync, readFileSync as readFileSync3, renameSync as renameSync2, rmSync as rmSync3, writeFileSync as writeFileSync4 } from "fs";
+import { dirname as dirname22, join as join3, resolve as resolve2, sep as sep2 } from "path";
 import { gunzipSync } from "zlib";
 import { join as join12 } from "path";
-import { existsSync as existsSync4, mkdirSync as mkdirSync32, mkdtempSync, readFileSync as readFileSync7, renameSync as renameSync2, rmSync as rmSync22, writeFileSync as writeFileSync42 } from "fs";
-import { dirname as dirname4, join as join15, resolve as resolve22 } from "path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync32, readFileSync as readFileSync8, writeFileSync as writeFileSync42 } from "fs";
+import { join as join15, resolve as resolve22 } from "path";
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __esm = (fn, res) => function __init() {
@@ -290,7 +290,7 @@ var EXTRACTOR_VERSION;
 var init_types = __esm({
   "src/types.ts"() {
     "use strict";
-    ENGINE_VERSION = "2.15.0";
+    ENGINE_VERSION = "2.16.0";
     SCHEMA_VERSION = 4;
     EXTRACTOR_VERSION = 10;
   }
@@ -8565,7 +8565,7 @@ function resolveUniqueSymbol(scan2, namePath, file) {
   throw new Error(`"${namePath}" is ambiguous (${matches.length} matches: ${list}) \u2014 qualify with \`file\` or a Parent/name path`);
 }
 function readLines(abs) {
-  return readFileSync3(abs, "utf8").split("\n");
+  return readFileSync4(abs, "utf8").split("\n");
 }
 function replaceSymbolBody(scan2, namePath, body2, file) {
   const sym = resolveUniqueSymbol(scan2, namePath, file);
@@ -8630,7 +8630,7 @@ function writeMemory(repo, name2, content) {
 }
 function readMemory(repo, name2) {
   try {
-    return readFileSync4(memoryPath(repo, name2), "utf8");
+    return readFileSync5(memoryPath(repo, name2), "utf8");
   } catch {
     return void 0;
   }
@@ -8721,7 +8721,7 @@ function wsGlobToRegExp(pat) {
 }
 function probeNodePkg(root, dir, kind, warnings) {
   const path = join11(root, dir, "package.json");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const manifest = `${dir}/package.json`;
   const pkg = readJson2(path, manifest, warnings);
   const out2 = {
@@ -8735,7 +8735,7 @@ function probeNodePkg(root, dir, kind, warnings) {
 }
 function probeCargo(root, dir) {
   const path = join11(root, dir, "Cargo.toml");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const body2 = tomlSectionBody(readText2(path), "package");
   const out2 = {
     name: tomlString(body2, "name") ?? dir,
@@ -8749,18 +8749,18 @@ function probeCargo(root, dir) {
 }
 function probeGoMod(root, dir) {
   const path = join11(root, dir, "go.mod");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const name2 = readText2(path).match(/^module\s+(\S+)/m)?.[1] ?? dir;
   return { name: name2, dir, kind: "go", manifest: `${dir}/go.mod` };
 }
 function probeMaven(root, dir) {
   const path = join11(root, dir, "pom.xml");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   return { name: ownArtifactId(readText2(path)) ?? dir, dir, kind: "maven", manifest: `${dir}/pom.xml` };
 }
 function probePyproject(root, dir) {
   const path = join11(root, dir, "pyproject.toml");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const toml = readText2(path);
   const project = tomlSectionBody(toml, "project");
   const poetry = tomlSectionBody(toml, "tool.poetry");
@@ -8776,7 +8776,7 @@ function probePyproject(root, dir) {
 }
 function probeComposer(root, dir, warnings) {
   const path = join11(root, dir, "composer.json");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const manifest = `${dir}/composer.json`;
   const pkg = readJson2(path, manifest, warnings);
   const out2 = {
@@ -8790,7 +8790,7 @@ function probeComposer(root, dir, warnings) {
 }
 function probeNxProject(root, dir, warnings) {
   const path = join11(root, dir, "project.json");
-  if (!existsSync22(path)) return void 0;
+  if (!existsSync3(path)) return void 0;
   const manifest = `${dir}/project.json`;
   const proj = readJson2(path, manifest, warnings);
   return {
@@ -8802,7 +8802,7 @@ function probeNxProject(root, dir, warnings) {
 }
 function probeGradle(root, dir) {
   for (const f of ["build.gradle", "build.gradle.kts"]) {
-    if (existsSync22(join11(root, dir, f))) {
+    if (existsSync3(join11(root, dir, f))) {
       return { name: dir, dir, kind: "gradle", manifest: `${dir}/${f}` };
     }
   }
@@ -9851,7 +9851,7 @@ function resolveEmbedModelDir(repo) {
   if (repo) candidates.push(join13(repo, ".codeindex", DEFAULT_EMBED_DIRNAME));
   candidates.push(join13(process.cwd(), ".codeindex", DEFAULT_EMBED_DIRNAME));
   for (const c2 of candidates) {
-    if (existsSync3(join13(c2, "model.json"))) return c2;
+    if (existsSync4(join13(c2, "model.json"))) return c2;
   }
   return void 0;
 }
@@ -9885,8 +9885,8 @@ function parseEmbedModel(raw, source) {
 function loadEmbedModel(dir) {
   if (!dir) return void 0;
   const path = join13(dir, "model.json");
-  if (!existsSync3(path)) return void 0;
-  const raw = JSON.parse(readFileSync5(path, "utf8"));
+  if (!existsSync4(path)) return void 0;
+  const raw = JSON.parse(readFileSync6(path, "utf8"));
   return parseEmbedModel(raw, path);
 }
 function resolveEmbedPullUrl() {
@@ -10622,7 +10622,7 @@ function toCacheMap(scan2) {
 function readPersistedIndex(repo) {
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync6(join14(repo, ".codeindex", "cache.json"), "utf8"));
+    parsed = JSON.parse(readFileSync7(join14(repo, ".codeindex", "cache.json"), "utf8"));
   } catch {
     return void 0;
   }
@@ -10646,8 +10646,8 @@ function preloadArtifacts(repo, scan2, meta) {
   let graphBytes;
   let symbolsBytes;
   try {
-    graphBytes = readFileSync6(join14(dir, "graph.json"));
-    symbolsBytes = readFileSync6(join14(dir, "symbols.json"));
+    graphBytes = readFileSync7(join14(dir, "graph.json"));
+    symbolsBytes = readFileSync7(join14(dir, "symbols.json"));
   } catch {
     return void 0;
   }
@@ -11478,6 +11478,107 @@ function extractGrammarsTarball(bytes, destDir) {
   const raw = b.length >= 2 && b[0] === 31 && b[1] === 139 ? gunzipSync(b) : b;
   return extractTarInto(raw, destDir);
 }
+async function pullGrammars(cacheDir, opts = {}) {
+  const note = opts.onNote ?? (() => {
+  });
+  const target = resolveGrammarsPullTarget();
+  let expected;
+  if (target.sha256Url) {
+    try {
+      expected = await fetchExpectedSha256(target.sha256Url);
+    } catch (e) {
+      note(`codeindex: could not fetch checksum (${e instanceof Error ? e.message : String(e)}) \u2014 proceeding unverified
+`);
+    }
+  }
+  const runtime = join3(cacheDir, "web-tree-sitter.wasm");
+  const markerPath = join3(dirname22(cacheDir), `${ENGINE_VERSION}.sha256`);
+  if (existsSync22(runtime) && expected && existsSync22(markerPath)) {
+    let marker = "";
+    try {
+      marker = readFileSync3(markerPath, "utf8").trim();
+    } catch {
+    }
+    if (marker === expected) {
+      return { ok: true, status: "up-to-date", cacheDir, message: `codeindex: grammars already present at ${cacheDir} (up to date)
+` };
+    }
+  }
+  note(`codeindex: fetching grammars from ${target.url} \u2192 ${cacheDir}
+`);
+  let bytes;
+  try {
+    bytes = await fetchGrammarsTarball(target.url, expected);
+  } catch (e) {
+    return {
+      ok: false,
+      status: "failed",
+      cacheDir,
+      message: `codeindex: pull failed \u2014 ${e instanceof Error ? e.message : String(e)} (nothing written)
+`
+    };
+  }
+  let tmp;
+  try {
+    mkdirSync3(dirname22(cacheDir), { recursive: true });
+    tmp = mkdtempSync(join3(dirname22(cacheDir), ".grammars-tmp-"));
+    extractGrammarsTarball(bytes, tmp);
+    if (!existsSync22(join3(tmp, "web-tree-sitter.wasm"))) {
+      throw new Error("archive is missing web-tree-sitter.wasm");
+    }
+    if (existsSync22(cacheDir)) rmSync3(cacheDir, { recursive: true, force: true });
+    renameSync2(tmp, cacheDir);
+    tmp = void 0;
+    if (expected) writeFileSync4(markerPath, expected + "\n");
+  } catch (e) {
+    if (tmp) {
+      try {
+        rmSync3(tmp, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    return {
+      ok: false,
+      status: "failed",
+      cacheDir,
+      message: `codeindex: pull failed \u2014 ${e instanceof Error ? e.message : String(e)} (nothing written)
+`
+    };
+  }
+  return { ok: true, status: "pulled", cacheDir, message: `codeindex: grammars extracted \u2192 ${cacheDir}
+` };
+}
+init_loader();
+async function warmGrammars(opts = {}) {
+  const label = opts.label ?? "codeindex";
+  const notes = [];
+  const note = (msg) => {
+    notes.push(msg);
+    if (opts.onNote) opts.onNote(msg);
+    else process.stderr.write(msg);
+  };
+  const noPull = process.env.CODEINDEX_NO_GRAMMARS_PULL;
+  const mayPull = (opts.pull ?? true) && !(noPull && noPull.trim() && noPull !== "0");
+  const keys = [...opts.keys ?? allGrammarKeys()];
+  let pulled = false;
+  if (resolveGrammarsTier().tier === "none" && mayPull) {
+    note(`${label}: tree-sitter grammars not found locally \u2014 pulling them into the shared cache (once per machine)\u2026
+`);
+    const res = await pullGrammars(sharedGrammarsCacheDir(), { onNote: note });
+    note(res.message);
+    pulled = res.ok && res.status === "pulled";
+  }
+  await ensureGrammars(keys);
+  const tier = resolveGrammarsTier().tier;
+  const ready = keys.some((k) => grammarReady(k));
+  if (!ready) {
+    note(
+      `${label}: no tree-sitter grammars available (offline?) \u2014 extracting with the regex tier, so symbols and call sites are less precise. Run \`codeindex grammars pull\` once online to enable AST precision.
+`
+    );
+  }
+  return { tier, ready, pulled, notes };
+}
 init_resolve();
 init_modules();
 init_graph();
@@ -11931,7 +12032,7 @@ async function runCli(argv) {
     return;
   }
   const flags2 = parseFlags(rest);
-  if (!existsSync4(flags2.repo)) throw new Error(`--repo path does not exist: ${flags2.repo}`);
+  if (!existsSync5(flags2.repo)) throw new Error(`--repo path does not exist: ${flags2.repo}`);
   const scans = !SCANLESS_COMMANDS.has(cmd) && !(cmd === "embed" && flags2.positional !== "build");
   let precomputedWalk;
   if (scans && !flags2.noAst) {
@@ -11951,7 +12052,7 @@ async function runCli(argv) {
     let cache;
     let meta = {};
     try {
-      const parsed = JSON.parse(readFileSync7(cachePath, "utf8"));
+      const parsed = JSON.parse(readFileSync8(cachePath, "utf8"));
       if (parsed.schemaVersion === SCHEMA_VERSION && parsed.extractorVersion === EXTRACTOR_VERSION) {
         cache = new Map(Object.entries(parsed.files));
         meta = {
@@ -11972,7 +12073,7 @@ async function runCli(argv) {
     const embedPath = join15(outDir, "embeddings.bin");
     const artifactSha = (path) => {
       try {
-        return sha1(readFileSync7(path));
+        return sha1(readFileSync8(path));
       } catch {
         return void 0;
       }
@@ -12192,7 +12293,7 @@ async function runCli(argv) {
     const cacheDir = sharedGrammarsCacheDir();
     if (sub === "status") {
       const info2 = resolveGrammarsTier();
-      const runtimePresent = info2.dir ? existsSync4(join15(info2.dir, "web-tree-sitter.wasm")) : false;
+      const runtimePresent = info2.dir ? existsSync5(join15(info2.dir, "web-tree-sitter.wasm")) : false;
       const target = resolveGrammarsPullTarget();
       const status = {
         engineVersion: ENGINE_VERSION,
@@ -12205,77 +12306,15 @@ async function runCli(argv) {
       };
       emit(JSON.stringify(status, null, 2) + "\n", flags2.out);
     } else if (sub === "pull") {
-      const target = resolveGrammarsPullTarget();
-      let expected;
-      if (target.sha256Url) {
-        try {
-          expected = await fetchExpectedSha256(target.sha256Url);
-        } catch (e) {
-          process.stderr.write(
-            `codeindex: could not fetch checksum (${e instanceof Error ? e.message : String(e)}) \u2014 proceeding unverified
-`
-          );
-        }
-      }
-      const runtime = join15(cacheDir, "web-tree-sitter.wasm");
-      const markerPath = join15(dirname4(cacheDir), `${ENGINE_VERSION}.sha256`);
-      if (existsSync4(runtime) && expected && existsSync4(markerPath)) {
-        let marker = "";
-        try {
-          marker = readFileSync7(markerPath, "utf8").trim();
-        } catch {
-        }
-        if (marker === expected) {
-          process.stderr.write(`codeindex: grammars already present at ${cacheDir} (up to date)
-`);
-          return;
-        }
-      }
-      process.stderr.write(`codeindex: fetching grammars from ${target.url} \u2192 ${cacheDir}
-`);
-      let bytes;
-      try {
-        bytes = await fetchGrammarsTarball(target.url, expected);
-      } catch (e) {
-        process.stderr.write(`codeindex: pull failed \u2014 ${e instanceof Error ? e.message : String(e)} (nothing written)
-`);
-        process.exitCode = 1;
-        return;
-      }
-      let tmp;
-      try {
-        mkdirSync32(dirname4(cacheDir), { recursive: true });
-        tmp = mkdtempSync(join15(dirname4(cacheDir), ".grammars-tmp-"));
-        extractGrammarsTarball(bytes, tmp);
-        if (!existsSync4(join15(tmp, "web-tree-sitter.wasm"))) {
-          throw new Error("archive is missing web-tree-sitter.wasm");
-        }
-        if (existsSync4(cacheDir)) rmSync22(cacheDir, { recursive: true, force: true });
-        renameSync2(tmp, cacheDir);
-        tmp = void 0;
-        if (expected) writeFileSync42(markerPath, expected + "\n");
-      } catch (e) {
-        if (tmp) {
-          try {
-            rmSync22(tmp, { recursive: true, force: true });
-          } catch {
-          }
-        }
-        process.stderr.write(
-          `codeindex: pull failed \u2014 ${e instanceof Error ? e.message : String(e)} (nothing written)
-`
-        );
-        process.exitCode = 1;
-        return;
-      }
-      process.stderr.write(`codeindex: grammars extracted \u2192 ${cacheDir}
-`);
+      const res = await pullGrammars(cacheDir, { onNote: (m) => process.stderr.write(m) });
+      process.stderr.write(res.message);
+      if (!res.ok) process.exitCode = 1;
     } else {
       throw new Error("grammars needs a subcommand: status | pull");
     }
   } else if (cmd === "rules") {
     if (!flags2.config) throw new Error("rules needs --config <codeindex.rules.json>");
-    const rules = parseRules(JSON.parse(readFileSync7(flags2.config, "utf8")));
+    const rules = parseRules(JSON.parse(readFileSync8(flags2.config, "utf8")));
     const { graph } = buildIndexArtifacts(flags2.repo, scanOptions(flags2, precomputedWalk));
     const violations = checkRules(graph, rules);
     const errors = violations.filter((v) => v.severity === "error").length;
@@ -12360,7 +12399,7 @@ function walkFiles(root) {
   const out2 = [];
   for (const rec of scan2.files) {
     if (!CODE_EXT.has(rec.ext)) continue;
-    const content = readText2(join3(root, rec.rel));
+    const content = readText2(join16(root, rec.rel));
     const resolved = [];
     for (const ref of rec.refs) {
       if (ref.kind !== "import") continue;
@@ -12476,7 +12515,7 @@ function analyzeRepo(targetAbs, opts = {}) {
     notes.push("test coverage attributed by filename only (no test\u2192source imports resolved) \u2014 the untested list may overstate gaps");
   const languages = {};
   for (const f of files) languages[f.ext] = (languages[f.ext] ?? 0) + 1;
-  const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join3(targetAbs, d)));
+  const docs = ["README.md", "DOCUMENTATION.md", "CONTRIBUTING.md", "docs"].filter((d) => exists(join16(targetAbs, d)));
   return {
     target: targetAbs,
     files: files.length,
@@ -12492,8 +12531,8 @@ function analyzeRepo(targetAbs, opts = {}) {
 }
 function runAnalyze(targetDir, outDir, opts = {}) {
   const a = analyzeRepo(targetDir, opts);
-  writeJson(join3(outDir, "analysis.json"), a);
-  writeText(join3(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
+  writeJson(join16(outDir, "analysis.json"), a);
+  writeText(join16(outDir, "ANALYSIS.md"), renderAnalysisMd(a));
   return a;
 }
 function renderAnalysisMd(a) {
@@ -12521,7 +12560,7 @@ ${a.tests.untested.map((u) => `- \`${u}\``).join("\n")}
 
 // src/backlog.ts
 import { readdirSync as readdirSync4 } from "fs";
-import { join as join16, relative as relative2 } from "path";
+import { join as join17, relative as relative2 } from "path";
 
 // src/types.ts
 var VERSION = "1.15.0";
@@ -12587,7 +12626,7 @@ function scanTestFiles(targetAbs, limit = 500) {
     }
     for (const e of entries) {
       if (found.length >= limit) return;
-      const p = join16(dir, e.name);
+      const p = join17(dir, e.name);
       if (e.isDirectory()) {
         if (!e.name.startsWith(".") && !CONV_SKIP.has(e.name)) walk2(p);
         continue;
@@ -12636,32 +12675,32 @@ function distinctTestPath(rel, disc) {
   return rel.replace(/\.([^./]+)$/, `.${disc}.$1`);
 }
 function freshTestFile(guess, disc, targetAbs) {
-  if (!exists(join16(targetAbs, guess))) return guess;
+  if (!exists(join17(targetAbs, guess))) return guess;
   let candidate = distinctTestPath(guess, disc);
-  for (let n = 2; exists(join16(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
+  for (let n = 2; exists(join17(targetAbs, candidate)); n++) candidate = distinctTestPath(guess, `${disc}-${n}`);
   return candidate;
 }
 function detectVerifyCommand(targetAbs) {
-  if (exists(join16(targetAbs, "package.json"))) {
-    const pkg = readJson(join16(targetAbs, "package.json"));
+  if (exists(join17(targetAbs, "package.json"))) {
+    const pkg = readJson(join17(targetAbs, "package.json"));
     if (pkg.scripts?.test) {
-      if (exists(join16(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
-      if (exists(join16(targetAbs, "yarn.lock"))) return "yarn test";
+      if (exists(join17(targetAbs, "pnpm-lock.yaml"))) return "pnpm test";
+      if (exists(join17(targetAbs, "yarn.lock"))) return "yarn test";
       return "npm test";
     }
   }
-  if (exists(join16(targetAbs, "go.mod"))) return "go test ./...";
-  if (exists(join16(targetAbs, "Cargo.toml"))) return "cargo test";
-  if (exists(join16(targetAbs, "pytest.ini")) || exists(join16(targetAbs, "pyproject.toml"))) return "pytest";
+  if (exists(join17(targetAbs, "go.mod"))) return "go test ./...";
+  if (exists(join17(targetAbs, "Cargo.toml"))) return "cargo test";
+  if (exists(join17(targetAbs, "pytest.ini")) || exists(join17(targetAbs, "pyproject.toml"))) return "pytest";
   return null;
 }
 function buildBacklog(runDir, opts = {}) {
-  const cfg = readJson(join16(runDir, "eval.config.json"));
-  const findingsPath = join16(runDir, "findings.json");
+  const cfg = readJson(join17(runDir, "eval.config.json"));
+  const findingsPath = join17(runDir, "findings.json");
   if (!exists(findingsPath)) throw new Error("no findings.json \u2014 record findings first (see agents/findings.md), then re-run backlog");
   const doc = readJson(findingsPath);
   const failed2 = /* @__PURE__ */ new Set();
-  const vpath = join16(runDir, "VERIFY.json");
+  const vpath = join17(runDir, "VERIFY.json");
   if (exists(vpath)) {
     const v = readJson(vpath);
     for (const id of v.failures ?? []) failed2.add(id);
@@ -12693,7 +12732,7 @@ function buildBacklog(runDir, opts = {}) {
       targets,
       red: {
         testFile,
-        expectedNew: !exists(join16(targetAbs, testFile)),
+        expectedNew: !exists(join17(targetAbs, testFile)),
         description: isOpp ? `Write a spec/characterization test that pins the desired behavior: ${f.recommendation || f.statement}` : f.failureScenario ? `Write a failing test that reproduces: ${f.failureScenario}` : `Write a failing test asserting the correct behavior for: ${f.statement}`
       },
       green: {
@@ -12720,11 +12759,11 @@ function buildBacklog(runDir, opts = {}) {
   }
   const out2 = opts.out ?? runDir;
   const backlog = { target: cfg.targetAbs, generatedFrom: runDir, tasks };
-  writeJson(join16(out2, "BACKLOG.json"), backlog);
-  writeText(join16(out2, "REMEDIATION.md"), renderRemediation(backlog, cfg));
+  writeJson(join17(out2, "BACKLOG.json"), backlog);
+  writeText(join17(out2, "REMEDIATION.md"), renderRemediation(backlog, cfg));
   if (opts.tdd) {
     const byId = new Map(doc.findings.map((f) => [f.id, f]));
-    for (const t of tasks) writeText(join16(out2, "fixes", `${t.id}-${slug(t.title)}.md`), renderFixCard(t, byId.get(t.findingId)));
+    for (const t of tasks) writeText(join17(out2, "fixes", `${t.id}-${slug(t.title)}.md`), renderFixCard(t, byId.get(t.findingId)));
   }
   return backlog;
 }
@@ -12775,7 +12814,7 @@ The RED test now passes and no existing test regresses.
 }
 
 // src/brainstorm.ts
-import { join as join17 } from "path";
+import { join as join18 } from "path";
 var LENSES = [
   { id: "simplify", group: "internal", q: "What could be simpler or removed \u2014 dead code, duplication, over-abstraction?" },
   { id: "performance", group: "internal", q: "What does needless work on a hot path or at scale?" },
@@ -12788,9 +12827,9 @@ var LENSES = [
   { id: "adjacent", group: "product", q: "What adjacent use-case is one small step away?" }
 ];
 function runBrainstorm(runDir) {
-  const cfg = readJson(join17(runDir, "eval.config.json"));
-  const analysis = exists(join17(runDir, "analysis.json")) ? readJson(join17(runDir, "analysis.json")) : null;
-  writeText(join17(runDir, "BRAINSTORM.todo.md"), renderTodo(cfg, analysis));
+  const cfg = readJson(join18(runDir, "eval.config.json"));
+  const analysis = exists(join18(runDir, "analysis.json")) ? readJson(join18(runDir, "analysis.json")) : null;
+  writeText(join18(runDir, "BRAINSTORM.todo.md"), renderTodo(cfg, analysis));
   return { lenses: LENSES.length };
 }
 function renderTodo(cfg, a) {
@@ -12826,10 +12865,10 @@ Rules (the gate enforces them after \`brainstorm --rank\`):
 `;
 }
 function rankBrainstorm(runDir) {
-  const oppsPath = join17(runDir, "opportunities.json");
+  const oppsPath = join18(runDir, "opportunities.json");
   if (!exists(oppsPath)) throw new Error("no opportunities.json \u2014 fill the BRAINSTORM.todo.md worklist first");
   const opps = readJson(oppsPath).opportunities ?? [];
-  const doc = exists(join17(runDir, "findings.json")) ? readJson(join17(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join18(runDir, "findings.json")) ? readJson(join18(runDir, "findings.json")) : { findings: [] };
   let maxN = 0;
   for (const f of doc.findings) {
     const m = /^F(\d+)$/.exec(f.id);
@@ -12871,13 +12910,13 @@ function rankBrainstorm(runDir) {
     });
     added++;
   }
-  writeJson(join17(runDir, "findings.json"), doc);
+  writeJson(join18(runDir, "findings.json"), doc);
   return { added, total: doc.findings.length, skipped };
 }
 
 // src/check.ts
 import { execFileSync as execFileSync3 } from "child_process";
-import { join as join21 } from "path";
+import { join as join23 } from "path";
 
 // src/citations.ts
 var TOKEN_RE = /\[([^\]\n]+)\](?!\()/g;
@@ -12938,12 +12977,12 @@ function findingRefs(md) {
 // src/init.ts
 import { execFileSync as execFileSync2 } from "child_process";
 import { createHash as createHash4 } from "crypto";
-import { isAbsolute as isAbsolute2, join as join19, resolve as resolve3 } from "path";
+import { isAbsolute as isAbsolute2, join as join20, resolve as resolve3 } from "path";
 
 // src/gitignore.ts
 import { execFileSync } from "child_process";
-import { existsSync as existsSync5, realpathSync as realpathSync2 } from "fs";
-import { join as join18, relative as relative3, sep as sep3 } from "path";
+import { existsSync as existsSync6, realpathSync as realpathSync2 } from "fs";
+import { join as join19, relative as relative3, sep as sep3 } from "path";
 function gitRootOf(dir) {
   try {
     const out2 = execFileSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -12962,8 +13001,8 @@ function ensureGitignored(runDirAbs) {
   const container = segments.indexOf(".ultraeval");
   const entry = container >= 0 ? `${segments.slice(0, container + 1).join("/")}/` : `${rel}/`;
   if (entry === "evals/") return { action: "skipped", entry, reason: "refusing \u2014 the committed score ledger lives under evals/" };
-  const path = join18(root, ".gitignore");
-  const existing = existsSync5(path) ? readText(path) : "";
+  const path = join19(root, ".gitignore");
+  const existing = existsSync6(path) ? readText(path) : "";
   const bare = entry.replace(/\/$/, "");
   const covered = existing.split(/\r?\n/).map((l) => l.trim()).some((l) => l === entry || l === bare || l === `/${entry}` || l === `/${bare}`);
   if (covered) return { action: "already", path, entry };
@@ -13252,8 +13291,8 @@ function normalizeScope(scope) {
   return clean2.length ? clean2 : void 0;
 }
 function detectKind(targetAbs) {
-  if (exists(join19(targetAbs, "SKILL.md"))) return "skill";
-  const skillsDir = join19(targetAbs, "skills");
+  if (exists(join20(targetAbs, "SKILL.md"))) return "skill";
+  const skillsDir = join20(targetAbs, "skills");
   if (exists(skillsDir)) {
     for (const md of listMarkdown(skillsDir)) if (md.endsWith("SKILL.md")) return "skill";
   }
@@ -13321,16 +13360,16 @@ function initRun(opts) {
     ...opts.bar !== void 0 && Number.isFinite(opts.bar) ? { meetsBar: opts.bar } : {}
   };
   const runDir = resolve3(process.cwd(), opts.out);
-  ensureDir(join19(runDir, "runs"));
-  ensureDir(join19(runDir, "research"));
-  writeJson(join19(runDir, "eval.config.json"), cfg);
+  ensureDir(join20(runDir, "runs"));
+  ensureDir(join20(runDir, "research"));
+  writeJson(join20(runDir, "eval.config.json"), cfg);
   const gitignore = opts.gitignore === false ? void 0 : ensureGitignored(runDir);
   return { cfg, runDir, ...gitignore ? { gitignore } : {} };
 }
 
 // src/verify.ts
 import { readdirSync as readdirSync5 } from "fs";
-import { isAbsolute as isAbsolute3, join as join20, resolve as resolve4 } from "path";
+import { isAbsolute as isAbsolute3, join as join21, resolve as resolve4 } from "path";
 function mulberry32(seed) {
   let a = seed >>> 0;
   return () => {
@@ -13341,8 +13380,8 @@ function mulberry32(seed) {
   };
 }
 function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
-  const cfg = readJson(join20(runDir, "eval.config.json"));
-  const doc = readJson(join20(runDir, "findings.json"));
+  const cfg = readJson(join21(runDir, "eval.config.json"));
+  const doc = readJson(join21(runDir, "findings.json"));
   const findings = (doc.findings ?? []).filter((f) => f.status !== "dismissed").sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
   const pairs = [];
   const resolveOpts = { targetAbs: resolveTargetAbs(cfg.targetAbs, cfg.target, runDir), runDir, lineCache: /* @__PURE__ */ new Map() };
@@ -13369,15 +13408,15 @@ function runVerify(runDir, opts = {}) {
     planted = h.planted;
   }
   const out2 = { run: runDir, pairs };
-  writeJson(join20(runDir, sh2 ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out2);
-  writeText(join20(runDir, sh2 ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out2));
+  writeJson(join21(runDir, sh2 ? `VERIFY.todo.${opts.shard}.json` : "VERIFY.todo.json"), out2);
+  writeText(join21(runDir, sh2 ? `VERIFY.${opts.shard}.md` : "VERIFY.md"), renderWorklistMd(out2));
   if (planted !== void 0) out2.planted = planted;
   return out2;
 }
 function plantHoneypots(runDir, pairs, n, shard) {
   if (pairs.length < 2) return { pairs, planted: 0 };
-  const cfg = readJson(join20(runDir, "eval.config.json"));
-  const doc = readJson(join20(runDir, "findings.json"));
+  const cfg = readJson(join21(runDir, "eval.config.json"));
+  const doc = readJson(join21(runDir, "findings.json"));
   const seedHex = cfg.provenance?.dimensionsHash ?? "0";
   const rng = mulberry32((Number.parseInt(seedHex.slice(0, 8), 16) || 1) + (shard ?? 0));
   let maxN = 0;
@@ -13402,7 +13441,7 @@ function plantHoneypots(runDir, pairs, n, shard) {
   for (const t of traps) mixed.splice(Math.floor(rng() * (mixed.length + 1)), 0, t);
   if (traps.length) {
     const truthName = shard !== void 0 ? `VERIFY.honeypots.${shard}.json` : "VERIFY.honeypots.json";
-    writeJson(join20(runDir, truthName), {
+    writeJson(join21(runDir, truthName), {
       note: "ground truth for planted honeypot pairs \u2014 never paste this file into a skeptic prompt",
       claimIds: traps.map((t) => t.claimId)
     });
@@ -13411,9 +13450,9 @@ function plantHoneypots(runDir, pairs, n, shard) {
 }
 function loadHoneypotIds(runDir) {
   const ids = /* @__PURE__ */ new Set();
-  const files = [join20(runDir, "VERIFY.honeypots.json")];
+  const files = [join21(runDir, "VERIFY.honeypots.json")];
   if (exists(runDir)) {
-    for (const e of readdirSync5(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join20(runDir, e));
+    for (const e of readdirSync5(runDir)) if (/^VERIFY\.honeypots\.\d+\.json$/.test(e)) files.push(join21(runDir, e));
   }
   for (const f of files) {
     if (!exists(f)) continue;
@@ -13484,7 +13523,7 @@ function loadVerdicts(runDir, spec) {
   return [...merged.values()];
 }
 function applyVerdicts(runDir, spec) {
-  const doc = readJson(join20(runDir, "findings.json"));
+  const doc = readJson(join21(runDir, "findings.json"));
   const all = loadVerdicts(runDir, spec);
   const trapIds = loadHoneypotIds(runDir);
   const result = reduceVerdicts(
@@ -13499,7 +13538,7 @@ function applyVerdicts(runDir, spec) {
     result.honeypots = { planted: trapIds.size, caught: caught.size, failed: failed2 };
     if (failed2.length) result.ok = false;
   }
-  writeJson(join20(runDir, "VERIFY.json"), result);
+  writeJson(join21(runDir, "VERIFY.json"), result);
   return result;
 }
 function formatVerifyReport(r) {
@@ -13519,7 +13558,7 @@ var SOFT_FILES = ["SUMMARY.md"];
 function checkRun(runDir, opts = {}) {
   const errors = [];
   const warnings = [];
-  const cfgPath = join21(runDir, "eval.config.json");
+  const cfgPath = join23(runDir, "eval.config.json");
   if (!exists(cfgPath)) {
     errors.push("no eval.config.json \u2014 run `ultraeval init` first");
     return { ok: false, errors, warnings };
@@ -13531,7 +13570,7 @@ function checkRun(runDir, opts = {}) {
     errors.push("eval.config.json is not valid JSON");
     return { ok: false, errors, warnings, usageError: true };
   }
-  const findingsPath = join21(runDir, "findings.json");
+  const findingsPath = join23(runDir, "findings.json");
   if (!exists(findingsPath)) {
     errors.push("no findings.json \u2014 the eval produced no findings record");
     return { ok: false, errors, warnings };
@@ -13584,7 +13623,7 @@ function checkRun(runDir, opts = {}) {
   }
   const coverageMin = opts.strict ? CAPS.coverageStrict : opts.coverageMin ?? CAPS.coverageMin;
   for (const file of [...HARD_FILES, ...SOFT_FILES]) {
-    const p = join21(runDir, file);
+    const p = join23(runDir, file);
     if (!exists(p)) continue;
     const md = readText(p);
     for (const id of findingRefs(md)) if (!ids.has(id)) errors.push(`${file} cites ${id} but no such finding exists (dangling citation)`);
@@ -13600,7 +13639,7 @@ function checkRun(runDir, opts = {}) {
       }
     }
   }
-  const backlogPath = join21(runDir, "BACKLOG.json");
+  const backlogPath = join23(runDir, "BACKLOG.json");
   if (exists(backlogPath)) {
     try {
       const bl = readJson(backlogPath);
@@ -13615,7 +13654,7 @@ function checkRun(runDir, opts = {}) {
       errors.push("BACKLOG.json is not valid JSON");
     }
   }
-  const verifyPath = join21(runDir, "VERIFY.json");
+  const verifyPath = join23(runDir, "VERIFY.json");
   if (opts.requireVerify && cfg.oneshot) {
     errors.push(
       `--require-verify: this is a one-shot run \u2014 no verify phase exists; upgrade it (plan --run ${runDir}) and run the verify chain for verified findings`
@@ -13732,9 +13771,9 @@ function checkRun(runDir, opts = {}) {
     if (f.status === "open") warnings.push(`${f.id} is still "open" \u2014 adjudicate it (confirmed/dismissed) before backlog`);
     if (f.status === "confirmed" && !f.recommendation) warnings.push(`${f.id} is confirmed but has no recommendation \u2014 its backlog card will be vague`);
   }
-  if (exists(join21(runDir, "RESULTS.md")) && !exists(join21(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
-  if (exists(join21(runDir, "runs", "budget.md"))) {
-    const summaryPath = join21(runDir, "SUMMARY.md");
+  if (exists(join23(runDir, "RESULTS.md")) && !exists(join23(runDir, "SUMMARY.md"))) warnings.push("RESULTS.md present but no SUMMARY.md");
+  if (exists(join23(runDir, "runs", "budget.md"))) {
+    const summaryPath = join23(runDir, "SUMMARY.md");
     if (!exists(summaryPath) || !/budget/i.test(readText(summaryPath)))
       warnings.push("runs/budget.md records coverage cuts but SUMMARY.md does not mention them \u2014 report every cut in the summary");
   }
@@ -13758,11 +13797,11 @@ function formatCheckReport(r, runDir) {
 }
 
 // src/compare.ts
-import { join as join23 } from "path";
+import { join as join24 } from "path";
 function load(dir) {
-  const findings = exists(join23(dir, "findings.json")) ? readJson(join23(dir, "findings.json")).findings ?? [] : [];
-  const score = exists(join23(dir, "scorecard.json")) ? readJson(join23(dir, "scorecard.json")) : null;
-  const cfg = exists(join23(dir, "eval.config.json")) ? readJson(join23(dir, "eval.config.json")) : null;
+  const findings = exists(join24(dir, "findings.json")) ? readJson(join24(dir, "findings.json")).findings ?? [] : [];
+  const score = exists(join24(dir, "scorecard.json")) ? readJson(join24(dir, "scorecard.json")) : null;
+  const cfg = exists(join24(dir, "eval.config.json")) ? readJson(join24(dir, "eval.config.json")) : null;
   return { findings, score, cfg };
 }
 var key = (f) => `${f.kind ?? "defect"}:${titleKey(f.title)}`;
@@ -13862,12 +13901,12 @@ ${retitled.map((p) => `- ${p.from.title} \u2192 ${p.to.title}`).join("\n") || "-
 }
 function runCompare(baseDir, newDir, outDir) {
   const r = compareRuns(baseDir, newDir);
-  writeText(join23(outDir, "COMPARE.md"), r.md);
+  writeText(join24(outDir, "COMPARE.md"), r.md);
   return r;
 }
 
 // src/sarif.ts
-import { join as join24, relative as relative4, sep as sep4 } from "path";
+import { join as join25, relative as relative4, sep as sep4 } from "path";
 var LEVEL = { P0: "error", P1: "warning", P2: "note" };
 function buildSarif(cfg, doc, runDir) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
@@ -13917,41 +13956,41 @@ function buildSarif(cfg, doc, runDir) {
   };
 }
 function writeSarif(runDir, out2) {
-  const cfg = readJson(join24(runDir, "eval.config.json"));
-  const doc = readJson(join24(runDir, "findings.json"));
-  const p = join24(out2 ?? runDir, "eval.sarif");
+  const cfg = readJson(join25(runDir, "eval.config.json"));
+  const doc = readJson(join25(runDir, "findings.json"));
+  const p = join25(out2 ?? runDir, "eval.sarif");
   writeJson(p, buildSarif(cfg, doc, runDir));
   return p;
 }
 
 // src/clean.ts
-import { readdirSync as readdirSync6, rmSync as rmSync3 } from "fs";
-import { join as join25 } from "path";
+import { readdirSync as readdirSync6, rmSync as rmSync4 } from "fs";
+import { join as join26 } from "path";
 var DERIVED = ["VERIFY.todo.json", "VERIFY.md", "VERIFY.json", "VERIFY.honeypots.json", "index.html", "index.md", "eval.sarif"];
 function clean(runDir, opts = {}) {
   const removed = [];
-  if (exists(runDir) && !exists(join25(runDir, "eval.config.json"))) {
+  if (exists(runDir) && !exists(join26(runDir, "eval.config.json"))) {
     throw new Error(`refusing to clean ${runDir}: not an ultraeval run (no eval.config.json)`);
   }
   if (opts.all) {
     if (exists(runDir)) {
-      rmSync3(runDir, { recursive: true, force: true });
+      rmSync4(runDir, { recursive: true, force: true });
       removed.push(runDir);
     }
     return removed;
   }
   for (const name2 of DERIVED) {
-    const p = join25(runDir, name2);
+    const p = join26(runDir, name2);
     if (exists(p)) {
-      rmSync3(p, { force: true });
+      rmSync4(p, { force: true });
       removed.push(p);
     }
   }
   if (exists(runDir)) {
     for (const e of readdirSync6(runDir)) {
       if (/^VERIFY\.(todo\.|honeypots\.)?\d+\.(json|md)$/.test(e)) {
-        rmSync3(join25(runDir, e), { force: true });
-        removed.push(join25(runDir, e));
+        rmSync4(join26(runDir, e), { force: true });
+        removed.push(join26(runDir, e));
       }
     }
   }
@@ -13959,14 +13998,14 @@ function clean(runDir, opts = {}) {
 }
 
 // src/oneshot.ts
-import { join as join27 } from "path";
+import { join as join28 } from "path";
 
 // src/templates.ts
-import { dirname as dirname5, join as join26 } from "path";
+import { dirname as dirname4, join as join27 } from "path";
 function calibrationFixturePath(engineAbs) {
   const candidates = [
-    join26(dirname5(engineAbs), "..", "references", "calibration-run.json"),
-    join26(dirname5(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
+    join27(dirname4(engineAbs), "..", "references", "calibration-run.json"),
+    join27(dirname4(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
   ];
   return candidates.find(exists) ?? candidates[0];
 }
@@ -14442,9 +14481,9 @@ function findingsSchema() {
 // src/oneshot.ts
 function oneshotRun(opts, engineAbs) {
   const { cfg, runDir, gitignore } = initRun({ ...opts, mode: "audit", oneshot: true });
-  const written = [join27(runDir, "eval.config.json")];
+  const written = [join28(runDir, "eval.config.json")];
   const w = (rel, content) => {
-    const p = join27(runDir, rel);
+    const p = join28(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
@@ -14457,32 +14496,32 @@ function oneshotRun(opts, engineAbs) {
 }
 
 // src/plan.ts
-import { rmSync as rmSync4 } from "fs";
-import { join as join28 } from "path";
+import { rmSync as rmSync5 } from "fs";
+import { join as join29 } from "path";
 function planRun(runDir, engineAbs, opts = {}) {
-  let cfg = readJson(join28(runDir, "eval.config.json"));
+  let cfg = readJson(join29(runDir, "eval.config.json"));
   const written = [];
   const w = (rel, content) => {
-    const p = join28(runDir, rel);
+    const p = join29(runDir, rel);
     writeText(p, content);
     written.push(p);
   };
   if (cfg.oneshot || cfg.provenance?.profile) {
-    rmSync4(join28(runDir, "ONESHOT.md"), { force: true });
+    rmSync5(join29(runDir, "ONESHOT.md"), { force: true });
     const { oneshot: _oneshot, ...rest } = cfg;
     cfg = rest;
     if (cfg.provenance?.profile) {
       const { profile: _profile, ...prov } = cfg.provenance;
       cfg = { ...cfg, provenance: prov };
     }
-    writeJson(join28(runDir, "eval.config.json"), cfg);
-    written.push(join28(runDir, "eval.config.json"));
+    writeJson(join29(runDir, "eval.config.json"), cfg);
+    written.push(join29(runDir, "eval.config.json"));
   }
   if (opts.eco === true) {
-    rmSync4(join28(runDir, "eval.workflow.mjs"), { force: true });
+    rmSync5(join29(runDir, "eval.workflow.mjs"), { force: true });
     w("RUNBOOK.md", runbookMd(cfg, runDir, engineAbs));
   } else {
-    rmSync4(join28(runDir, "RUNBOOK.md"), { force: true });
+    rmSync5(join29(runDir, "RUNBOOK.md"), { force: true });
     w("eval.workflow.mjs", workflowScript(cfg, runDir, engineAbs));
   }
   for (const [name2, content] of Object.entries(agentContracts(cfg, runDir, engineAbs))) w(`agents/${name2}.md`, content);
@@ -14496,15 +14535,15 @@ function planRun(runDir, engineAbs, opts = {}) {
 
 // src/fix.ts
 import { spawnSync as spawnSync2 } from "child_process";
-import { isAbsolute as isAbsolute4, join as join29, resolve as resolve5 } from "path";
+import { isAbsolute as isAbsolute4, join as join30, resolve as resolve5 } from "path";
 function loadBacklog(runDir) {
-  const blPath = join29(runDir, "BACKLOG.json");
+  const blPath = join30(runDir, "BACKLOG.json");
   if (!exists(blPath)) throw new Error("no BACKLOG.json \u2014 run `backlog --run <run> --tdd` first, then fix");
-  return { cfg: readJson(join29(runDir, "eval.config.json")), backlog: readJson(blPath) };
+  return { cfg: readJson(join30(runDir, "eval.config.json")), backlog: readJson(blPath) };
 }
 function targetInvariants(targetAbs) {
   const lines = [];
-  const pkgPath = join29(targetAbs, "package.json");
+  const pkgPath = join30(targetAbs, "package.json");
   if (exists(pkgPath)) {
     const pkg = readJson(pkgPath);
     if (pkg.scripts?.test) lines.push(`- Full test suite green before committing: run the target's \`test\` script (\`${pkg.scripts.test}\`).`);
@@ -14515,10 +14554,10 @@ function targetInvariants(targetAbs) {
 }
 function agentContract(t, cfg, runDir, engineAbs) {
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
-  const absTargets = t.targets.map((x) => isAbsolute4(x) ? x : join29(targetAbs, x));
-  const redFile = isAbsolute4(t.red.testFile) ? t.red.testFile : join29(targetAbs, t.red.testFile);
+  const absTargets = t.targets.map((x) => isAbsolute4(x) ? x : join30(targetAbs, x));
+  const redFile = isAbsolute4(t.red.testFile) ? t.red.testFile : join30(targetAbs, t.red.testFile);
   const deps = t.dependsOn.length ? `
-Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join29(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
+Depends on: ${t.dependsOn.join(", ")} \u2014 confirm each is \`status: "done"\` in \`${join30(runDir, "BACKLOG.json")}\` before starting; if not, STOP and report.` : "";
   return `# Fix agent: ${t.id} \u2014 ${t.title}  (${t.priority} \xB7 ${t.kind})
 
 You are an AUTONOMOUS fix agent. Fix exactly ONE task in the target repo, test-first. Do not widen scope; do not stop early.
@@ -14562,12 +14601,12 @@ function emitFixAgents(runDir, engineAbs, opts = {}) {
   }
   const written = [];
   for (const t of tasks) {
-    const p = join29(runDir, "fixes", "agents", `${t.id}.agent.md`);
+    const p = join30(runDir, "fixes", "agents", `${t.id}.agent.md`);
     writeText(p, agentContract(t, cfg, runDir, engineAbs));
     written.push(p);
   }
   if (opts.workflow) {
-    const p = join29(runDir, "fix.workflow.mjs");
+    const p = join30(runDir, "fix.workflow.mjs");
     writeText(p, fixWorkflow(tasks, runDir, engineAbs));
     written.push(p);
   }
@@ -14637,7 +14676,7 @@ function verifyFix(runDir, taskId, opts = {}) {
     task.status = "done";
     task.verifiedAt = (/* @__PURE__ */ new Date()).toISOString();
     result.verifiedAt = task.verifiedAt;
-    writeJson(join29(runDir, "BACKLOG.json"), backlog);
+    writeJson(join30(runDir, "BACKLOG.json"), backlog);
   }
   return result;
 }
@@ -14647,27 +14686,27 @@ function formatVerifyFix(r) {
 
 // src/rejudge.ts
 import { cpSync, mkdirSync as mkdirSync4 } from "fs";
-import { join as join30 } from "path";
+import { join as join31 } from "path";
 var COPY_FILES = ["eval.config.json", "dimensions.json", "findings.json", "RESULTS.md", "SUMMARY.md", "TEST-PLAN.md", "VERIFY.json"];
 var COPY_DIRS = ["research", "runs"];
 function rejudgeRun(runDir, outDir, engineAbs) {
-  if (!exists(join30(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
-  const cfg = readJson(join30(runDir, "eval.config.json"));
+  if (!exists(join31(runDir, "eval.config.json"))) throw new Error(`refusing to rejudge ${runDir}: not an ultraeval run (no eval.config.json)`);
+  const cfg = readJson(join31(runDir, "eval.config.json"));
   mkdirSync4(outDir, { recursive: true });
   const copied = [];
   for (const f of COPY_FILES) {
-    if (!exists(join30(runDir, f))) continue;
-    cpSync(join30(runDir, f), join30(outDir, f));
+    if (!exists(join31(runDir, f))) continue;
+    cpSync(join31(runDir, f), join31(outDir, f));
     copied.push(f);
   }
   for (const d of COPY_DIRS) {
-    if (!exists(join30(runDir, d))) continue;
-    cpSync(join30(runDir, d), join30(outDir, d), { recursive: true });
+    if (!exists(join31(runDir, d))) continue;
+    cpSync(join31(runDir, d), join31(outDir, d), { recursive: true });
     copied.push(`${d}/`);
   }
-  writeText(join30(outDir, "judges.jsonl"), "");
-  writeText(join30(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
-  writeText(join30(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
+  writeText(join31(outDir, "judges.jsonl"), "");
+  writeText(join31(outDir, "agents", "judge.md"), agentContracts(cfg, outDir, engineAbs).judge);
+  writeText(join31(outDir, "rejudge.workflow.mjs"), rejudgeWorkflow(cfg, outDir, engineAbs, runDir));
   return copied;
 }
 function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
@@ -14715,17 +14754,17 @@ function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
 }
 
 // src/render.ts
-import { join as join31 } from "path";
+import { join as join32 } from "path";
 function anchorFor(cfg, id) {
   const d = (cfg.dimensions ?? []).find((x) => x.id === id);
   return d?.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "\u2014";
 }
 function load2(runDir) {
-  const cfg = readJson(join31(runDir, "eval.config.json"));
-  const doc = readJson(join31(runDir, "findings.json"));
-  const verify = exists(join31(runDir, "VERIFY.json")) ? readJson(join31(runDir, "VERIFY.json")) : null;
-  const backlog = exists(join31(runDir, "BACKLOG.json")) ? readJson(join31(runDir, "BACKLOG.json")) : null;
-  const scorecard = exists(join31(runDir, "scorecard.json")) ? readJson(join31(runDir, "scorecard.json")) : null;
+  const cfg = readJson(join32(runDir, "eval.config.json"));
+  const doc = readJson(join32(runDir, "findings.json"));
+  const verify = exists(join32(runDir, "VERIFY.json")) ? readJson(join32(runDir, "VERIFY.json")) : null;
+  const backlog = exists(join32(runDir, "BACKLOG.json")) ? readJson(join32(runDir, "BACKLOG.json")) : null;
+  const scorecard = exists(join32(runDir, "scorecard.json")) ? readJson(join32(runDir, "scorecard.json")) : null;
   return { cfg, doc, verify, backlog, scorecard };
 }
 function render(runDir, opts = {}) {
@@ -14733,12 +14772,12 @@ function render(runDir, opts = {}) {
   const out2 = opts.out ?? runDir;
   const written = [];
   if (opts.md !== false) {
-    const p = join31(out2, "index.md");
+    const p = join32(out2, "index.md");
     writeText(p, buildMd(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
   if (opts.html !== false) {
-    const p = join31(out2, "index.html");
+    const p = join32(out2, "index.html");
     writeText(p, buildHtml(cfg, doc, verify, backlog, scorecard));
     written.push(p);
   }
@@ -14844,9 +14883,9 @@ function esc(s) {
 // src/score.ts
 import { execFileSync as execFileSync4 } from "child_process";
 import { appendFileSync, mkdirSync as mkdirSync5 } from "fs";
-import { dirname as dirname6, join as join32 } from "path";
+import { dirname as dirname5, join as join33 } from "path";
 function readJudges(runDir) {
-  const p = join32(runDir, "judges.jsonl");
+  const p = join33(runDir, "judges.jsonl");
   if (!exists(p)) return [];
   return readText(p).split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
     try {
@@ -14902,22 +14941,22 @@ function computeScore(cfg, judges, doc) {
   };
 }
 function scoreRun(runDir) {
-  const cfg = readJson(join32(runDir, "eval.config.json"));
-  const doc = exists(join32(runDir, "findings.json")) ? readJson(join32(runDir, "findings.json")) : { findings: [] };
+  const cfg = readJson(join33(runDir, "eval.config.json"));
+  const doc = exists(join33(runDir, "findings.json")) ? readJson(join33(runDir, "findings.json")) : { findings: [] };
   const judges = readJudges(runDir);
   if (!judges.length) throw new Error("no judge verdicts in judges.jsonl \u2014 the Judge phase has not run; dispatch judges (agents/judge.md) first");
   const sc = computeScore(cfg, judges, doc);
   if (cfg.provenance) sc.provenance = cfg.provenance;
   if (cfg.oneshot) sc.oneshot = true;
   sc.scoredAt = (/* @__PURE__ */ new Date()).toISOString();
-  writeJson(join32(runDir, "scorecard.json"), sc);
+  writeJson(join33(runDir, "scorecard.json"), sc);
   return sc;
 }
 function appendHistory(runDir, file) {
-  const scPath = join32(runDir, "scorecard.json");
+  const scPath = join33(runDir, "scorecard.json");
   if (!exists(scPath)) throw new Error("no scorecard.json \u2014 run `score --run <run>` first, then --history");
   const sc = readJson(scPath);
-  const doc = exists(join32(runDir, "findings.json")) ? readJson(join32(runDir, "findings.json")) : { findings: [] };
+  const doc = exists(join33(runDir, "findings.json")) ? readJson(join33(runDir, "findings.json")) : { findings: [] };
   const live = (doc.findings ?? []).filter((f) => f.status !== "dismissed");
   const commit = sc.provenance?.targetGit?.commit;
   const protocol = sc.provenance?.protocolVersion;
@@ -14939,7 +14978,7 @@ function appendHistory(runDir, file) {
     ...rubric ? { rubric } : {},
     ...sc.oneshot ? { oneshot: true } : {}
   };
-  mkdirSync5(dirname6(file), { recursive: true });
+  mkdirSync5(dirname5(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify(entry)}
 `);
   return entry;
@@ -14952,10 +14991,10 @@ function targetGitRoot(dir) {
   }
 }
 function defaultLedgerPath(runDir) {
-  const cfg = readJson(join32(runDir, "eval.config.json"));
+  const cfg = readJson(join33(runDir, "eval.config.json"));
   const targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, runDir);
   const base = targetGitRoot(targetAbs) ?? process.cwd();
-  return join32(base, "evals", "history.jsonl");
+  return join33(base, "evals", "history.jsonl");
 }
 function readHistory(file) {
   if (!exists(file)) return [];
@@ -15006,12 +15045,12 @@ function formatScore(sc) {
 }
 
 // src/status.ts
-import { join as join33 } from "path";
+import { join as join34 } from "path";
 function statusRun(runDir) {
-  const has = (rel) => exists(join33(runDir, rel));
+  const has = (rel) => exists(join34(runDir, rel));
   let oneshot = false;
   try {
-    if (has("eval.config.json")) oneshot = readJson(join33(runDir, "eval.config.json")).oneshot === true;
+    if (has("eval.config.json")) oneshot = readJson(join34(runDir, "eval.config.json")).oneshot === true;
   } catch {
     oneshot = false;
   }
@@ -15025,7 +15064,7 @@ function statusRun(runDir) {
     ];
     return { steps: steps2, next: oneshotNextHint(steps2, runDir) };
   }
-  const judgesPresent = has("judges.jsonl") && readText(join33(runDir, "judges.jsonl")).trim().length > 0;
+  const judgesPresent = has("judges.jsonl") && readText(join34(runDir, "judges.jsonl")).trim().length > 0;
   const steps = [
     { artifact: "eval.config.json", present: has("eval.config.json"), stage: "init" },
     { artifact: "agents/", present: has("agents"), stage: "plan" },
@@ -15297,7 +15336,7 @@ function cmdAnalyze(args2) {
   let targetAbs;
   let out2;
   if (run2) {
-    const cfg = readJson(join34(run2, "eval.config.json"));
+    const cfg = readJson(join35(run2, "eval.config.json"));
     targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run2);
     out2 = run2;
   } else {
@@ -15356,7 +15395,7 @@ function cmdCompare(args2) {
 function cmdCheck(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("check requires --run <run>");
-  if (!exists(join34(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+  if (!exists(join35(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
   const r = checkRun(run2, {
     semantic: !!args2.semantic,
     requireVerify: !!args2["require-verify"],
