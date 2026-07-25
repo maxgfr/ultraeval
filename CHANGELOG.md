@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.17.0](https://github.com/maxgfr/ultraeval/compare/v1.16.0...v1.17.0) (2026-07-25)
+
+
+### Bug Fixes
+
+* **cli:** a bad flag value can no longer disarm a gate in silence ([270709d](https://github.com/maxgfr/ultraeval/commit/270709daf1a60986b2cbc44d6a0dbf7275eb52fa))
+* close the gaps the first pass documented instead of fixing ([eba66ec](https://github.com/maxgfr/ultraeval/commit/eba66ec02865755521c3064d01aeacc6c50ffacb))
+* **docs:** reconcile the skill docs with what the engine actually does ([dd93d1a](https://github.com/maxgfr/ultraeval/commit/dd93d1ad5c2346402f6f0edae24a2c3b5d2227a4))
+
+
+### Features
+
+* **skill:** turn ultraeval into a reference, not just a procedure ([00ce5bc](https://github.com/maxgfr/ultraeval/commit/00ce5bcd7d0f033af7515174e4ad5979289fea15))
+
 # [1.16.0](https://github.com/maxgfr/ultraeval/compare/v1.15.0...v1.16.0) (2026-07-24)
 
 
