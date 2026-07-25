@@ -25,7 +25,8 @@ Every run walks these phases in order. A phase's exit criteria MUST hold before 
 - Verify worklist cap: **60** claim↔evidence pairs (`--max-verify`); shard for more.
 - A finding FAILS verification if any evidence is `refuted`, or none is `supported`/`partial`.
 - Honeypots (skeptic quality control): `verify --honeypots N` plants N deterministic trap pairs — one finding's claim glued to another finding's evidence — seeded on the run's `dimensionsHash`. Ground truth lives in `VERIFY.honeypots.json` and MUST NOT be shown to a skeptic. A trap graded `supported`/`partial` fails `verify --apply` and blocks `check --require-verify` until a fresh skeptic re-verifies; trap verdicts never reach the findings ledger.
-- `MEETS_BAR = 80`. `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < 80 · the judge panel has zero passed calibrations (`scorecard.judgesCalibrated`).
+- `MEETS_BAR = 80` is the **default** bar, not a fixed constant: `init --bar <n>` (also `oneshot --bar <n>`) calibrates it per run, `eval.config.json` records it as `meetsBar`, and `score` stamps the applied bar into both `scorecard.json` and the ledger line. A run MUST be read against its own recorded bar — `history` prints each entry as `overall/bar` for exactly this reason. `compare` does NOT currently flag a bar mismatch, so when two runs were scored against different bars, say so alongside the delta.
+- `meetsExpectations` MUST be `false` when any of: a live P0 defect exists · any judge votes no · weighted overall < the run's bar · the judge panel has zero passed calibrations (`scorecard.judgesCalibrated`).
 
 ## Scoped runs (init --scope)
 
@@ -74,7 +75,7 @@ Opportunities are rated **impact × effort**, not severity; a live opportunity M
 - `score` MUST copy the provenance into `scorecard.json` and stamp `scoredAt`.
 - Two runs are directly comparable ONLY when their `protocolVersion`, `rubricVersion`, and dimension ids/weights all match; `compare` MUST surface a warning otherwise and MUST print both sides' provenance in `COMPARE.md`.
 - A run without provenance is a *legacy run*: `check` emits a warning (never an error).
-- Run directories are typically gitignored — `init` does this automatically when the run dir sits inside a git repo (idempotent; `--no-gitignore` opts out) and MUST NOT gitignore the ledger path. The committed history ledger is where the score trend survives. A release self-eval SHOULD append its verdict: `score --run <RUN> --history [file]` (default `evals/history.jsonl` under the working directory).
+- Run directories are typically gitignored — `init` does this automatically when the run dir sits inside a git repo (idempotent; `--no-gitignore` opts out) and MUST NOT gitignore the ledger path. The committed history ledger is where the score trend survives. A release self-eval SHOULD append its verdict: `score --run <RUN> --history [file]`. The default ledger is `evals/history.jsonl` **anchored to the target repo's git root** (so the path is stable whatever the cwd); it falls back to the working directory only when the target is not a git repo.
 
 ## Self-evaluation constraint
 

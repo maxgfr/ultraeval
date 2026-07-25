@@ -21,8 +21,12 @@ Not for: a quick one-file code review (just read it); running the target's own t
 ## The loop
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify(+honeypots) → backlog(TDD) → fix → verify-fix → score(+history) → render
+init → plan → run(research → test-plan → execute → findings)
+     → gate(check → verify(+honeypots) → check --semantic --require-verify)
+     → judge → score(+history) → backlog(TDD) → render → fix → verify-fix
 ```
+
+That order is the dependency order, and it is the one `status --run <RUN>` walks: the gate must be green before anyone judges, `score` needs `judges.jsonl`, `backlog` needs confirmed findings, `render` shows the verdict, and `fix` consumes the backlog.
 
 Everything is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Fanning out subagents is an optimization the generated workflow encodes — never a requirement.
 
@@ -43,7 +47,15 @@ ultraeval finds two things, both grounded and gated:
 - **Defects** (`audit`, `deep`) — something is wrong; each cites a real `file:line`.
 - **Opportunities** (`improve`, `deep`) — a grounded improvement lead (internal health *and* product/capability), rated **impact × effort**. Discovered by `analyze` (deterministic hotspots/deps/churn/test-gaps) → `brainstorm` (divergent lenses) → `brainstorm --rank` (folds ranked opportunities into `findings.json` as `kind:"opportunity"`). The same gate applies — an opportunity must anchor to real code/metrics, so it never becomes vague "rewrite everything". See `references/analysis-playbook.md`.
 
-For `improve`/`deep`, `plan` adds **Analyze** and **Brainstorm** stages to the generated workflow.
+The mode selects which stages `plan` bakes into the generated workflow — it **swaps** stages, it does not only add them:
+
+| mode | Execute + Findings | Analyze + Brainstorm | finds |
+|---|---|---|---|
+| `audit` (default) | yes | no | defects only |
+| `improve` | **no** | yes | opportunities only |
+| `deep` | yes | yes | both |
+
+So `--mode improve` is not "audit plus extras": it drops the defect-hunting half entirely. Use `deep` when you want both.
 
 ## Procedure
 
@@ -77,30 +89,32 @@ node <skill-dir>/scripts/ultraeval.mjs verify --run <RUN> --apply verdicts.0.jso
 node <skill-dir>/scripts/ultraeval.mjs check --run <RUN> --semantic --require-verify   # exit gate — never present before this passes
 ```
 When you shard with `--shards N --shard i`, each skeptic fills its own `VERIFY.todo.<i>.json`; merge the filled shards back with a comma-joined `--apply verdicts.0.json,verdicts.1.json,…` (later files win per claim+evidence pair).
-`--honeypots n` guards the guard: it plants n trap pairs (one finding's claim glued to another finding's evidence; ground truth in `VERIFY.honeypots.json` — **never paste that file into a skeptic prompt**). A trap graded `supported` means the skeptic rubber-stamped: `--apply` exits 1 and the exit gate stays red until a fresh skeptic re-verifies. A `refuted` finding must be set `dismissed`. A `supported`/`partial` one survives.
+`--honeypots n` guards the guard: it plants n trap pairs (one finding's claim glued to another finding's evidence; ground truth in `VERIFY.honeypots.json` — **never paste that file into a skeptic prompt**). A trap graded `supported` **or `partial`** means the skeptic rubber-stamped — half-endorsing a trap is still endorsing it: `--apply` exits 1 and the exit gate stays red until a fresh skeptic re-verifies. Fewer than `n` traps may actually be planted (each needs two gradeable pairs from distinct findings); the reported count is the planted one, and `0 planted` means skeptic-QC did not run.
 
-**6. Remediate — the deliverable.**
-```
-node <skill-dir>/scripts/ultraeval.mjs backlog --run <RUN> --tdd
-```
-Emits `BACKLOG.json` (a machine-readable, priority-ordered task list a downstream agent can execute), `REMEDIATION.md`, and one `fixes/FIX-*.md` **TDD card** per confirmed finding — each with a RED failing-test-first spec, the GREEN change, and a VERIFY command. See `references/tdd-remediation.md`.
+For real findings the reduction is the opposite way round: a `refuted` finding must be set `dismissed`; a `supported`/`partial` one survives.
 
-**7. Score + render + present.**
+**6. Score.**
 ```
 node <skill-dir>/scripts/ultraeval.mjs score --run <RUN> --history # judges.jsonl + dimensions -> scorecard.json + one committed ledger line (evals/history.jsonl, anchored to the target repo's git root)
 node <skill-dir>/scripts/ultraeval.mjs history --run <RUN>        # read the score trend back: each run's overall vs bar, verdict, Δ, counts (--json for CI)
-node <skill-dir>/scripts/ultraeval.mjs render --run <RUN>          # index.html + index.md dashboard (shows the verdict)
 ```
-`score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, a panel with zero passed calibrations, or a score below the bar) caps meets-expectations at false. The scorecard also carries `sensitivity` (does a ±0.05 weight shift flip the verdict?) and `judgesCalibrated`. To measure verdict stability, `rejudge --run <RUN> --out <RUN2>` re-judges the same artifacts with a fresh panel and `compare` prints a Stability line at constant target commit. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
+`score` reduces the judge panel's `judges.jsonl` and the config dimensions to a weighted verdict; a live P0 finding (or any judge voting no, a panel with zero passed calibrations, or a score below the run's bar) caps meets-expectations at false. The bar defaults to 80 and is set per run with `init --bar <n>`; read every score against its own recorded bar. The scorecard also carries `sensitivity` (does a ±0.05 weight shift flip the verdict?) and `judgesCalibrated`. To measure verdict stability, `rejudge --run <RUN> --out <RUN2>` re-judges the same artifacts with a fresh panel — about a tenth of a full run, since the evidence is reused — and `compare` prints a Stability line at constant target commit.
 
-Exit codes across the CLI: **0** ok / gate passed · **1** gate failed (`check`/`verify`) · **2** usage or runtime error.
+**7. Remediate + render — the deliverable.**
+```
+node <skill-dir>/scripts/ultraeval.mjs backlog --run <RUN> --tdd
+node <skill-dir>/scripts/ultraeval.mjs render --run <RUN> [--sarif]   # index.html + index.md dashboard (shows the verdict); --sarif also writes eval.sarif for code scanning
+```
+`backlog` emits `BACKLOG.json` (a machine-readable, priority-ordered task list a downstream agent can execute), `REMEDIATION.md`, and one `fixes/FIX-*.md` **TDD card** per confirmed finding — each with a RED failing-test-first spec, the GREEN change, and a VERIFY command. See `references/tdd-remediation.md`. Present the verdict, the P0/P1 backlog headline, and the paths (`RESULTS.md`, `BACKLOG.json`, `fixes/`) a fix agent should consume.
+
+Exit codes across the CLI: **0** ok / gate passed · **1** gate failed · **2** usage or runtime error (including a malformed `eval.config.json`/`findings.json` — a *missing* `findings.json` is a plain gate failure). Five paths can exit 1: `check`, `verify --apply`, `compare --gate`, `verify-fix`, and `brainstorm --rank --check`. **`verify` in worklist mode always exits 0** — it generates the worklist, it never gates.
 
 **8. Drive the fixes (the closed loop).**
 ```
 node <skill-dir>/scripts/ultraeval.mjs fix --run <RUN> [--task FIX-XXX] [--workflow]   # one autonomous fix-agent contract per task (fixes/agents/FIX-*.agent.md)
 node <skill-dir>/scripts/ultraeval.mjs verify-fix --run <RUN> --task FIX-XXX           # replay the task's verify command; stamps status done + verifiedAt
 ```
-Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `dependsOn`; `--workflow` emits a sequential `fix.workflow.mjs`). The contract embeds the TDD card, absolute paths, the target's invariants and a no-gate-weakening rule. `verify-fix` closes the loop: it re-runs the task's verify command (timeboxed) and requires the RED test file before marking the task `done` in `BACKLOG.json`.
+Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `dependsOn`; `--workflow` emits a sequential `fix.workflow.mjs`). The contract embeds the TDD card, absolute paths, the target's invariants and a no-gate-weakening rule. `verify-fix` closes the loop: it re-runs the task's verify command (timeboxed at 10 min, no override) and **gates test-first via `red.expectedNew`** before marking the task `done` in `BACKLOG.json` — a RED test that already existed when the backlog was generated fails, and a backlog predating the field fails closed asking to be regenerated. Full table: `references/tdd-remediation.md`.
 
 **PR gating (diff-scoped runs).** `init --target <repo> --out <RUN> --since origin/main` scopes the eval to the changed set: the executor/findings/brainstormer contracts work only on changed behavior and `check` warns on findings citing unchanged files. Gate the PR with `compare --run <RUN> --base <previous-run> --gate` (exit 1 on score drop or a new P0).
 

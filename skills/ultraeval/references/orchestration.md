@@ -11,22 +11,27 @@ Every step is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Paral
 ## The pipeline (what eval.workflow.mjs runs)
 
 ```
-Research (1 agent per dimension, parallel)   -> research/<dim>.md, each with a 0–5 rubric
-TestPlan (1 agent)                            -> TEST-PLAN.md
-Execute  (2 agents: MODE=core, MODE=live)     -> runs/core.md, runs/live.md, real artifacts
-Findings (1 agent)                            -> findings.json (schema-checked, grounded)
-Gate     (1 agent)                            -> runs check -> verify -> --apply -> check --semantic until exit 0
-Judge    (3 agents, distinct lenses)          -> judges.jsonl (dimension scores, meetsExpectations)
-Results  (1 agent)                            -> RESULTS.md, SUMMARY.md, backlog --tdd, render
+stage       contract file             agents                              produces
+Research    agents/researcher.md      1 per dimension, parallel           research/<dim>.md, each with a 0–5 rubric
+TestPlan    agents/testplan.md        1                                   TEST-PLAN.md
+Execute     agents/executor.md        2 (MODE=core, MODE=live)            runs/core.md, runs/live.md, real artifacts
+Findings    agents/findings.md        1                                   findings.json (schema-checked, grounded)
+Analyze     agents/analyzer.md        1  (improve/deep only)              analysis.json, ANALYSIS.md
+Brainstorm  agents/brainstormer.md    1  (improve/deep only)              opportunities.json -> findings.json
+Gate        agents/gate.md            1                                   check -> verify -> --apply -> check --semantic until exit 0
+Judge       agents/judge.md           3, distinct lenses                  judges.jsonl (dimension scores, meetsExpectations)
+Results     agents/remediator.md      1                                   RESULTS.md, SUMMARY.md, backlog --tdd, render
 ```
+
+**The stage name is not always the file name.** The Results stage reads `agents/remediator.md` — there is no `agents/results.md`. `plan` writes all nine contracts unconditionally, whatever the mode; the *mode* decides which stages the workflow runs, not which contracts exist. In `--mode improve` the workflow drops Execute and Findings entirely (opportunities only); in `audit` it drops Analyze and Brainstorm; `deep` runs all of them.
 
 Use `pipeline()` across dimensions where your harness supports it (so dimension B researches while A is judged); use `parallel()` only when a stage genuinely needs all prior results at once.
 
 ## Subagent dispatch (no-harness fallback)
 
-For each stage, dispatch one subagent with a prompt of the form:
+For each stage, dispatch one subagent with a prompt of the form — using the **contract file name from the table above**, not the stage name:
 
-> Read and follow the contract at `<RUN>/agents/<stage>.md` verbatim. Constants: TARGET=`<abs>` ENGINE=`<abs>` RUN=`<abs>`. Invoke the engine only by its absolute path: `node <ENGINE> <cmd>`. Write every artifact under RUN. Do not stop early. Reply with: what you wrote (paths) and any new sub-questions.
+> Read and follow the contract at `<RUN>/agents/<contract>.md` verbatim. Constants: TARGET=`<abs>` ENGINE=`<abs>` RUN=`<abs>`. Invoke the engine only by its absolute path: `node <ENGINE> <cmd>`. Write every artifact under RUN. Do not stop early. Reply with: what you wrote (paths) and any new sub-questions.
 
 ### Parallel verification (skeptics)
 

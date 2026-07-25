@@ -18,7 +18,9 @@ No `npm install`, no API keys — the engine is a single committed `.mjs` bundle
 ## What it does
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify(+honeypots) → backlog(TDD) → fix → verify-fix → score(+history) → render
+init → plan → run(research → test-plan → execute → findings)
+     → gate(check → verify(+honeypots) → check --semantic --require-verify)
+     → judge → score(+history) → backlog(TDD) → render → fix → verify-fix
 ```
 
 - **`plan`** generates `eval.workflow.mjs` — a ready-to-launch multi-agent Workflow parameterized to your target — plus `agents/*.md` dispatch contracts. This is the "generate the workflow and subagents" part.

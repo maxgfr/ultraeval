@@ -7,7 +7,9 @@ judges, and writes.
 ## The pipeline
 
 ```
-init → plan → run(research → test-plan → execute+gates → judge → results) → verify → backlog(TDD) → fix/verify-fix → score → render
+init → plan → run(research → test-plan → execute → findings)
+     → gate(check → verify(+honeypots) → check --semantic --require-verify)
+     → judge → score(+history) → backlog(TDD) → render → fix → verify-fix
 ```
 
 `plan` emits a ready-to-launch multi-agent Workflow (`eval.workflow.mjs`) plus `agents/*.md` dispatch
