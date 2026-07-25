@@ -92,8 +92,19 @@ export function parse(argv: string[]): Args {
   return args;
 }
 
-export function num(v: string | boolean | string[] | undefined): number | undefined {
-  return typeof v === "string" && v !== "" ? Number(v) : undefined;
+// Coerce a flag value to a number, or THROW (-> exit 2) if it is not one.
+//
+// Returning NaN here used to disarm gates silently: `NaN ?? DEFAULT` is NaN
+// (nullish coalescing does not catch NaN), and every comparison against NaN is
+// false — so `--coverage-min abc` switched the coverage gate off and
+// `--max-verify abc` removed the pair cap, both exiting 0. A threshold the user
+// believes is enforced must never be turned off by a typo, so a non-finite
+// value is a usage error naming the flag.
+export function num(v: string | boolean | string[] | undefined, flag: string): number | undefined {
+  if (typeof v !== "string" || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`--${flag} expects a number, got "${v}"`);
+  return n;
 }
 
 export function str(v: string | boolean | string[] | undefined): string | undefined {

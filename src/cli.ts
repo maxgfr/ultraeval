@@ -60,15 +60,17 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
              --apply <f1,f2,…> merges sharded verdict files (later files win per claim+evidence pair) — reassembles --shards runs.
              --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json — never show it to skeptics);
-             a trap graded supported fails --apply and blocks check --require-verify.
+             a trap graded supported OR partial fails --apply and blocks check --require-verify.
+             Worklist mode always exits 0; only --apply can fail.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
              paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
   verify-fix --run <run> --task FIX-XXX
-             Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
-             + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+             Replay the task's verify command (timeboxed) + gate test-first via red.expectedNew; stamps status
+             done + verifiedAt in BACKLOG.json on success, exit 1 otherwise. Fails closed on a legacy backlog
+             with no expectedNew — regenerate it with backlog --tdd.
   status   --run <run> [--json]
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
@@ -89,7 +91,9 @@ Commands:
 
   help | --help        version | --version
 
-Exit codes: 0 = ok / gate passed · 1 = gate failed (check/verify) · 2 = usage or runtime error.`;
+Exit codes: 0 = ok / gate passed · 1 = gate failed · 2 = usage or runtime error.
+  Exit 1 comes from: check · verify --apply · compare --gate · verify-fix · brainstorm --rank --check.
+  verify in worklist mode always exits 0 — it generates the worklist, it never gates.`;
 
 // COMMAND_FLAGS (the per-command allow-list rejectUnknownFlags enforces) is
 // derived from FLAG_SPEC in cliargs.ts alongside the parser's VALUE_FLAGS, so a
@@ -147,7 +151,7 @@ function cmdInit(args: Args): void {
     kind: str(args.kind) as Kind | undefined,
     category: str(args.category),
     mode: str(args.mode) as Mode | undefined,
-    bar: num(args.bar),
+    bar: num(args.bar, "bar"),
     since: str(args.since),
     scope: parseScope(str(args.scope)),
     gitignore: args["no-gitignore"] !== true,
@@ -169,7 +173,7 @@ function cmdOneshot(args: Args): void {
       out,
       kind: str(args.kind) as Kind | undefined,
       category: str(args.category),
-      bar: num(args.bar),
+      bar: num(args.bar, "bar"),
       scope: parseScope(str(args.scope)),
       gitignore: args["no-gitignore"] !== true,
     },
@@ -272,8 +276,8 @@ function cmdCheck(args: Args): void {
     requireVerify: !!args["require-verify"],
     strict: !!args.strict,
     strictScope: !!args["strict-scope"],
-    minFindings: num(args["min-findings"]),
-    coverageMin: num(args["coverage-min"]),
+    minFindings: num(args["min-findings"], "min-findings"),
+    coverageMin: num(args["coverage-min"], "coverage-min"),
   });
   console.log(args.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run));
   // A malformed core artifact is a usage/runtime error (exit 2); a genuine
@@ -290,10 +294,10 @@ function cmdVerify(args: Args): void {
     console.log(formatVerifyReport(res));
     process.exitCode = res.ok ? 0 : 1;
   } else {
-    const shards = num(args.shards);
-    const shard = num(args.shard);
-    const honeypots = num(args.honeypots);
-    const todo = runVerify(run, { maxVerify: num(args["max-verify"]), shards, shard, honeypots });
+    const shards = num(args.shards, "shards");
+    const shard = num(args.shard, "shard");
+    const honeypots = num(args.honeypots, "honeypots");
+    const todo = runVerify(run, { maxVerify: num(args["max-verify"], "max-verify"), shards, shard, honeypots });
     const todoName = shards !== undefined && shard !== undefined ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
     // Report the ACTUALLY-planted count, never the requested one — a small
     // run can plant fewer (or zero) traps than asked (pool exhaustion).

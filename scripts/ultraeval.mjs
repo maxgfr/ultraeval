@@ -13397,6 +13397,10 @@ function buildWorklist(runDir, maxVerify = CAPS.maxVerify) {
   return { run: runDir, pairs };
 }
 function runVerify(runDir, opts = {}) {
+  if (opts.shard !== void 0 && !opts.shards) throw new Error("--shard requires --shards <n> (a shard index alone would overwrite the full worklist)");
+  if (opts.shards !== void 0 && opts.shard === void 0) throw new Error("--shards requires --shard <i> (which slice should this skeptic grade?)");
+  if (opts.shards !== void 0 && opts.shard !== void 0 && (opts.shard < 0 || opts.shard >= opts.shards))
+    throw new Error(`--shard ${opts.shard} is out of range for --shards ${opts.shards} (expected 0..${opts.shards - 1})`);
   const full = buildWorklist(runDir, opts.maxVerify);
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== void 0) pairs = pairs.filter((_, i2) => i2 % opts.shards === opts.shard);
@@ -15172,8 +15176,11 @@ function parse(argv) {
   }
   return args2;
 }
-function num(v) {
-  return typeof v === "string" && v !== "" ? Number(v) : void 0;
+function num(v, flag) {
+  if (typeof v !== "string" || v === "") return void 0;
+  const n = Number(v);
+  if (!Number.isFinite(n)) throw new Error(`--${flag} expects a number, got "${v}"`);
+  return n;
 }
 function str2(v) {
   return typeof v === "string" ? v : void 0;
@@ -15218,15 +15225,17 @@ Commands:
              Adversarial claim<->evidence worklist; --apply reduces verdicts to VERIFY.json.
              --apply <f1,f2,\u2026> merges sharded verdict files (later files win per claim+evidence pair) \u2014 reassembles --shards runs.
              --honeypots plants n trap pairs (ground truth in VERIFY.honeypots.json \u2014 never show it to skeptics);
-             a trap graded supported fails --apply and blocks check --require-verify.
+             a trap graded supported OR partial fails --apply and blocks check --require-verify.
+             Worklist mode always exits 0; only --apply can fail.
   backlog  --run <run> [--tdd] [--out <dir>]
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
              paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
   verify-fix --run <run> --task FIX-XXX
-             Replay the task's verify command (timeboxed) + require its RED test file; stamps status done
-             + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+             Replay the task's verify command (timeboxed) + gate test-first via red.expectedNew; stamps status
+             done + verifiedAt in BACKLOG.json on success, exit 1 otherwise. Fails closed on a legacy backlog
+             with no expectedNew \u2014 regenerate it with backlog --tdd.
   status   --run <run> [--json]
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
@@ -15247,7 +15256,9 @@ Commands:
 
   help | --help        version | --version
 
-Exit codes: 0 = ok / gate passed \xB7 1 = gate failed (check/verify) \xB7 2 = usage or runtime error.`;
+Exit codes: 0 = ok / gate passed \xB7 1 = gate failed \xB7 2 = usage or runtime error.
+  Exit 1 comes from: check \xB7 verify --apply \xB7 compare --gate \xB7 verify-fix \xB7 brainstorm --rank --check.
+  verify in worklist mode always exits 0 \u2014 it generates the worklist, it never gates.`;
 function editDistance(a, b) {
   const dp = Array.from({ length: a.length + 1 }, (_, i2) => [i2, ...Array(b.length).fill(0)]);
   for (let j = 0; j <= b.length; j++) dp[0][j] = j;
@@ -15282,7 +15293,7 @@ function cmdInit(args2) {
     kind: str2(args2.kind),
     category: str2(args2.category),
     mode: str2(args2.mode),
-    bar: num(args2.bar),
+    bar: num(args2.bar, "bar"),
     since: str2(args2.since),
     scope: parseScope(str2(args2.scope)),
     gitignore: args2["no-gitignore"] !== true
@@ -15303,7 +15314,7 @@ function cmdOneshot(args2) {
       out: out2,
       kind: str2(args2.kind),
       category: str2(args2.category),
-      bar: num(args2.bar),
+      bar: num(args2.bar, "bar"),
       scope: parseScope(str2(args2.scope)),
       gitignore: args2["no-gitignore"] !== true
     },
@@ -15401,8 +15412,8 @@ function cmdCheck(args2) {
     requireVerify: !!args2["require-verify"],
     strict: !!args2.strict,
     strictScope: !!args2["strict-scope"],
-    minFindings: num(args2["min-findings"]),
-    coverageMin: num(args2["coverage-min"])
+    minFindings: num(args2["min-findings"], "min-findings"),
+    coverageMin: num(args2["coverage-min"], "coverage-min")
   });
   console.log(args2.json ? JSON.stringify(r, null, 2) : formatCheckReport(r, run2));
   process.exitCode = r.usageError ? 2 : r.ok ? 0 : 1;
@@ -15416,10 +15427,10 @@ function cmdVerify(args2) {
     console.log(formatVerifyReport(res));
     process.exitCode = res.ok ? 0 : 1;
   } else {
-    const shards = num(args2.shards);
-    const shard = num(args2.shard);
-    const honeypots = num(args2.honeypots);
-    const todo = runVerify(run2, { maxVerify: num(args2["max-verify"]), shards, shard, honeypots });
+    const shards = num(args2.shards, "shards");
+    const shard = num(args2.shard, "shard");
+    const honeypots = num(args2.honeypots, "honeypots");
+    const todo = runVerify(run2, { maxVerify: num(args2["max-verify"], "max-verify"), shards, shard, honeypots });
     const todoName = shards !== void 0 && shard !== void 0 ? `VERIFY.todo.${shard}.json` : "VERIFY.todo.json";
     const planted = todo.planted ?? 0;
     const hp = honeypots ? ` (incl. ${planted} honeypot(s))` : "";

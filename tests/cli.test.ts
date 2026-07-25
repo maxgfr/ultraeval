@@ -53,6 +53,45 @@ describe("cli — unknown flags are rejected, never silently ignored", () => {
   });
 });
 
+// A gate the user thinks is running, but isn't, is worse than no gate. Both
+// holes below exited 0 while quietly doing nothing, so CI stayed green.
+describe("cli — a gate can never be disarmed by a bad flag value", () => {
+  it("check --coverage-min with a non-numeric value exits 2 instead of disabling the coverage gate", () => {
+    const r = run(["check", "--run", sampleRun(), "--coverage-min", "abc"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/--coverage-min/);
+    expect(r.out).toMatch(/number/);
+  });
+
+  it("verify --max-verify with a non-numeric value exits 2 instead of removing the pair cap", () => {
+    const r = run(["verify", "--run", sampleRun(), "--max-verify", "abc"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/--max-verify/);
+  });
+
+  it("init --bar with a non-numeric value exits 2 instead of silently keeping the default bar", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ue-bar-"));
+    tmps.push(dir);
+    const r = run(["init", "--target", join(FIX, "target-lib"), "--out", join(dir, "run"), "--bar", "high"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/--bar/);
+  });
+
+  it("verify --shard without --shards exits 2 instead of clobbering the unsharded worklist", () => {
+    const dir = sampleRun();
+    // Establish the full worklist first, then attempt the malformed shard call.
+    expect(run(["verify", "--run", dir]).status).toBe(0);
+    const full = JSON.parse(readFileSync(join(dir, "VERIFY.todo.json"), "utf8")) as { pairs: unknown[] };
+    const r = run(["verify", "--run", dir, "--shard", "1"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/--shard/);
+    expect(r.out).toMatch(/--shards/);
+    // and the full worklist is untouched
+    const after = JSON.parse(readFileSync(join(dir, "VERIFY.todo.json"), "utf8")) as { pairs: unknown[] };
+    expect(after.pairs.length).toBe(full.pairs.length);
+  });
+});
+
 describe("cli — verify --honeypots reports the actually-planted count, not the requested one", () => {
   it("prints the planted count when planting succeeds", () => {
     const r = run(["verify", "--run", sampleRun(), "--honeypots", "2"]);

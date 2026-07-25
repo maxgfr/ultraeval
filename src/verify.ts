@@ -45,6 +45,14 @@ export function buildWorklist(runDir: string, maxVerify: number = CAPS.maxVerify
 }
 
 export function runVerify(runDir: string, opts: VerifyOpts = {}): VerifyTodo {
+  // --shard and --shards are one knob in two halves. Half of it used to be
+  // ignored in silence AND fall through to the UNSHARDED filenames, so a
+  // skeptic told to grade slice i would overwrite the whole worklist with its
+  // slice — the pairs it never saw simply vanished from the gate. Refuse.
+  if (opts.shard !== undefined && !opts.shards) throw new Error("--shard requires --shards <n> (a shard index alone would overwrite the full worklist)");
+  if (opts.shards !== undefined && opts.shard === undefined) throw new Error("--shards requires --shard <i> (which slice should this skeptic grade?)");
+  if (opts.shards !== undefined && opts.shard !== undefined && (opts.shard < 0 || opts.shard >= opts.shards))
+    throw new Error(`--shard ${opts.shard} is out of range for --shards ${opts.shards} (expected 0..${opts.shards - 1})`);
   const full = buildWorklist(runDir, opts.maxVerify);
   let pairs = full.pairs;
   if (opts.shards && opts.shard !== undefined) pairs = pairs.filter((_, i) => i % (opts.shards as number) === opts.shard);
