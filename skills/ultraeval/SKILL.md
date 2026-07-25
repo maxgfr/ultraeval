@@ -217,28 +217,7 @@ Everything above is procedure; this is the part that is not negotiable. The valu
 6. **Never let a rubber-stamped honeypot stand.** A trap graded `supported` or `partial` means that skeptic's verdicts are untrusted — a *fresh* skeptic re-verifies, you do not re-grade with the same one.
 7. **Never cut coverage silently.** Fewer dimensions, fewer judges, an unverified finding, a truncated worklist — record each in `runs/budget.md` and repeat it in `SUMMARY.md`.
 8. **Never launch the target's own fan-out from inside the executor.** When evaluating an evaluator or orchestrator (including ultraeval itself), exercise it on a small local fixture, timeboxed. A prior self-run hung ~4 h on exactly this nested fan-out.
-
-### Rationalizations — and what is actually true
-
-| the thought | the reality |
-|---|---|
-| "The user is in a hurry, I'll skip verify." | Then say you skipped it and call the result indicative. An unverified run presented as a verdict is the one failure mode this tool exists to prevent. |
-| "The finding is obviously real, the citation is a formality." | Obvious findings are exactly the ones built from memory. The gate costs seconds; being wrong in a fix backlog costs a day. |
-| "`--coverage-min 0.3` just reflects that this report is narrative." | Then mark the narrative `[M]`. Lowering the threshold hides uncited claims instead of labelling them. |
-| "The skeptic passed the trap, but it graded everything else well." | A skeptic that endorses a trap has demonstrated it does not check. Its other verdicts carry no information. |
-| "This target is small, one-shot is basically the same." | One-shot has no verify, no honeypots, no panel. It is a different rigor, which is why the profile is stamped and the gate refuses `--require-verify`. |
-| "I ran out of budget, but the dimensions I covered were the important ones." | Possibly true, and still a coverage cut. Record it. The reader cannot see what you did not run. |
-| "I'll fix the finding's wording so the evidence supports it." | That produces a technically-true statement nobody can act on. Repair the citation or delete the finding. |
-| "Re-running the same skeptic is faster than finding a fresh one." | It is, and it re-uses the judgment that just failed QC. |
-
-### Red flags — stop and re-read this section
-
-- You are about to report a score and `check --semantic --require-verify` has not exited 0.
-- You are editing a threshold flag, or `VERIFY.json`, rather than a finding.
-- You are looking for a line number that would make a claim you already wrote resolvable.
-- You are about to say "the eval covered X" when X was partially skipped.
-- You opened `VERIFY.honeypots.json` while preparing a skeptic prompt.
-- You are describing a one-shot result with the words "verified", "normed", or "meets expectations".
+9. **Never offer a substitute number.** Asked for a score you cannot produce, the tempting compromise is an unscored estimate — "roughly 65–75", "closer to 60 than 90" — hedged as a feeling. Don't. A number said out loud is repeated without its hedge, and two digits carry the authority of a measurement whatever you attached to them. Give the shape of the evidence instead: the finding counts, the severities, and what has not been verified. If the person genuinely needs a magnitude, that is what `score` is for, and it needs the panel.
 
 ## The grounding contract
 

@@ -111,6 +111,81 @@ describe("docs drift — live-scenarios.md vs templates.ts LIVE_SCENARIOS", () =
       }
     }
   });
+
+  // Matching category names and field labels only proves the two sides have the
+  // same SHAPE. templates.ts calls itself the doc's "compact twin", so the
+  // substance has to agree too: rewording one side's scenario without the other
+  // is how an executor ends up running something the doc never described.
+  // Overlap is 100% today across all 40 fields, so 0.75 leaves room for honest
+  // rewording while still catching a substantive rewrite of either side.
+  it("each scenario's substance survives on both sides (compact twin, not a fork)", () => {
+    const blocks = new Map<string, string>();
+    for (const b of ref("live-scenarios.md").split(/^## /m).slice(1)) {
+      const head = b.split("\n")[0] ?? "";
+      blocks.set(head.split(" / ")[0]?.trim().toLowerCase() ?? "", b.toLowerCase());
+    }
+    // Common English glue carries no scenario meaning — comparing it would
+    // manufacture agreement between two blocks that actually diverged.
+    const GLUE = new Set([
+      "that",
+      "this",
+      "with",
+      "from",
+      "then",
+      "than",
+      "when",
+      "which",
+      "their",
+      "there",
+      "every",
+      "under",
+      "after",
+      "before",
+      "should",
+      "would",
+      "could",
+      "about",
+      "other",
+      "against",
+      "being",
+      "because",
+      "while",
+      "where",
+      "those",
+      "these",
+      "into",
+      "also",
+      "must",
+      "only",
+      "just",
+      "each",
+      "both",
+      "same",
+      "such",
+      "more",
+      "most",
+      "some",
+      "have",
+      "been",
+      "does",
+      "done",
+    ]);
+    const significant = (s: string): string[] => [...new Set(s.toLowerCase().match(/[a-z]{5,}/g) ?? [])].filter((w) => !GLUE.has(w));
+
+    for (const [category, scenario] of Object.entries(LIVE_SCENARIOS)) {
+      const block = blocks.get(category);
+      expect(block, `live-scenarios.md has no block for the "${category}" scenario`).toBeTruthy();
+      for (const [field, text] of Object.entries(scenario)) {
+        const words = significant(text as string);
+        const missing = words.filter((w) => !(block as string).includes(w));
+        const overlap = (words.length - missing.length) / words.length;
+        expect(
+          overlap,
+          `live-scenarios.md "${category}" has drifted from LIVE_SCENARIOS.${field} — the doc never mentions: ${missing.join(", ")}`,
+        ).toBeGreaterThanOrEqual(0.75);
+      }
+    }
+  });
 });
 
 describe("docs drift — protocol.md severity table vs SEVERITY_DEFS", () => {
