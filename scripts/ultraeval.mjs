@@ -14006,13 +14006,11 @@ import { join as join28 } from "path";
 
 // src/templates.ts
 import { dirname as dirname4, join as join27 } from "path";
-function calibrationFixturePath(engineAbs) {
-  const candidates = [
-    join27(dirname4(engineAbs), "..", "references", "calibration-run.json"),
-    join27(dirname4(engineAbs), "..", "skills", "ultraeval", "references", "calibration-run.json")
-  ];
+function skillRefPath(engineAbs, name2) {
+  const candidates = [join27(dirname4(engineAbs), "..", "references", name2), join27(dirname4(engineAbs), "..", "skills", "ultraeval", "references", name2)];
   return candidates.find(exists) ?? candidates[0];
 }
+var calibrationFixturePath = (engineAbs) => skillRefPath(engineAbs, "calibration-run.json");
 var anchorText = (d) => d.anchors?.length ? d.anchors.map((a) => `${a.standard} \u2014 ${a.ref}`).join("; ") : "";
 var severityLegend = () => VALID_SEVERITIES.map((s) => `${s} (${SEVERITY_DEFS[s].label}: ${SEVERITY_DEFS[s].meaning})`).join(" \xB7 ");
 var LIVE_SCENARIOS = {
@@ -14216,13 +14214,17 @@ function agentContracts(cfg, runDirAbs, engineAbs) {
   return {
     researcher: `# Contract: researcher
 
-You research the *state of the art for how to evaluate* one DIMENSION of a ${cfg.kind} (category: ${cfg.category}).
+You establish *how to evaluate* one DIMENSION of a ${cfg.kind} (category: ${cfg.category}) \u2014 the state of the art for the METHOD, not facts about the target.
 
-Do REAL web research (WebSearch + WebFetch; if not loaded, ToolSearch \`select:WebSearch,WebFetch\`). Find authoritative methodology \u2014 metrics, benchmarks, rubrics, known failure modes \u2014 specific to this dimension and category.
+**Step 1 \u2014 read the pack FIRST.** \`${skillRefPath(engineAbs, "methodology-library.md")}\` has a block for your dimension: the metric that actually measures it, how to obtain that metric on a real target, 0\u20135 anchors, and the failure modes that fool it. That block is your baseline rubric. The methodology for a category does not change between targets, so do NOT rediscover it from scratch.
+
+**Step 2 \u2014 web-search only to close a gap.** Use WebSearch + WebFetch (if not loaded: ToolSearch \`select:WebSearch,WebFetch\`) ONLY when the pack leaves a gap, when a figure could have moved (a benchmark version, a standard's revision), or when no block covers this category. A search that merely re-confirms the pack is wasted budget.
+
+**No network is not a blocker.** If search or fetch fails or is unavailable, derive the rubric from the pack, note "no network \u2014 baseline rubric from methodology-library.md, unrefined" in the note, and continue. Never stall the pipeline on a search, and never invent a citation to paper over a failed fetch.
 
 Deliver:
-1. Write a cited markdown note at \`${runDirAbs}/research/<DIMENSION>.md\` \u2014 every non-obvious methodological claim cites a fetched URL.
-2. End the note with a **scoring rubric** for this dimension: 0\u20135 anchors and how to measure each on THIS target.
+1. Write a cited markdown note at \`${runDirAbs}/research/<DIMENSION>.md\`. Every non-obvious methodological claim cites what you actually consulted \u2014 the pack (\`methodology-library.md#<dimension>\`) counts, a URL you fetched counts, your memory does not.
+2. End the note with the **scoring rubric** for this dimension: 0\u20135 anchors and how to measure each on THIS target. Start from the pack's anchors and say explicitly what you refined and why.
 
 Each dimension is anchored to an external referential (see below). Your research MAY refine an anchor with cited justification; it MUST NOT silently drop the referential.
 
@@ -14270,9 +14272,27 @@ RULES (the grounding gate will enforce these):
 - Every finding MUST carry at least one resolvable \`evidence.ref\`:
   - \`path:line\` or \`path:start-end\` \u2014 a real location IN THE TARGET (\`${cfg.targetAbs}\`).
   - \`run:relpath#Lnn\` \u2014 a line in a log this run produced.
+- A finding grounded ONLY in \`run:\` artifacts FAILS the gate \u2014 a log this eval wrote cannot be its own proof. Always anchor to the target too.
+- Cite **one ref per hop** of your argument, not just the final line. A one-line citation for a five-hop argument is where a reviewer stops believing you.
 - Do NOT invent line numbers. If you cite \`src/x.ts:42\`, line 42 must exist and support the claim.
 - \`severity\`: ${severityLegend()}.
-- \`status\`: \`confirmed\` (evidence holds) or \`open\` (needs verification). Never keep a finding you cannot ground \u2014 delete it.
+- \`status\`: \`confirmed\` (evidence holds) or \`open\` (real enough to check, not yet confirmed). Never keep a finding you cannot ground \u2014 delete it.
+
+THE BAR \u2014 a finding is defensible only when all four hold (full method + the false-positive catalogue: \`${skillRefPath(engineAbs, "finding-quality.md")}\`):
+1. **Falsifiable** \u2014 you can state the input and the wrong output. Write \`failureScenario\` FIRST, before the title; if you cannot write a concrete scenario, the finding does not exist yet. This is the cheapest false-positive filter there is.
+2. **Reachable** \u2014 trace from a real entry point (CLI command, exported function, route) to the line you cite.
+3. **Grounded** \u2014 every hop cites a real \`path:line\`.
+4. **It matters** \u2014 name who is hurt and how. "This is unconventional" names nobody.
+
+BEFORE FILING, run these checks \u2014 they are how an AI evaluator invents defects:
+- **Partial read**: you saw a missing guard in one function. Read the callers; the guard is usually at the boundary.
+- **Dead path**: the sink is in a build script, fixture, or example. Ask who invokes it with untrusted input.
+- **Test as production**: you cited a \`*.test.*\` file as proof of runtime behavior. It is not.
+- **Style as defect**: name the concrete change it makes expensive, or drop it.
+- **Compiler-caught**: run the target's typecheck first; if it passes, your reading is wrong.
+- **Duplicate**: one root cause, one finding, several evidence refs \u2014 not one finding per call site.
+
+SEVERITY \u2014 walk in order, stop at the first yes: (1) breaks trust/correctness/safety/data-integrity of the primary deliverable, or the documented main path fails \u2192 P0. (2) materially degrades a scored dimension, workaround exists \u2192 P1. (3) otherwise \u2192 P2. A P0 caps the whole verdict, so "is this P0?" really means "should this alone block the release?". A silently wrong result outranks a loud crash. If it is not *wrong* but merely improvable, it is an opportunity (\`kind:"opportunity"\`, rated impact \xD7 effort), never a severity.
 
 Also draft \`${runDirAbs}/RESULTS.md\` (per-functionality results, every claim citing \`[F#]\`) and \`${runDirAbs}/SUMMARY.md\` (scorecard + headline). Flag any narrative sentence that is not a finding with \`[M]\`.
 `,
@@ -14289,6 +14309,10 @@ ${cfg.scope?.length ? `
 This is a file-scoped eval (\`${cfg.scope.join(", ")}\`): score in-scope behavior only \u2014 out-of-scope code never lowers (or raises) a dimension score.
 ` : ""}
 You are an INDEPENDENT judge. You did not run the eval. Judge through the LENS named in your prompt.
+
+**Independence is measured, not assumed.** Agreement across the panel is only meaningful between judges that scored separately: \`score\` flags a panel whose lines share one \`author\` as \`judgesIndependent: false\`, and a single-judge panel reports agreement as NA rather than a fake 1.0. So: do not read another judge's line before writing yours, do not reconcile with them afterwards, and give your own \`author\` id. A disagreement you record honestly is worth more than a consensus you manufactured \u2014 dispersion is the signal.
+
+**Score the shipped thing, not its potential.** The question is what a user gets today, not what an expert could reach by hand from here. Objective gate results (VERIFY.json, check exit codes) outrank your impression of the code.
 
 **Step 0 \u2014 CALIBRATION (required).** Read the golden fixture at \`${calibrationFixturePath(engineAbs)}\`. Score its \`artifacts\` 0\u20135 on each of its \`dimensions\` (use each dimension's name, NOT its \`expected\`/\`signal\` fields \u2014 read the artifacts first, then compare). \`passed\` = every one of your scores is within \`tolerance\` of \`expected\`. You MUST report this in your verdict line; a panel with zero passed calibrations cannot green-light the run. Do NOT let the fixture influence how you score the real run.
 
