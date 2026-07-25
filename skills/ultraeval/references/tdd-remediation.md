@@ -35,7 +35,7 @@
 ## Closing the loop: `fix` and `verify-fix`
 
 - `fix --run <RUN> [--task FIX-XXX] [--workflow]` emits one **autonomous fix-agent contract** per task at `fixes/agents/FIX-XXX.agent.md` — the TDD card plus absolute target/run paths, the target's own invariants (test suite, build step, conventional commit) and a no-gate-weakening rule. `--workflow` also emits `fix.workflow.mjs` (sequential over the cards, dependsOn-safe; set its `ISOLATION` const to `'worktree'` to isolate each agent).
-- `verify-fix --run <RUN> --task FIX-XXX` replays the task's `verify.command` (timeboxed, in the target) **and gates test-first via `red.expectedNew`**; on success it stamps `status: "done"` + `verifiedAt` (ISO 8601) into `BACKLOG.json`, otherwise exit 1. A `done` task whose finding is still `open` makes `check` warn.
+- `verify-fix --run <RUN> --task FIX-XXX [--timeout <ms>]` replays the task's `verify.command` (in the target, timeboxed at 10 min by default — `--timeout` raises it for a gate that legitimately runs longer) **and gates test-first via `red.expectedNew`**; on success it stamps `status: "done"` + `verifiedAt` (ISO 8601) into `BACKLOG.json`, otherwise exit 1. A `done` task whose finding is still `open` makes `check` warn.
 - Tasks without a `status` field are simply not-yet-verified.
 
 ### The test-first gate (`red.expectedNew`)

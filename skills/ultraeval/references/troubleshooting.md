@@ -82,7 +82,7 @@ Every `judges.jsonl` line carries the same `author`. High agreement across one a
 Four separate vetoes exist: a live P0 defect, any judge voting no, a panel with zero passed calibrations (`judgesCalibrated: 0/N`), or a score below **the run's** bar — which is 80 by default but is set per run with `init --bar <n>`. Read the scorecard's verdict line; it names which one fired.
 
 **`compare` refuses to read a delta / warns about provenance.**
-Two runs are comparable only when `protocolVersion`, `rubricVersion` and the dimension ids/weights all match. A rubric change must never read as a quality delta. Note that `compare` does **not** flag a differing `meetsBar` — check that yourself before reporting a trend.
+Two runs are comparable only when `protocolVersion`, `rubricVersion` and the dimension ids/weights all match. A rubric change must never read as a quality delta. `compare` also warns on a differing `meetsBar`, a differing file scope, and a one-shot-vs-full pairing — the last of which `--gate` refuses outright.
 
 **A one-shot run cannot be gated.**
 `check --require-verify` refuses on a `oneshot` profile: there is no verify phase. Present the result as indicative, or upgrade in place with `plan --run <RUN>` (which removes `ONESHOT.md` and clears the profile).
@@ -92,11 +92,11 @@ Two runs are comparable only when `protocolVersion`, `rubricVersion` and the dim
 **`verify-fix` fails although the tests pass.**
 It gates test-first via `red.expectedNew`, and it fails closed. A test file that already existed when the backlog was generated is not a failing-test-first authored for this task, and a backlog predating the field cannot be verified at all — regenerate it with `backlog --run <RUN> --tdd`. Full table in `references/tdd-remediation.md`.
 
-**`verify-fix` hangs.**
-Its verify command runs through a shell with a fixed 10-minute timeout and there is no flag to change it. Make the card's `verify.command` narrow (the new test plus the suite), not a full CI pipeline.
+**`verify-fix` times out at 10 minutes.**
+That is the default backstop against a hung command, not a policy. If the target's real gate legitimately runs longer, raise it: `verify-fix --run <RUN> --task FIX-XXX --timeout 1800000`. Keep the card's `verify.command` to the new test plus the suite rather than a full CI pipeline.
 
 **`fix` cannot find `BACKLOG.json`.**
-`backlog --out <dir>` can write the backlog elsewhere, but `fix` and `verify-fix` only read it from `<RUN>`. Keep the backlog in the run dir.
+`backlog --out <dir>` wrote it elsewhere; `fix` and `verify-fix` read it from `<RUN>` only. `backlog` warns when `--out` diverges for exactly this reason — re-run without `--out`, or copy `BACKLOG.json` back into the run dir.
 
 ## cleanup
 

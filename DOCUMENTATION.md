@@ -163,12 +163,38 @@ byte-for-byte into `skills/ultraeval/scripts/` so `npx skills add` installs a wo
 install step. `check:build` rebuilds and asserts the committed bundle matches `src/`; `verify:bundle`
 asserts the install-bundle shape (no root SKILL.md, engine + references present).
 
+## The reference pack is enforced, not decorative
+
+The skill's substance lives in `skills/ultraeval/references/`. Three of those documents duplicate values
+that also exist in code, and that duplication used to drift silently — `protocol.md` said the severity
+table and `SEVERITY_DEFS` "MUST stay in sync", but that was prose, not a check. `tests/docs-drift.test.ts`
+now compares each pair against the engine's own values:
+
+- `rubric-library.md` ↔ `defaultDimensions()` — every set's dimension ids and weights, including what the
+  flavour categories (web, CLI) append to the base.
+- `live-scenarios.md` ↔ `LIVE_SCENARIOS` (`src/templates.ts`) — same categories, each with its five
+  normed fields.
+- the severity table in `protocol.md` ↔ `SEVERITY_DEFS` (`src/types.ts`) — labels and CVSS bands.
+- **surface coverage**: every command and flag `--help` advertises must appear in `SKILL.md` or
+  `references/`. `README.md` and `DOCUMENTATION.md` do not ship in the installed bundle, so a flag
+  documented only here is invisible to the agent that needs it.
+
+Two references carry the judgment the engine cannot: `methodology-library.md` (per dimension: the metric,
+how to measure it, 0–5 anchors, what fools it) turns the Research stage from a cold web search into a
+refinement pass — evaluation methodology is a property of the *category*, not of the target, so the
+generated `researcher` contract reads the pack by absolute path and searches only to close a gap.
+`finding-quality.md` carries the bar for a defensible finding, the severity decision procedure and the
+false-positive catalogue, and the `findings` contract embeds its pre-filing checks.
+
 ## Extending
 
 - New engine behavior: TDD in `tests/`, implement in `src/`, `pnpm run build`, keep `pnpm run eval`
   (the RED/GREEN probe) green. See [CONTRIBUTING](./CONTRIBUTING.md).
 - New rubric category: add a set in `src/rubrics.ts` and a matcher in `defaultDimensions`, document it in
-  `references/rubric-library.md`.
+  `references/rubric-library.md` **and** add its methodology block to `references/methodology-library.md`
+  — the drift test fails on the first, and a missing block sends the researcher back to a cold search.
+- New command or flag: document it in `SKILL.md` (the quick-reference table) or a reference — the surface
+  coverage test fails otherwise.
 
 ## Troubleshooting
 

@@ -136,6 +136,20 @@ describe("verify-fix — close the red-green loop", () => {
     expect(Number.isNaN(Date.parse(t.verifiedAt))).toBe(false);
   });
 
+  // The 10-minute default is a backstop against a hung command, not a policy on
+  // how long a real suite may take. A large repo's gate legitimately exceeds it,
+  // and with no way to raise it the only escape was to narrow the card's verify
+  // command — i.e. to verify less than the target's real gate.
+  it("honors an explicit timeout instead of the hardcoded 10-minute backstop", () => {
+    const { run } = scaffold({ verifyCommand: "node -e 'setTimeout(()=>{},5000)'" });
+    const started = process.hrtime.bigint();
+    const r = verifyFix(run, "FIX-001", { timeoutMs: 300 });
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(r.ok).toBe(false);
+    expect(elapsedMs).toBeLessThan(4000); // killed at ~300ms, not left to run its 5s
+    expect(r.reason ?? "").toMatch(/tim(e|ed)\s*-?out/i);
+  });
+
   it("fails (no status change) when the verify command exits non-zero", () => {
     const { run } = scaffold({ verifyCommand: "node -e 'process.exit(1)'" });
     const r = verifyFix(run, "FIX-001");

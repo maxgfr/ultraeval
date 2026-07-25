@@ -76,7 +76,23 @@ $ENGINE clean --run /tmp/eval                       # remove derived artifacts (
 
 **Modes.** `--mode audit` (defects, default) · `improve` (grounded improvement **opportunities** — internal health *and* product/capability, rated impact × effort) · `deep` (both). Opportunities are discovered by `analyze` → `brainstorm` and held to the *same* grounding gate, so a lead always anchors to real code or a real metric — never vague "rewrite everything". `render` shows an impact × effort matrix and flags quick wins.
 
-`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; métier/business/domain → business-logic dimensions only; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `init --scope "<glob[,glob]>"` file-scopes the eval: agents are bound to the globs and `check` fails a finding cited only outside them (tag `scope-exempt` to keep a justified cross-cutting one). `check` also validates the findings record's schema (id/severity/status/evidence/kind), not just grounding. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface. The grounding contract, orchestration, gate rules, and TDD-card format are documented under [`skills/ultraeval/references/`](./skills/ultraeval/references/).
+`init --category` auto-selects a fitting rubric (security → precision/recall/FP-rate; métier/business/domain → business-logic dimensions only; web → +accessibility/auth; research → faithfulness/retrieval; requirements → 29148). `init --scope "<glob[,glob]>"` file-scopes the eval: agents are bound to the globs and `check` fails a finding cited only outside them (tag `scope-exempt` to keep a justified cross-cutting one). `check` also validates the findings record's schema (id/severity/status/evidence/kind), not just grounding. `init --bar <n>` calibrates the meets-expectations threshold per run (default 80); it is stamped into the scorecard and the ledger, and `compare` warns when two runs were scored against different bars. Exit codes: **0** ok/gate-passed · **1** gate failed · **2** usage/runtime error. Run `node scripts/ultraeval.mjs --help` for the full flag surface.
+
+## The reference pack
+
+The skill is markdown first — [`skills/ultraeval/references/`](./skills/ultraeval/references/) is the substance, and `tests/docs-drift.test.ts` keeps it honest by comparing every rubric set, live-scenario block, severity row and CLI flag against the engine's own values.
+
+| reference | what it is for |
+|---|---|
+| [`protocol.md`](./skills/ultraeval/references/protocol.md) | the normative process (RFC-2119): phase entry/exit, gate thresholds, severities, provenance |
+| [`worked-example.md`](./skills/ultraeval/references/worked-example.md) | a real, reproducible end-to-end run — including the finding the gate rejects |
+| [`methodology-library.md`](./skills/ultraeval/references/methodology-library.md) | how to evaluate each dimension: metric, measurement, 0–5 anchors, what fools it — so Research refines instead of re-searching |
+| [`finding-quality.md`](./skills/ultraeval/references/finding-quality.md) | the bar for a defensible finding, the severity decision procedure, the false-positive catalogue |
+| [`gate-contract.md`](./skills/ultraeval/references/gate-contract.md) | `findings.json` schema, evidence grammar, exactly what `check`/`verify` fail and warn on |
+| [`tdd-remediation.md`](./skills/ultraeval/references/tdd-remediation.md) | `BACKLOG.json`, the TDD cards, and the `red.expectedNew` test-first gate |
+| [`rubric-library.md`](./skills/ultraeval/references/rubric-library.md) · [`live-scenarios.md`](./skills/ultraeval/references/live-scenarios.md) | starter dimensions and normed live scenarios, per category |
+| [`orchestration.md`](./skills/ultraeval/references/orchestration.md) · [`eval-playbook.md`](./skills/ultraeval/references/eval-playbook.md) · [`analysis-playbook.md`](./skills/ultraeval/references/analysis-playbook.md) | the workflow, the method, and how opportunities stay grounded |
+| [`troubleshooting.md`](./skills/ultraeval/references/troubleshooting.md) | symptom → cause → command when a run stalls or a gate goes red |
 
 **Auto-gitignore.** When the run dir (`--out`) sits inside a git repo, `init`/`oneshot` idempotently add it to that repo's `.gitignore` (the conventional `.ultraeval/` container gets one line covering all runs). `--no-gitignore` opts out; `evals/history.jsonl` — the committed score ledger — is never ignored.
 

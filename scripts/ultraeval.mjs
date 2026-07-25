@@ -2,7 +2,7 @@
 
 // src/cli.ts
 import { realpathSync as realpathSync3 } from "fs";
-import { join as join35 } from "path";
+import { join as join35, resolve as resolve6 } from "path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "url";
 
 // src/analyze.ts
@@ -13822,6 +13822,9 @@ function comparabilityWarnings(base, cur) {
   if (!base.cfg || !cur.cfg) return warnings;
   const rubric = (cfg) => JSON.stringify((cfg.dimensions ?? []).map((d) => [d.id, d.weight]));
   if (rubric(base.cfg) !== rubric(cur.cfg)) warnings.push("rubrics differ (dimension ids/weights) \u2014 scores are not directly comparable");
+  const barOf = (cfg) => cfg.meetsBar ?? MEETS_BAR;
+  if (barOf(base.cfg) !== barOf(cur.cfg))
+    warnings.push(`meets-expectations bars differ (${barOf(base.cfg)} \u2192 ${barOf(cur.cfg)}) \u2014 the same score can flip the verdict across these runs`);
   const bp = base.cfg.provenance;
   const cp = cur.cfg.provenance;
   if (bp && cp) {
@@ -15167,7 +15170,7 @@ var FLAG_SPEC = {
   verify: { run: "value", apply: "value", "max-verify": "value", shards: "value", shard: "value", honeypots: "value" },
   backlog: { run: "value", tdd: "boolean", out: "value" },
   fix: { run: "value", task: "value", workflow: "boolean" },
-  "verify-fix": { run: "value", task: "value" },
+  "verify-fix": { run: "value", task: "value", timeout: "value" },
   score: { run: "value", json: "boolean", history: "optional-value" },
   history: { run: "value", file: "value", json: "boolean" },
   rejudge: { run: "value", out: "value" },
@@ -15256,10 +15259,11 @@ Commands:
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
              paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
-  verify-fix --run <run> --task FIX-XXX
-             Replay the task's verify command (timeboxed) + gate test-first via red.expectedNew; stamps status
-             done + verifiedAt in BACKLOG.json on success, exit 1 otherwise. Fails closed on a legacy backlog
-             with no expectedNew \u2014 regenerate it with backlog --tdd.
+  verify-fix --run <run> --task FIX-XXX [--timeout <ms>]
+             Replay the task's verify command (timeboxed, default 600000 ms) + gate test-first via
+             red.expectedNew; stamps status done + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+             --timeout raises it for a repo whose real gate runs longer than 10 minutes.
+             Fails closed on a legacy backlog with no expectedNew \u2014 regenerate it with backlog --tdd.
   status   --run <run> [--json]
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
@@ -15278,7 +15282,7 @@ Commands:
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
-  help | --help        version | --version
+  help | --help | -h        version | --version | -v
 
 Exit codes: 0 = ok / gate passed \xB7 1 = gate failed \xB7 2 = usage or runtime error.
   Exit 1 comes from: check \xB7 verify --apply \xB7 compare --gate \xB7 verify-fix \xB7 brainstorm --rank --check.
@@ -15468,8 +15472,11 @@ function cmdVerify(args2) {
 function cmdBacklog(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("backlog requires --run <run>");
-  const bl = buildBacklog(run2, { tdd: !!args2.tdd, out: str2(args2.out) });
-  console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args2.tdd ? " + TDD cards" : ""} -> ${str2(args2.out) ?? run2}`);
+  const out2 = str2(args2.out);
+  const bl = buildBacklog(run2, { tdd: !!args2.tdd, out: out2 });
+  console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args2.tdd ? " + TDD cards" : ""} -> ${out2 ?? run2}`);
+  if (out2 && resolve6(out2) !== resolve6(run2))
+    console.log(`warning: BACKLOG.json was written outside the run \u2014 fix and verify-fix read ${join35(run2, "BACKLOG.json")} only, and will not find it there`);
 }
 function cmdStatus(args2) {
   const run2 = str2(args2.run);
@@ -15513,7 +15520,8 @@ function cmdVerifyFix(args2) {
   const run2 = str2(args2.run);
   const task = str2(args2.task);
   if (!run2 || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
-  const res = verifyFix(run2, task);
+  const timeoutMs = num(args2.timeout, "timeout");
+  const res = verifyFix(run2, task, timeoutMs !== void 0 ? { timeoutMs } : {});
   console.log(formatVerifyFix(res));
   process.exitCode = res.ok ? 0 : 1;
 }

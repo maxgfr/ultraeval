@@ -7,7 +7,11 @@ The goal is a verdict you can trust and a fix plan a model can execute. Two evid
 
 ## Stages
 
-1. **Research (per dimension).** Find the *state of the art for evaluating this kind of target*, not just the target. For a RAG/skill: faithfulness / citation precision-recall / hallucination rate (RAGAS, attributable-to-source). For a SAST tool: precision/recall vs OWASP Benchmark / Juliet, false-positive rate, reachability. For requirements: INVEST, ISO/IEC/IEEE 29148. For an a11y checker: WCAG/ACT-Rules coverage, axe comparison. Distil each into a 0–5 rubric with anchors. Each dimension already carries a machine-readable `anchors[]` referential — refine it with cited justification, never silently drop it (`references/protocol.md`).
+1. **Research (per dimension).** Establish the *state of the art for evaluating this kind of target*, not facts about the target. **Start from `references/methodology-library.md`** — it already carries, per dimension: the metric, how to obtain it on a real target, 0–5 anchors, and what fools the metric (RAGAS faithfulness for a RAG/skill; precision/recall/FPR vs OWASP Benchmark or Juliet for a SAST tool; the ISO/IEC/IEEE 29148 characteristics for requirements; WCAG 2.2 AA + ACT Rules for a11y). That pack is the baseline rubric.
+
+   Web-search **only** to close a gap the pack leaves, to re-check a figure that could have moved, or when no block covers the category — the methodology for a category does not change between targets, so rediscovering it every run is pure cost. No network is not a blocker: derive the rubric from the pack, say so in the note, and continue.
+
+   Each dimension already carries a machine-readable `anchors[]` referential — refine it with cited justification, never silently drop it (`references/protocol.md`).
 
 2. **Test plan.** Enumerate EVERY functionality: modes, subcommands, flags, gates, and the live end-to-end behavior — mapped to dimensions, each with a concrete command/prompt and pass criteria.
 

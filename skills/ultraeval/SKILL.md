@@ -65,7 +65,7 @@ At any point, `status --run <RUN>` (`--json` for CI) prints the pipeline checkli
 | `verify` | `--run --apply --max-verify --shards --shard --honeypots` | `VERIFY.todo[.i].json`, `VERIFY.json` | `--apply` exits 1 |
 | `backlog` | `--run --tdd --out` | `BACKLOG.json`, `REMEDIATION.md`, `fixes/FIX-*.md` | — |
 | `fix` | `--run --task --workflow` | `fixes/agents/FIX-*.agent.md`, `fix.workflow.mjs` | — |
-| `verify-fix` | `--run --task` | stamps `status: done` in `BACKLOG.json` | **exit 1** |
+| `verify-fix` | `--run --task --timeout <ms>` | stamps `status: done` in `BACKLOG.json` | **exit 1** |
 | `score` | `--run --json --history [file]` | `scorecard.json` + ledger line | — |
 | `history` | `--run --file <f> [<path>] --json` | nothing | — |
 | `compare` | `--run --base --json --gate` | `COMPARE.md` | `--gate` exits 1 |
@@ -74,7 +74,7 @@ At any point, `status --run <RUN>` (`--json` for CI) prints the pipeline checkli
 | `status` | `--run --json` | nothing | — |
 | `clean` | `--run --all` | removes derived artifacts (`--all`: the run) | — |
 
-`--no-html` / `--no-md` narrow the dashboard to one format; `--sarif` emits SARIF 2.1.0 for code scanning. `history --file <f>` (or a bare path) reads a ledger other than the run-anchored default.
+`--no-html` / `--no-md` narrow the dashboard to one format; `--sarif` emits SARIF 2.1.0 for code scanning. `history --file <f>` (or a bare path) reads a ledger other than the run-anchored default. `backlog --out` writes the backlog outside the run and warns, because `fix`/`verify-fix` read it from `<RUN>` only.
 
 ## Cost & depth
 
@@ -179,7 +179,7 @@ Exit codes across the CLI: **0** ok / gate passed · **1** gate failed · **2** 
 node <skill-dir>/scripts/ultraeval.mjs fix --run <RUN> [--task FIX-XXX] [--workflow]   # one autonomous fix-agent contract per task (fixes/agents/FIX-*.agent.md)
 node <skill-dir>/scripts/ultraeval.mjs verify-fix --run <RUN> --task FIX-XXX           # replay the task's verify command; stamps status done + verifiedAt
 ```
-Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `dependsOn`; `--workflow` emits a sequential `fix.workflow.mjs`). The contract embeds the TDD card, absolute paths, the target's invariants and a no-gate-weakening rule. `verify-fix` closes the loop: it re-runs the task's verify command (timeboxed at 10 min, no override) and **gates test-first via `red.expectedNew`** before marking the task `done` in `BACKLOG.json` — a RED test that already existed when the backlog was generated fails, and a backlog predating the field fails closed asking to be regenerated. Full table: `references/tdd-remediation.md`.
+Dispatch each `fixes/agents/FIX-XXX.agent.md` to a build agent (respect `dependsOn`; `--workflow` emits a sequential `fix.workflow.mjs`). The contract embeds the TDD card, absolute paths, the target's invariants and a no-gate-weakening rule. `verify-fix` closes the loop: it re-runs the task's verify command (timeboxed at 10 min by default, `--timeout <ms>` to raise it for a slower gate) and **gates test-first via `red.expectedNew`** before marking the task `done` in `BACKLOG.json` — a RED test that already existed when the backlog was generated fails, and a backlog predating the field fails closed asking to be regenerated. Full table: `references/tdd-remediation.md`.
 
 **PR gating (diff-scoped runs).** `init --target <repo> --out <RUN> --since origin/main` scopes the eval to the changed set: the executor/findings/brainstormer contracts work only on changed behavior and `check` warns on findings citing unchanged files (`--strict-scope` promotes that warning to a hard failure). Gate the PR with `compare --run <RUN> --base <previous-run> --gate` (exit 1 on score drop or a new P0).
 

@@ -28,6 +28,8 @@ This is objective substrate: every opportunity can cite a metric's subject file 
 2. Fill `opportunities.json`: `{ opportunities: [ { dimension?, impact: high|med|low, effort: S|M|L, title, statement, recommendation, evidence: [{ ref }] } ] }`. Every one anchors to a real `file:line` or `analysis:<file>`.
 3. `brainstorm --run <RUN> --rank` dedups, ranks by **value = impact / effort**, and folds them into `findings.json` as `kind:"opportunity"` with a backlog priority derived from impact: **high → P1, med/low → P2** (opportunities are never P0). Malformed or duplicate entries are skipped and reported, not silently folded. `check` then gates them; drop any that do not resolve.
 
+> That `P1`/`P2` is an **ordering key for the backlog**, not a severity claim — it decides where the card lands in the queue, nothing more. An opportunity never caps `meetsExpectations` the way a P1 *defect* weighs on a dimension. If what you found is genuinely *wrong* rather than improvable, it is a defect and belongs in the audit half (`references/finding-quality.md`).
+
 ## Opportunities vs defects
 
 Both are Findings, both are grounded and gated. Differences:

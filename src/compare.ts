@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { EvalConfig, Finding, FindingsDoc, Scorecard } from "./types.js";
+import { MEETS_BAR } from "./types.js";
 import { exists, parseEvidenceRef, provLine, readJson, titleKey, writeText } from "./util.js";
 
 interface Side {
@@ -40,6 +41,13 @@ function comparabilityWarnings(base: Side, cur: Side): string[] {
   if (!base.cfg || !cur.cfg) return warnings; // legacy side — nothing to compare against
   const rubric = (cfg: EvalConfig) => JSON.stringify((cfg.dimensions ?? []).map((d) => [d.id, d.weight]));
   if (rubric(base.cfg) !== rubric(cur.cfg)) warnings.push("rubrics differ (dimension ids/weights) — scores are not directly comparable");
+  // meetsExpectations is `overall >= the run's OWN bar` (init --bar). Two runs
+  // scored against different bars can show a zero delta while the verdict
+  // flipped, so the raw score delta is not the whole story — same class as a
+  // rubric change reading as a quality change.
+  const barOf = (cfg: EvalConfig) => cfg.meetsBar ?? MEETS_BAR;
+  if (barOf(base.cfg) !== barOf(cur.cfg))
+    warnings.push(`meets-expectations bars differ (${barOf(base.cfg)} → ${barOf(cur.cfg)}) — the same score can flip the verdict across these runs`);
   const bp = base.cfg.provenance;
   const cp = cur.cfg.provenance;
   if (bp && cp) {

@@ -92,6 +92,69 @@ describe("cli — a gate can never be disarmed by a bad flag value", () => {
   });
 });
 
+describe("cli — backlog --out warns that it breaks the fix loop", () => {
+  // `fix` and `verify-fix` read BACKLOG.json from <run> ONLY. Writing it
+  // elsewhere leaves the run without one, and the next command fails with
+  // "no BACKLOG.json — run `backlog` first" — which the user just did. Warn at
+  // the point of divergence instead of letting them debug it two steps later.
+  it("names the consequence when --out diverges from --run", () => {
+    const dir = sampleRun();
+    const other = mkdtempSync(join(tmpdir(), "ue-blout-"));
+    tmps.push(other);
+    const r = run(["backlog", "--run", dir, "--out", other]);
+    expect(r.status).toBe(0);
+    expect(r.out).toMatch(/verify-fix/);
+    expect(r.out).toMatch(/BACKLOG\.json/);
+  });
+
+  it("stays quiet when --out is the run dir itself", () => {
+    const dir = sampleRun();
+    const r = run(["backlog", "--run", dir, "--out", dir]);
+    expect(r.status).toBe(0);
+    expect(r.out).not.toMatch(/will not find/);
+  });
+});
+
+describe("cli — verify-fix --timeout reaches the spawned command", () => {
+  // verifyFix() has always accepted a timeoutMs, but no flag reached it: the
+  // 10-minute backstop was effectively policy. A repo whose real gate runs
+  // longer had no option but to narrow the card's verify command — i.e. to
+  // verify less than the gate it claims to replay.
+  it("accepts --timeout and kills a long command well before the 10-minute default", () => {
+    const dir = sampleRun();
+    writeFileSync(
+      join(dir, "BACKLOG.json"),
+      JSON.stringify({
+        target: ROOT,
+        generatedFrom: dir,
+        tasks: [
+          {
+            id: "FIX-001",
+            findingId: "F1",
+            priority: "P1",
+            title: "t",
+            targets: ["src/cli.ts"],
+            red: { testFile: "tests/cli.test.ts", expectedNew: false, description: "d" },
+            green: { change: "c" },
+            verify: { command: "node -e 'setTimeout(()=>{},8000)'" },
+            dependsOn: [],
+          },
+        ],
+      }),
+    );
+    const started = Date.now();
+    const r = run(["verify-fix", "--run", dir, "--task", "FIX-001", "--timeout", "400"]);
+    expect(r.status).not.toBe(2); // not "unknown flag --timeout"
+    expect(Date.now() - started).toBeLessThan(6000); // killed at ~400ms, not left to run
+  });
+
+  it("rejects a non-numeric --timeout rather than silently using the default", () => {
+    const r = run(["verify-fix", "--run", sampleRun(), "--task", "FIX-001", "--timeout", "soon"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toMatch(/--timeout/);
+  });
+});
+
 describe("cli — verify --honeypots reports the actually-planted count, not the requested one", () => {
   it("prints the planted count when planting succeeds", () => {
     const r = run(["verify", "--run", sampleRun(), "--honeypots", "2"]);

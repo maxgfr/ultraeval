@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { changedFiles, runAnalyze } from "./analyze.js";
 import { buildBacklog } from "./backlog.js";
@@ -67,10 +67,11 @@ Commands:
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
              paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
-  verify-fix --run <run> --task FIX-XXX
-             Replay the task's verify command (timeboxed) + gate test-first via red.expectedNew; stamps status
-             done + verifiedAt in BACKLOG.json on success, exit 1 otherwise. Fails closed on a legacy backlog
-             with no expectedNew — regenerate it with backlog --tdd.
+  verify-fix --run <run> --task FIX-XXX [--timeout <ms>]
+             Replay the task's verify command (timeboxed, default 600000 ms) + gate test-first via
+             red.expectedNew; stamps status done + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
+             --timeout raises it for a repo whose real gate runs longer than 10 minutes.
+             Fails closed on a legacy backlog with no expectedNew — regenerate it with backlog --tdd.
   status   --run <run> [--json]
              Pipeline checklist (which artifacts exist) + the exact next command to run.
   score    --run <run> [--json] [--history [file]]
@@ -89,7 +90,7 @@ Commands:
   clean    --run <run> [--all]
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
-  help | --help        version | --version
+  help | --help | -h        version | --version | -v
 
 Exit codes: 0 = ok / gate passed · 1 = gate failed · 2 = usage or runtime error.
   Exit 1 comes from: check · verify --apply · compare --gate · verify-fix · brainstorm --rank --check.
@@ -316,8 +317,14 @@ function cmdVerify(args: Args): void {
 function cmdBacklog(args: Args): void {
   const run = str(args.run);
   if (!run) throw new Error("backlog requires --run <run>");
-  const bl = buildBacklog(run, { tdd: !!args.tdd, out: str(args.out) });
-  console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${str(args.out) ?? run}`);
+  const out = str(args.out);
+  const bl = buildBacklog(run, { tdd: !!args.tdd, out });
+  console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args.tdd ? " + TDD cards" : ""} -> ${out ?? run}`);
+  // `fix`/`verify-fix` read BACKLOG.json from the RUN dir only, so writing it
+  // elsewhere silently detaches the closed loop. Say so here, not two commands
+  // later when the user is told to run the command they just ran.
+  if (out && resolve(out) !== resolve(run))
+    console.log(`warning: BACKLOG.json was written outside the run — fix and verify-fix read ${join(run, "BACKLOG.json")} only, and will not find it there`);
 }
 
 function cmdStatus(args: Args): void {
@@ -372,7 +379,8 @@ function cmdVerifyFix(args: Args): void {
   const run = str(args.run);
   const task = str(args.task);
   if (!run || !task) throw new Error("verify-fix requires --run <run> and --task FIX-XXX");
-  const res = verifyFix(run, task);
+  const timeoutMs = num(args.timeout, "timeout");
+  const res = verifyFix(run, task, timeoutMs !== undefined ? { timeoutMs } : {});
   console.log(formatVerifyFix(res));
   process.exitCode = res.ok ? 0 : 1;
 }

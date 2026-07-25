@@ -45,7 +45,7 @@ export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
   verify: { run: "value", apply: "value", "max-verify": "value", shards: "value", shard: "value", honeypots: "value" },
   backlog: { run: "value", tdd: "boolean", out: "value" },
   fix: { run: "value", task: "value", workflow: "boolean" },
-  "verify-fix": { run: "value", task: "value" },
+  "verify-fix": { run: "value", task: "value", timeout: "value" },
   score: { run: "value", json: "boolean", history: "optional-value" },
   history: { run: "value", file: "value", json: "boolean" },
   rejudge: { run: "value", out: "value" },

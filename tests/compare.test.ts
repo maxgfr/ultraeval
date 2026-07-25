@@ -25,7 +25,7 @@ afterEach(() => {
 
 const f = (title: string, ref = "a:1") => ({ id: "F1", severity: "P1", title, statement: "s", evidence: [{ ref }], status: "confirmed" });
 
-function withConfig(dir: string, dimensions: any[], provenance?: any): string {
+function withConfig(dir: string, dimensions: any[], provenance?: any, extra: Record<string, unknown> = {}): string {
   writeFileSync(
     join(dir, "eval.config.json"),
     JSON.stringify({
@@ -36,6 +36,7 @@ function withConfig(dir: string, dimensions: any[], provenance?: any): string {
       dimensions,
       version: "1.0.0",
       ...(provenance ? { provenance } : {}),
+      ...extra,
     }),
   );
   return dir;
@@ -70,6 +71,26 @@ describe("compare — profile/scope comparability", () => {
     const r = compareRuns(base, cur);
     expect(r.warnings.join(" ")).toMatch(/scope/);
     expect(gateFailures(r)).toEqual([]);
+  });
+
+  // meetsExpectations is `overall >= the run's own bar`, and `init --bar` sets
+  // that bar per run. So an unchanged `overall` across two different bars can
+  // flip the verdict while the delta reads 0 — the exact "a config change reads
+  // as a quality change" failure the other comparability warnings exist to stop.
+  it("warns when the two runs were scored against different meets-expectations bars", () => {
+    const base = withConfig(runDir([f("bug A")], 85), dims, prov(), { meetsBar: 90 });
+    const cur = withConfig(runDir([f("bug A")], 85), dims, prov(), { meetsBar: 80 });
+    const r = compareRuns(base, cur);
+    expect(r.warnings.join(" ")).toMatch(/bar/i);
+    expect(r.warnings.join(" ")).toMatch(/90/);
+    expect(r.warnings.join(" ")).toMatch(/80/);
+  });
+
+  it("treats an absent meetsBar as the default bar, so a default-vs-default pair is silent", () => {
+    const base = withConfig(runDir([f("bug A")], 80), dims, prov());
+    const cur = withConfig(runDir([f("bug A")], 84), dims, prov(), { meetsBar: 80 });
+    const r = compareRuns(base, cur);
+    expect(r.warnings.join(" ")).not.toMatch(/bar/i);
   });
 
   it("two one-shot runs compare without a profile warning", () => {
