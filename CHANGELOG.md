@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.18.0](https://github.com/maxgfr/ultraeval/compare/v1.17.0...v1.18.0) (2026-07-25)
+
+
+### Features
+
+* **skill:** drop the unvalidated discipline apparatus, add the rule the tests earned ([8ad679a](https://github.com/maxgfr/ultraeval/commit/8ad679a2715bdb26cf0db615ff984fe160aa4dd3))
+
 # [1.17.0](https://github.com/maxgfr/ultraeval/compare/v1.16.0...v1.17.0) (2026-07-25)
 
 
