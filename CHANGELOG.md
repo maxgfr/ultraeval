@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.19.0](https://github.com/maxgfr/ultraeval/compare/v1.18.0...v1.19.0) (2026-07-26)
+
+
+### Features
+
+* **engine:** re-pin codeindex v2.20.1 ([9a61d59](https://github.com/maxgfr/ultraeval/commit/9a61d59185b515ea2f2bd459d8d452e862a42a57))
+
 # [1.18.0](https://github.com/maxgfr/ultraeval/compare/v1.17.0...v1.18.0) (2026-07-25)
 
 
