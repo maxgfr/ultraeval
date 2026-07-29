@@ -21,6 +21,8 @@ import { VERSION } from "./types.js";
 import { type Args, COMMAND_FLAGS, num, parse, str } from "./cliargs.js";
 import { exists, readJson, resolveTargetAbs } from "./util.js";
 import { applyVerdicts, formatVerifyReport, runVerify } from "./verify.js";
+import { runStdioServer } from "./mcp/stdio.js";
+import { startHttpServer, type RunningHttpServer } from "./mcp/http.js";
 
 const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then generate grounded, AI-exploitable TDD fix docs.
 
@@ -88,6 +90,11 @@ Commands:
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
+  mcp      [--transport stdio|http] [--run <run>] [--allow-write] [--port <n>] [--bind <addr>]
+           [--allow-origin <o,...>] [--allow-remote] [--max-response-bytes <n>]
+           Serve the evaluation over the Model Context Protocol, so a non-Claude-Code
+           host (Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
+           and SKILL.md + references/ as resources. Read-only unless --allow-write.
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
   help | --help | -h        version | --version | -v
@@ -403,6 +410,61 @@ function cmdRender(args: Args): void {
   console.log(`ultraeval render:\n${written.map((w) => `  ${w}`).join("\n")}`);
 }
 
+// Serve the run over the Model Context Protocol. Unlike every other handler
+// this one blocks for the life of the server, so main() awaits it — and it must
+// never print to stdout, which every other handler does by design.
+function cmdMcp(args: Args): void {
+  const transport = str(args.transport) ?? "stdio";
+  if (transport !== "stdio" && transport !== "http") throw new Error(`invalid --transport "${transport}" (expected: stdio, http)`);
+  const maxRaw = str(args["max-response-bytes"]);
+  const maxResponseBytes = maxRaw === undefined ? undefined : Number(maxRaw);
+  if (maxResponseBytes !== undefined && (!Number.isFinite(maxResponseBytes) || maxResponseBytes <= 0)) throw new Error("invalid --max-response-bytes");
+  const options = {
+    // A default run makes `run` optional on every tool, for a server dedicated
+    // to one evaluation.
+    defaultRun: str(args.run),
+    allowWrite: !!args["allow-write"],
+    maxResponseBytes,
+  };
+
+  if (transport === "stdio") {
+    // Nothing is written to stdout here: from this point stdout carries
+    // JSON-RPC frames only, and runStdioServer guards that.
+    mcpServing = runStdioServer(options);
+    return;
+  }
+
+  const port = str(args.port) ? Number(str(args.port)) : 7344;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("invalid --port");
+  const originRaw = str(args["allow-origin"]);
+  const allowOrigin = originRaw
+    ? originRaw
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : undefined;
+
+  mcpServing = startHttpServer({ ...options, port, bind: str(args.bind), allowOrigin, allowRemote: !!args["allow-remote"] }).then(
+    (running: RunningHttpServer) => {
+      // stderr, not stdout: an HTTP server's stdout is not a protocol stream, but
+      // keeping the two transports identical here means no one has to remember
+      // which is which.
+      console.error(`ultraeval: MCP server listening on ${running.url}`);
+      console.error(`  client: claude mcp add --transport http ultraeval ${running.url}`);
+      for (const sig of ["SIGINT", "SIGTERM"] as const) {
+        process.once(sig, () => {
+          void running.close().then(() => process.exit(0));
+        });
+      }
+      return new Promise<void>((res) => running.server.once("close", res));
+    },
+  );
+}
+
+// Set by cmdMcp: the promise that resolves when the server stops. main() awaits
+// it so the process does not fall through while it is still listening.
+let mcpServing: Promise<void> | undefined;
+
 function cmdClean(args: Args): void {
   const run = str(args.run);
   if (!run) throw new Error("clean requires --run <run>");
@@ -431,9 +493,10 @@ export const commandHandlers: Record<string, (args: Args, cmd: string) => void> 
   rejudge: cmdRejudge,
   render: cmdRender,
   clean: cmdClean,
+  mcp: cmdMcp,
 };
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parse(process.argv.slice(2));
   const cmd = args._[0];
   if (args.version || cmd === "version") {
@@ -461,6 +524,8 @@ function main(): void {
       return;
     }
     handler(args, cmd);
+    // `mcp` is the one handler that keeps running after it returns.
+    if (mcpServing) return mcpServing;
   } catch (e) {
     console.error(`ultraeval ${cmd}: ${(e as Error).message}`);
     process.exitCode = 2;
@@ -478,4 +543,9 @@ function isEntrypoint(): boolean {
   }
 }
 
-if (isEntrypoint()) main();
+if (isEntrypoint()) {
+  main().catch((e) => {
+    console.error(`ultraeval: ${(e as Error).message}`);
+    process.exitCode = 2;
+  });
+}

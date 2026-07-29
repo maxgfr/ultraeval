@@ -98,6 +98,80 @@ The skill is markdown first — [`skills/ultraeval/references/`](./skills/ultrae
 
 **One-shot evals.** `oneshot` scaffolds a single-pass run (`ONESHOT.md`: one agent, all dimensions in one pass, findings in the same gated schema). The structural `check` gate still applies; verify/judges are out of contract, so the verdict is indicative — the full pipeline stays the default, and `plan --run <run>` upgrades a oneshot run in place.
 
+## Use it as an MCP server
+
+The skill shells out to the CLI and parses its output. An MCP server skips both:
+your agent calls ultraeval as typed tools, with JSON schemas in and structured
+results out. Same engine, same run directory, no wrapper.
+
+```bash
+# stdio — the default, and what Claude Code / Claude Desktop / Cursor expect
+claude mcp add ultraeval -- node /abs/path/to/scripts/ultraeval.mjs mcp
+
+# or over HTTP, on loopback
+node scripts/ultraeval.mjs mcp --transport http --port 7344
+claude mcp add --transport http ultraeval http://127.0.0.1:7344/mcp
+```
+
+```jsonc
+// Claude Desktop takes stdio servers only — a remote URL here will not work.
+{ "mcpServers": { "ultraeval": { "command": "node", "args": ["/abs/path/to/scripts/ultraeval.mjs", "mcp"] } } }
+// Cursor, HTTP:
+{ "mcpServers": { "ultraeval": { "url": "http://127.0.0.1:7344/mcp" } } }
+```
+
+It serves all three MCP primitives, because a skill is three things: the engine
+(**tools**), the method (**prompts**), and the documentation the method refers
+to (**resources**). Here that matters directly: `score` is a pure reduction of
+the judgements *recorded in the run*, so a client given only the tools produces
+an empty scorecard and reports it as a grade.
+
+### Tools
+
+| Tool | What it does |
+|------|--------------|
+| `ultraeval_status` | Where the run got to, and the exact next command |
+| `ultraeval_analyze` | Hotspots, churn, test and doc gaps — where to LOOK, not what to conclude |
+| `ultraeval_check` | The anti-hallucination gate: every finding must resolve to a real file:line |
+| `ultraeval_verify` | Adversarial worklist, shardable, with **honeypots** that catch rubber-stamping |
+| `ultraeval_backlog` | Verified findings → TDD fix cards |
+| `ultraeval_score` | Reduce the recorded judgements into a scorecard |
+| `ultraeval_compare` | Diff two runs; a score drop or a new P0 is a regression |
+| `ultraeval_history` | The score trend over time |
+| `ultraeval_read` | A file, or a line range, from the run or the target |
+
+`--allow-write` additionally exposes `ultraeval_init`, `ultraeval_render`,
+`ultraeval_clean` (destructive) and `ultraeval_verify_fix`. That last one is the
+only tool in the family that **executes the target's own commands** — it is
+annotated open-world and non-idempotent for exactly that reason, so point it
+only at a target you trust.
+
+Pass `--run <run>` at startup to dedicate the server to one evaluation — `run`
+then becomes optional on every tool except `ultraeval_clean`, which never
+inherits a target it was not given.
+
+### Prompts — the workflow, not just the tools
+
+| Prompt | Arguments | What it drives |
+|--------|-----------|----------------|
+| `evaluate_skill` | `run` | analyze → research per dimension → check → verify with honeypots → score → backlog |
+| `write_findings` | `run`, `dimension?` | Test the behaviour, not the documentation; report what you could not determine |
+| `judge_dimension` | `run`, `dimension?` | Grade on evidence — and treat agreeing with everything as the signal it is |
+
+### Resources — the skill's own documentation
+
+`SKILL.md` and the `references/*.md` are served under `skill://`, read off disk
+at request time — so a documentation fix reaches every client without a rebuild.
+
+Two things worth knowing:
+
+- **Calls on one run are serialized.** `verify --apply`, `backlog`, `score` and
+  `verify-fix` are all read-merge-write over the same findings, and sharding
+  skeptics across a worklist is exactly the parallel pattern this server invites.
+- **The HTTP transport binds `127.0.0.1` and refuses anything else** unless you
+  pass `--allow-remote`. This server reads local files and can run a target's
+  test command; an exposed port is a run-anything primitive for whoever finds it.
+
 ## Why the gate matters
 
 The failure mode of every "AI evaluates X" tool is confident, ungrounded findings. ultraeval makes that structurally hard: `check` opens each cited `file:line` in the target and fails if it does not exist or is out of range; `verify` then asks a skeptic whether the content actually supports the claim, and `check --semantic --require-verify` is the exit gate. A fix backlog you cannot trace back to real code is worse than none.

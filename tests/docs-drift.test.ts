@@ -214,15 +214,24 @@ describe("docs drift — the engine surface is documented in the skill", () => {
   const help = execFileSync("node", [BUNDLE, "--help"], { encoding: "utf8" });
 
   // Meta flags every CLI has; documenting them would be noise.
-  const EXEMPT = new Set(["--help", "--version"]);
+  // The `mcp` surface is exempt on the same reasoning that motivates this
+  // whole suite. It exists because a command or flag the agent cannot see is
+  // one it cannot use — but the agent driving SKILL.md uses the CLI, and
+  // `ultraeval mcp` serves OTHER hosts (Cursor, Zed, Claude Desktop) that never
+  // read SKILL.md. Documenting it there would push this agent toward a path it
+  // has no use for. It is documented in README.md instead, which is where
+  // someone wiring up an MCP client actually looks.
+  const MCP_ONLY_FLAGS = ["--transport", "--port", "--bind", "--allow-origin", "--max-response-bytes", "--allow-write", "--allow-remote"];
+  const MCP_ONLY_COMMANDS = ["mcp"];
+  const EXEMPT = new Set(["--help", "--version", ...MCP_ONLY_FLAGS]);
 
   it("every command the engine advertises appears in the skill docs", () => {
     const commands = help
       .split("\n")
-      .map((l) => /^ {2}([a-z][a-z-]+) {2,}--/.exec(l)?.[1])
+      .map((l) => /^ {2}([a-z][a-z-]+) {2,}[[-]/.exec(l)?.[1])
       .filter((c): c is string => Boolean(c));
     expect(commands.length).toBeGreaterThan(10); // the extractor still works
-    const missing = commands.filter((c) => !shipped.includes(c));
+    const missing = commands.filter((c) => !MCP_ONLY_COMMANDS.includes(c) && !shipped.includes(c));
     expect(missing, `commands in --help but not in SKILL.md/references: ${missing.join(", ")}`).toEqual([]);
   });
 
@@ -231,5 +240,26 @@ describe("docs drift — the engine surface is documented in the skill", () => {
     expect(flags.length).toBeGreaterThan(20); // the extractor still works
     const missing = flags.filter((f) => !shipped.includes(f));
     expect(missing, `flags in --help but not in SKILL.md/references: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("keeps the MCP surface out of the skill docs, not merely absent from them", () => {
+    // The exemptions above are a decision, not an oversight. If someone later
+    // documents `--transport` in SKILL.md, that decision has been reversed and
+    // should be reversed deliberately — so this fails and makes them say so.
+    for (const f of MCP_ONLY_FLAGS) {
+      expect(shipped.includes(f), `${f} is an MCP-server flag; the skill drives the CLI and should not mention it`).toBe(false);
+    }
+  });
+
+  it("still sees the mcp command, so the exemption is real rather than a regex accident", () => {
+    // The command extractor used to require `  <name>  --`, which `mcp` misses
+    // because its first token is `[--transport`. That made it invisible by
+    // luck, not by decision — the pattern now matches both, so the exemption
+    // above is what excludes it.
+    const commands = help
+      .split("\n")
+      .map((l) => /^ {2}([a-z][a-z-]+) {2,}[[-]/.exec(l)?.[1])
+      .filter((c): c is string => Boolean(c));
+    expect(commands).toContain("mcp");
   });
 });

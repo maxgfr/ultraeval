@@ -27,6 +27,18 @@ export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
   },
   oneshot: { target: "value", out: "value", kind: "value", category: "value", bar: "value", scope: "value", "no-gitignore": "boolean" },
   plan: { run: "value", eco: "boolean" },
+  // `mcp` serves the run over the Model Context Protocol. Registered here like
+  // every other command, so its flags are validated by the same allow-list.
+  mcp: {
+    run: "value",
+    transport: "value",
+    port: "value",
+    bind: "value",
+    "allow-origin": "value",
+    "max-response-bytes": "value",
+    "allow-write": "boolean",
+    "allow-remote": "boolean",
+  },
   orchestrate: { run: "value", eco: "boolean" }, // family-wide alias for plan
 
   analyze: { run: "value", since: "value", json: "boolean", target: "value", out: "value" },

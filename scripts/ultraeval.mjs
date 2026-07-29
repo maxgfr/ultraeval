@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 // src/cli.ts
-import { realpathSync as realpathSync3 } from "fs";
-import { join as join39, resolve as resolve6 } from "path";
-import { fileURLToPath as fileURLToPath3, pathToFileURL as pathToFileURL3 } from "url";
+import { realpathSync as realpathSync5 } from "fs";
+import { join as join41, resolve as resolve8 } from "path";
+import { fileURLToPath as fileURLToPath4, pathToFileURL as pathToFileURL3 } from "url";
 
 // src/analyze.ts
 import { join as join20 } from "path";
@@ -3617,8 +3617,8 @@ function parseAnyPredicate(steps, index, operator, textPredicates) {
         if (c2.name === captureName1) nodes1.push(c2.node);
         if (c2.name === captureName2) nodes2.push(c2.node);
       }
-      const compare = /* @__PURE__ */ __name((n1, n2, positive) => {
-        return positive ? n1.text === n2.text : n1.text !== n2.text;
+      const compare = /* @__PURE__ */ __name((n1, n2, positive2) => {
+        return positive2 ? n1.text === n2.text : n1.text !== n2.text;
       }, "compare");
       return matchAll ? nodes1.every((n1) => nodes2.some((n2) => compare(n1, n2, isPositive))) : nodes1.some((n1) => nodes2.some((n2) => compare(n1, n2, isPositive)));
     });
@@ -3662,8 +3662,8 @@ function parseMatchPredicate(steps, index, operator, textPredicates) {
     for (const c2 of captures) {
       if (c2.name === captureName) nodes.push(c2.node.text);
     }
-    const test = /* @__PURE__ */ __name((text, positive) => {
-      return positive ? regex.test(text) : !regex.test(text);
+    const test = /* @__PURE__ */ __name((text, positive2) => {
+      return positive2 ? regex.test(text) : !regex.test(text);
     }, "test");
     if (nodes.length === 0) return !isPositive;
     return matchAll ? nodes.every((text) => test(text, isPositive)) : nodes.some((text) => test(text, isPositive));
@@ -10182,14 +10182,14 @@ function buildEmbeddingIndex(scan2, model) {
   return { embedVersion: EMBED_VERSION, modelId: model.modelId, dim: model.dim, records };
 }
 function serializeEmbeddings(index) {
-  const header = JSON.stringify({
+  const header2 = JSON.stringify({
     embedVersion: index.embedVersion,
     modelId: index.modelId,
     dim: index.dim,
     count: index.records.length,
     records: index.records.map((r) => ({ file: r.file, symbol: r.symbol ?? "", line: r.line ?? 0 }))
   });
-  const headerBuf = Buffer.from(header, "utf8");
+  const headerBuf = Buffer.from(header2, "utf8");
   const body2 = Buffer.alloc(index.records.length * index.dim);
   let off = 0;
   for (const r of index.records) {
@@ -10208,10 +10208,10 @@ function deserializeEmbeddings(bytes) {
     throw new Error("embeddings.bin: bad magic (not a codeindex embeddings artifact)");
   }
   const headerLen = buf.readUInt32LE(4);
-  const header = JSON.parse(buf.toString("utf8", 8, 8 + headerLen));
+  const header2 = JSON.parse(buf.toString("utf8", 8, 8 + headerLen));
   const bodyOff = 8 + headerLen;
-  const { dim } = header;
-  const records = header.records.map((m, i2) => {
+  const { dim } = header2;
+  const records = header2.records.map((m, i2) => {
     const vec = new Int8Array(dim);
     for (let d = 0; d < dim; d++) vec[d] = buf.readInt8(bodyOff + i2 * dim + d);
     const rec = { file: m.file, vec };
@@ -10219,7 +10219,7 @@ function deserializeEmbeddings(bytes) {
     if (m.line) rec.line = m.line;
     return rec;
   });
-  return { embedVersion: header.embedVersion, modelId: header.modelId, dim, records };
+  return { embedVersion: header2.embedVersion, modelId: header2.modelId, dim, records };
 }
 var MAGIC;
 var init_embed = __esm({
@@ -10605,9 +10605,9 @@ function renderRepoMap(scan2, graph, opts = {}) {
   const maxSymbols = opts.maxSymbolsPerFile ?? 8;
   const ranked = [...graph.files].filter((f) => f.fileKind === "code").sort((a, b) => (b.pagerank ?? 0) - (a.pagerank ?? 0) || b.symbols - a.symbols || byStr(a.rel, b.rel));
   const records = new Map(scan2.files.map((f) => [f.rel, f]));
-  const header = `# repo map \u2014 ${graph.fileCount} files
+  const header2 = `# repo map \u2014 ${graph.fileCount} files
 `;
-  let out2 = header;
+  let out2 = header2;
   let files = 0;
   for (const node of ranked) {
     const rec = records.get(node.rel);
@@ -16549,6 +16549,18 @@ var FLAG_SPEC = {
   },
   oneshot: { target: "value", out: "value", kind: "value", category: "value", bar: "value", scope: "value", "no-gitignore": "boolean" },
   plan: { run: "value", eco: "boolean" },
+  // `mcp` serves the run over the Model Context Protocol. Registered here like
+  // every other command, so its flags are validated by the same allow-list.
+  mcp: {
+    run: "value",
+    transport: "value",
+    port: "value",
+    bind: "value",
+    "allow-origin": "value",
+    "max-response-bytes": "value",
+    "allow-write": "boolean",
+    "allow-remote": "boolean"
+  },
   orchestrate: { run: "value", eco: "boolean" },
   // family-wide alias for plan
   analyze: { run: "value", since: "value", json: "boolean", target: "value", out: "value" },
@@ -16608,6 +16620,1162 @@ function num2(v, flag) {
 }
 function str2(v) {
   return typeof v === "string" ? v : void 0;
+}
+
+// src/mcp/stdio.ts
+import { createInterface as createInterface2 } from "readline";
+
+// src/mcp/handlers.ts
+import { existsSync as existsSync9, readFileSync as readFileSync10, realpathSync as realpathSync3, statSync as statSync6 } from "fs";
+import { isAbsolute as isAbsolute6, join as join39, resolve as resolve6, sep as sep5 } from "path";
+
+// src/run-lock.ts
+var chains = /* @__PURE__ */ new Map();
+function withRunLock(dir, fn) {
+  const prev = chains.get(dir) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  const tail = next.then(noop, noop);
+  chains.set(dir, tail);
+  tail.then(() => {
+    if (chains.get(dir) === tail) chains.delete(dir);
+  }, noop);
+  return next;
+}
+function noop() {
+}
+
+// src/mcp/handlers.ts
+var ToolError = class extends Error {
+};
+var MAX_READ_LINES = 2e3;
+var MAX_READ_BYTES = 8 * 1024 * 1024;
+var WRITE_TOOL_NAMES = /* @__PURE__ */ new Set(["ultraeval_init", "ultraeval_render", "ultraeval_verify_fix", "ultraeval_clean"]);
+function str3(v) {
+  return typeof v === "string" && v.trim() !== "" ? v : void 0;
+}
+function num3(v) {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : void 0;
+}
+function bool(v) {
+  return v === true || v === "true";
+}
+function strArray2(v) {
+  const a = Array.isArray(v) && v.every((x) => typeof x === "string") ? v : void 0;
+  return a && a.length ? a : void 0;
+}
+function positive(v, key2) {
+  const n = num3(v);
+  if (n === void 0) return void 0;
+  if (n <= 0) throw new ToolError(`\`${key2}\` must be greater than 0.`);
+  return n;
+}
+function requiredStr(args2, key2, hint) {
+  const v = str3(args2[key2]);
+  if (!v) throw new ToolError(`\`${key2}\` is required \u2014 ${hint}`);
+  return v;
+}
+function requiredRun(args2, defaults) {
+  const run2 = str3(args2.run) ?? defaults.defaultRun;
+  if (!run2) throw new ToolError("`run` is required: the evaluation run directory.");
+  if (!isAbsolute6(run2)) throw new ToolError("`run` must be an absolute path.");
+  const abs = resolve6(run2);
+  if (!existsSync9(join39(abs, "eval.config.json"))) {
+    throw new ToolError(`no evaluation run at ${abs} \u2014 scaffold one first with ultraeval_init (it writes there).`);
+  }
+  return abs;
+}
+function targetOf(run2) {
+  try {
+    const cfg = JSON.parse(readFileSync10(join39(run2, "eval.config.json"), "utf8"));
+    return typeof cfg.target === "string" ? cfg.target : void 0;
+  } catch {
+    return void 0;
+  }
+}
+async function callTool2(name2, args2, defaults = {}) {
+  if (WRITE_TOOL_NAMES.has(name2) && !defaults.allowWrite) {
+    throw new ToolError(`${name2} writes to your filesystem and is disabled \u2014 start the server with --allow-write to enable it.`);
+  }
+  if (name2 === "ultraeval_init") return outcome(handleInit(args2));
+  const run2 = requiredRun(args2, defaults);
+  return await withRunLock(run2, async () => {
+    try {
+      return outcome(dispatch(name2, args2, run2));
+    } catch (e) {
+      if (e instanceof ToolError) throw e;
+      throw new ToolError(e.message);
+    }
+  });
+}
+function dispatch(name2, args2, run2) {
+  switch (name2) {
+    case "ultraeval_status":
+      return { run: run2, ...statusRun(run2) };
+    case "ultraeval_analyze":
+      return handleAnalyze(args2, run2);
+    case "ultraeval_check":
+      return handleCheck(args2, run2);
+    case "ultraeval_verify":
+      return handleVerify(args2, run2);
+    case "ultraeval_backlog":
+      return handleBacklog(args2, run2);
+    case "ultraeval_score":
+      return handleScore(run2);
+    case "ultraeval_compare":
+      return handleCompare(args2, run2);
+    case "ultraeval_history":
+      return handleHistory(run2);
+    case "ultraeval_render":
+      return handleRender(args2, run2);
+    case "ultraeval_verify_fix":
+      return handleVerifyFix(args2, run2);
+    case "ultraeval_clean":
+      return { run: run2, removed: clean(run2, { all: bool(args2.all) }) };
+    case "ultraeval_read":
+      return handleRead(args2, run2);
+    default:
+      throw new ToolError(`unknown tool: ${name2}`);
+  }
+}
+function outcome(result) {
+  return { text: JSON.stringify(result, null, 2) + "\n", artifact: artifactFor(result) };
+}
+function artifactFor(result) {
+  if (typeof result !== "object" || result === null) return void 0;
+  const r = result;
+  if (typeof r.path === "string") return r.path;
+  return Array.isArray(r.written) && typeof r.written[0] === "string" ? r.written[0] : void 0;
+}
+function handleInit(args2) {
+  const target = requiredStr(args2, "target", "an absolute path to the skill or codebase to evaluate.");
+  const out2 = requiredStr(args2, "out", "an absolute path for the run directory.");
+  if (!isAbsolute6(target)) throw new ToolError("`target` must be an absolute path.");
+  if (!isAbsolute6(out2)) throw new ToolError("`out` must be an absolute path.");
+  if (!existsSync9(target)) throw new ToolError(`target not found: ${target}`);
+  const kind = str3(args2.kind);
+  if (kind !== void 0 && kind !== "skill" && kind !== "codebase") throw new ToolError(`\`kind\` must be one of: skill, codebase (got "${kind}")`);
+  const mode = str3(args2.mode);
+  if (mode !== void 0 && !["audit", "improve", "deep"].includes(mode)) throw new ToolError(`\`mode\` must be one of: audit, improve, deep (got "${mode}")`);
+  const res = initRun({
+    target,
+    out: out2,
+    kind,
+    mode,
+    bar: positive(args2.bar, "bar"),
+    since: str3(args2.since),
+    scope: strArray2(args2.scope)
+  });
+  return {
+    run: res.runDir,
+    kind: res.cfg.kind,
+    dimensions: res.cfg.dimensions?.length ?? 0,
+    next: "The engine scaffolded the run and nothing more. Research each dimension against the real target, write findings that cite file:line, then prove them with ultraeval_check \u2014 an empty run scores nothing, which is a fact about the run and not a grade."
+  };
+}
+function handleAnalyze(args2, run2) {
+  const target = targetOf(run2);
+  if (!target) throw new ToolError(`could not read the target from ${join39(run2, "eval.config.json")}.`);
+  const since = str3(args2.since);
+  let onlyFiles;
+  if (since) {
+    onlyFiles = changedFiles(target, since);
+    if (!onlyFiles.size) throw new ToolError(`no files changed since "${since}" \u2014 nothing to analyze. Drop \`since\` to analyze the whole target.`);
+  }
+  const analysis = runAnalyze(target, run2, onlyFiles ? { onlyFiles } : {});
+  return {
+    run: run2,
+    target,
+    ...since ? { since, scoped_files: onlyFiles?.size } : {},
+    analysis,
+    next: "This is where to LOOK. Every finding still has to be earned by reading the code."
+  };
+}
+function handleRender(args2, run2) {
+  const written = render(run2, {});
+  if (bool(args2.sarif)) written.push(writeSarif(run2));
+  return { run: run2, written };
+}
+function handleCheck(args2, run2) {
+  const res = checkRun(run2, {
+    semantic: bool(args2.semantic),
+    requireVerify: bool(args2.require_verify),
+    strict: bool(args2.strict),
+    minFindings: positive(args2.min_findings, "min_findings")
+  });
+  return { run: run2, ...res };
+}
+function handleVerify(args2, run2) {
+  const shards = positive(args2.shards, "shards");
+  const shard = num3(args2.shard);
+  if (shards !== void 0 && shard !== void 0 && (shard < 0 || shard >= shards)) {
+    throw new ToolError(`\`shard\` must be between 0 and ${shards - 1}.`);
+  }
+  const res = runVerify(run2, {
+    maxVerify: positive(args2.max_verify, "max_verify"),
+    shards,
+    shard,
+    honeypots: positive(args2.honeypots, "honeypots")
+  });
+  return {
+    ...res,
+    run: run2,
+    next: "Adjudicate each pair against the real code. Any honeypots planted here are traps: grading one 'supported' fails the fold, which is how a rubber-stamped adjudication gets caught."
+  };
+}
+function handleBacklog(args2, run2) {
+  return { run: run2, ...buildBacklog(run2, { tdd: bool(args2.tdd) }) };
+}
+function handleScore(run2) {
+  const card = scoreRun(run2);
+  return {
+    run: run2,
+    ...card,
+    note: "A pure reduction of the judgements recorded in this run. With none recorded it scores nothing \u2014 that is a fact about the run, not a grade."
+  };
+}
+function handleCompare(args2, run2) {
+  const base = requiredStr(args2, "base", "the baseline run directory to compare against.");
+  if (!isAbsolute6(base)) throw new ToolError("`base` must be an absolute path.");
+  if (!existsSync9(join39(base, "eval.config.json"))) throw new ToolError(`no evaluation run at ${base}.`);
+  return { run: run2, base, ...runCompare(base, run2, run2) };
+}
+function handleHistory(run2) {
+  const target = targetOf(run2);
+  const file = join39(run2, "..", "evals", "history.jsonl");
+  if (!existsSync9(file)) return { run: run2, target, entries: [], note: "No history recorded yet \u2014 it accrues one line per scored run." };
+  const entries = readFileSync10(file, "utf8").split("\n").filter((l) => l.trim()).map((l) => {
+    try {
+      return JSON.parse(l);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  return { run: run2, target, entries };
+}
+function handleVerifyFix(args2, run2) {
+  const task = requiredStr(args2, "task", "the fix task id (e.g. FIX-003).");
+  const res = verifyFix(run2, task, { timeoutMs: positive(args2.timeout_ms, "timeout_ms") });
+  return { run: run2, task, ...res };
+}
+function handleRead(args2, run2) {
+  const raw = requiredStr(args2, "path", "relative to the run, or an absolute path inside the run or the target.");
+  const target = targetOf(run2);
+  const abs = isAbsolute6(raw) ? raw : join39(run2, raw);
+  let real;
+  try {
+    real = realpathSync3(abs);
+  } catch {
+    throw new ToolError(`no such file: ${raw}`);
+  }
+  const roots = [run2, ...target ? [target] : []].map((d) => {
+    try {
+      return realpathSync3(d);
+    } catch {
+      return resolve6(d);
+    }
+  });
+  if (!roots.some((root) => real === root || real.startsWith(root + sep5))) {
+    throw new ToolError(`path is outside the run and its target: ${raw}. Use your own file tool for anything else.`);
+  }
+  const st = statSync6(real);
+  if (!st.isFile()) throw new ToolError(`not a file: ${raw}`);
+  if (st.size > MAX_READ_BYTES) throw new ToolError(`file is too large to read (${st.size} bytes): ${raw}`);
+  const lines = readFileSync10(real, "utf8").split("\n");
+  const total = lines.length;
+  const start2 = Math.max(1, Math.floor(num3(args2.start_line) ?? 1));
+  if (start2 > total) throw new ToolError(`start_line ${start2} is past the end of the file (${total} lines).`);
+  const requestedEnd = Math.floor(num3(args2.end_line) ?? total);
+  const end = Math.min(total, Math.max(start2, requestedEnd), start2 + MAX_READ_LINES - 1);
+  return {
+    path: isAbsolute6(raw) ? real : raw,
+    start_line: start2,
+    end_line: end,
+    total_lines: total,
+    truncated: end < Math.min(total, requestedEnd),
+    content: lines.slice(start2 - 1, end).join("\n")
+  };
+}
+
+// src/mcp/protocol.ts
+var PROTOCOL_VERSIONS2 = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
+var LATEST_PROTOCOL2 = PROTOCOL_VERSIONS2[PROTOCOL_VERSIONS2.length - 1];
+var ASSUMED_HTTP_PROTOCOL = "2025-03-26";
+var ANNOTATIONS_SINCE2 = "2025-03-26";
+var RICH_TOOLS_SINCE2 = "2025-06-18";
+var DEFAULT_MAX_RESPONSE_BYTES2 = 1e6;
+function isProtocolVersion(v) {
+  return typeof v === "string" && PROTOCOL_VERSIONS2.includes(v);
+}
+function negotiateProtocol2(requested) {
+  return isProtocolVersion(requested) ? requested : LATEST_PROTOCOL2;
+}
+function validateArgs2(schema, args2) {
+  for (const key2 of schema.required) {
+    const v = args2[key2];
+    if (v === void 0 || v === null || v === "") return `\`${key2}\` is required`;
+  }
+  for (const [key2, value] of Object.entries(args2)) {
+    if (value === void 0 || value === null) continue;
+    const spec = schema.properties[key2];
+    if (!spec?.type) continue;
+    const actual = Array.isArray(value) ? "array" : typeof value;
+    if (spec.type === "number") {
+      if (actual === "number") continue;
+      if (actual === "string" && value.trim() !== "" && Number.isFinite(Number(value))) continue;
+      return `\`${key2}\` must be a number, got ${actual === "string" ? JSON.stringify(value) : actual}`;
+    }
+    if (spec.type === "array") {
+      if (actual !== "array") return `\`${key2}\` must be an array, got ${actual}`;
+      const arr = value;
+      if (spec.items?.type === "string" && !arr.every((x) => typeof x === "string")) {
+        return `\`${key2}\` must be an array of strings`;
+      }
+      if (spec.enum) {
+        const bad = arr.find((x) => typeof x === "string" && !spec.enum.includes(x));
+        if (bad !== void 0) return `\`${key2}\` contains "${String(bad)}" \u2014 allowed: ${spec.enum.join(", ")}`;
+      }
+      continue;
+    }
+    if (actual !== spec.type) return `\`${key2}\` must be a ${spec.type}, got ${actual}`;
+    if (spec.enum && typeof value === "string" && !spec.enum.includes(value)) {
+      return `\`${key2}\` must be one of: ${spec.enum.join(", ")}`;
+    }
+  }
+  return void 0;
+}
+var NARROWER2 = {
+  ultraeval_analyze: "narrow with `scope`, or diff-scope it with `since`",
+  ultraeval_verify: "lower `max_verify`, or split the worklist with `shards`/`shard`",
+  ultraeval_backlog: "read the backlog file at the returned path instead of inlining it",
+  ultraeval_check: "the findings set is very large; raise `min_findings` scope instead of inlining",
+  ultraeval_render: "read the rendered file at the returned path instead of inlining it",
+  ultraeval_read: "pass `start_line`/`end_line` to read a window instead of the whole file"
+};
+function capResponse2(text, tool, maxBytes, artifact) {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes <= maxBytes) return text;
+  return JSON.stringify(
+    {
+      truncated: true,
+      tool,
+      bytes,
+      maxBytes,
+      reason: "This response exceeds the configured limit and was withheld rather than sent as an unusable partial payload.",
+      narrower: NARROWER2[tool] ?? "narrow the request and call again",
+      ...artifact ? { artifact, artifactNote: "The full result is on disk here \u2014 read it directly if you need all of it." } : {}
+    },
+    null,
+    2
+  ) + "\n";
+}
+function structuredContentFor2(text, capped, hasSchema) {
+  if (capped || !hasSchema) return void 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return void 0;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return void 0;
+  return parsed;
+}
+var LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+function isOriginAllowed(origin, allowed = []) {
+  if (origin === void 0) return true;
+  const o = origin.trim();
+  if (o === "" || o === "null") return true;
+  if (LOOPBACK_ORIGIN.test(o)) return true;
+  return allowed.some((a) => a === "*" || a.toLowerCase() === o.toLowerCase());
+}
+
+// src/mcp/tools.ts
+var runProp = { type: "string", description: "The evaluation run directory." };
+var JUDGMENT_NOTE = "The engine scaffolds the run and reduces what you write; the research, the findings and the judgement are yours.";
+var TOOLS2 = [
+  {
+    name: "ultraeval_status",
+    title: "Where the run got to, and the next command",
+    description: "Read the run's pipeline state: which stages have output, which are still empty, and the exact next step. Start here on any run you did not just create \u2014 an evaluation has many stages and this is the cheapest way to find where one stopped.",
+    inputSchema: { type: "object", properties: { run: runProp }, required: ["run"] }
+  },
+  {
+    name: "ultraeval_analyze",
+    title: "Map the target before judging it",
+    description: "Deterministic survey of the target: hotspots, dependencies, churn, test and documentation gaps. This is context for the evaluation, not a verdict \u2014 it tells you where to look, and every finding still has to be earned by reading the code.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: runProp,
+        since: { type: "string", description: "Diff-scope the analysis to changes since this git ref." },
+        scope: { type: "array", items: { type: "string" }, description: "Target-relative globs to scope the analysis to." }
+      },
+      required: ["run"]
+    }
+  },
+  {
+    name: "ultraeval_check",
+    title: "The anti-hallucination gate",
+    description: "Prove every finding resolves to a real file:line inside the target. A finding citing a line that does not exist is an invented finding, and this is what catches it. A result with ok:false is a real verdict, not a tool failure. " + JUDGMENT_NOTE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: runProp,
+        semantic: { type: "boolean", description: "Also fold in the recorded verify verdicts." },
+        require_verify: { type: "boolean", description: "Fail when no verdicts have been recorded yet." },
+        strict: { type: "boolean", description: "Fail on any finding that is not fully grounded." },
+        min_findings: { type: "number", description: "Fail when the run holds fewer findings than this." }
+      },
+      required: ["run"]
+    }
+  },
+  {
+    name: "ultraeval_verify",
+    title: "Build an adversarial verify worklist",
+    description: "Emit a finding-by-evidence worklist for skeptics to adjudicate. Supports sharding, so several skeptics can work in parallel, and HONEYPOTS \u2014 planted trap pairs whose 'supported' verdict fails the fold, which is how you find out the adjudication was rubber-stamped.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: runProp,
+        max_verify: { type: "number", description: "Cap on the number of pairs emitted (default 60)." },
+        shards: { type: "number", description: "Split the worklist into this many shards." },
+        shard: { type: "number", description: "Which shard to emit, 0-based." },
+        honeypots: { type: "number", description: "How many trap pairs to plant. A trap graded 'supported' fails the fold." }
+      },
+      required: ["run"]
+    }
+  },
+  {
+    name: "ultraeval_backlog",
+    title: "Turn findings into a TDD fix backlog",
+    description: "Convert verified findings into fix cards a developer or agent can pick up: what is wrong, the failing test to write first, and what proves it fixed. Run it after the citations pass \u2014 a backlog built on ungrounded findings is a list of invented work.",
+    inputSchema: {
+      type: "object",
+      properties: { run: runProp, tdd: { type: "boolean", description: "Emit test-first cards (red \u2192 green \u2192 refactor)." } },
+      required: ["run"]
+    }
+  },
+  {
+    name: "ultraeval_score",
+    title: "Reduce the judgements into a scorecard",
+    description: "Compute the run's 0-100 score and its meets-expectations verdict from the recorded judge lines. It is a pure reduction OF WHAT YOU WROTE \u2014 with no judgements recorded it scores nothing, which is a fact about the run and not a passing grade.",
+    inputSchema: { type: "object", properties: { run: runProp }, required: ["run"] }
+  },
+  {
+    name: "ultraeval_compare",
+    title: "Compare two runs, and gate on a regression",
+    description: "Diff a new run against a baseline: score movement, findings resolved, findings introduced. Use it to gate a PR \u2014 a drop in score or a new P0 is a regression, and this is what names it.",
+    inputSchema: {
+      type: "object",
+      properties: { run: runProp, base: { type: "string", description: "The baseline run directory to compare against." } },
+      required: ["run", "base"]
+    }
+  },
+  {
+    name: "ultraeval_history",
+    title: "The score trend over time",
+    description: "Read back the committed score history for a target \u2014 how the evaluation has moved across runs. Writes nothing.",
+    inputSchema: { type: "object", properties: { run: runProp }, required: ["run"] }
+  },
+  {
+    name: "ultraeval_read",
+    title: "Read a file from the run or the target",
+    description: "Read a file, or a line range of one, from the run directory or the target being evaluated. Use it to read the real code behind a finding before judging it. Reads are confined to those two roots; anything else is your own file tool's job.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: runProp,
+        path: { type: "string", description: "Path relative to the run, or an absolute path inside the run or the target." },
+        start_line: { type: "number", description: "First line to return, 1-based (default 1)." },
+        end_line: { type: "number", description: "Last line to return, inclusive (default: end of file, capped)." }
+      },
+      required: ["run", "path"]
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        start_line: { type: "number" },
+        end_line: { type: "number" },
+        total_lines: { type: "number" },
+        truncated: { type: "boolean" },
+        content: { type: "string" }
+      },
+      required: ["path", "start_line", "end_line", "total_lines", "truncated", "content"]
+    }
+  }
+];
+var WRITE_TOOLS = [
+  {
+    name: "ultraeval_init",
+    title: "Scaffold an evaluation run",
+    description: "WRITES TO DISK: create the run directory, detect whether the target is a skill or a codebase, and stamp the dimensions the evaluation will be graded on. Gitignores the run dir in the repo that holds it. " + JUDGMENT_NOTE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Absolute path to the skill or codebase to evaluate." },
+        out: { type: "string", description: "Absolute path for the run directory." },
+        kind: { type: "string", enum: ["skill", "codebase"], description: "Override the detected kind." },
+        mode: { type: "string", enum: ["audit", "improve", "deep"], description: "How deep to go. Default: audit." },
+        bar: { type: "number", description: "The category-calibrated meets-expectations bar." },
+        since: { type: "string", description: "Diff-scope the eval to changes since this git ref." },
+        scope: { type: "array", items: { type: "string" }, description: "Target-relative globs to scope the eval to." }
+      },
+      required: ["target", "out"]
+    }
+  },
+  {
+    name: "ultraeval_render",
+    title: "Render the evaluation report",
+    description: "WRITES TO DISK: render the run to index.html, index.md and a SARIF file a code-scanning tool can ingest.",
+    inputSchema: {
+      type: "object",
+      properties: { run: runProp, sarif: { type: "boolean", description: "Also emit eval.sarif (SARIF 2.1.0)." } },
+      required: ["run"]
+    }
+  },
+  {
+    name: "ultraeval_verify_fix",
+    title: "Replay a fix task's verification",
+    description: "EXECUTES CODE: runs the verification command a fix card declares \u2014 the target's own tests \u2014 and stamps the task done when it passes. It runs whatever that repository's test command is, so only point it at a target you trust. Timeboxed at ten minutes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: runProp,
+        task: { type: "string", description: "The fix task id (e.g. FIX-003)." },
+        timeout_ms: { type: "number", description: "Cap the run (default 600000)." }
+      },
+      required: ["run", "task"]
+    }
+  },
+  {
+    name: "ultraeval_clean",
+    title: "Delete derived artifacts",
+    description: "DESTRUCTIVE: removes the run's derived artifacts. With all:true it removes everything, including worklists you have not yet folded back in. There is no undo.",
+    inputSchema: {
+      type: "object",
+      properties: { run: runProp, all: { type: "boolean", description: "Remove everything, not just the derived artifacts." } },
+      required: ["run"]
+    }
+  }
+];
+var TOOL_META2 = {
+  ultraeval_status: { openWorld: false },
+  ultraeval_analyze: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_check: { openWorld: false },
+  ultraeval_verify: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_backlog: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_score: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_compare: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_history: { openWorld: false },
+  ultraeval_read: { openWorld: false },
+  ultraeval_init: { write: true, destructive: false, idempotent: true, openWorld: false },
+  ultraeval_render: { write: true, destructive: false, idempotent: true, openWorld: false },
+  // Runs the target's own test command in a subprocess.
+  ultraeval_verify_fix: { write: true, destructive: false, idempotent: false, openWorld: true },
+  ultraeval_clean: { write: true, destructive: true, idempotent: true, openWorld: false }
+};
+function annotationsFor2(name2) {
+  const meta = TOOL_META2[name2];
+  if (!meta) return void 0;
+  return {
+    readOnlyHint: !meta.write,
+    ...meta.write ? { destructiveHint: meta.destructive === true, idempotentHint: meta.idempotent === true } : {},
+    openWorldHint: meta.openWorld === true
+  };
+}
+function toolsFor2(protocolVersion, opts = {}) {
+  const base = opts.allowWrite ? [...TOOLS2, ...WRITE_TOOLS] : TOOLS2;
+  const withAnnotations = protocolVersion >= ANNOTATIONS_SINCE2;
+  const withRich = protocolVersion >= RICH_TOOLS_SINCE2;
+  return base.map((t) => {
+    const decl = {
+      name: t.name,
+      description: t.description,
+      // A destructive delete never inherits a run the caller didn't name.
+      inputSchema: t.name === "ultraeval_clean" ? t.inputSchema : applyDefaultRun(t.inputSchema, opts.defaultRun)
+    };
+    if (withRich && t.title) decl.title = t.title;
+    if (withRich && t.outputSchema) decl.outputSchema = t.outputSchema;
+    if (withAnnotations) {
+      const a = annotationsFor2(t.name);
+      if (a) decl.annotations = a;
+    }
+    return decl;
+  });
+}
+function applyDefaultRun(schema, defaultRun) {
+  const existing = schema.properties.run;
+  if (!defaultRun || !existing) return schema;
+  return {
+    type: "object",
+    properties: {
+      ...schema.properties,
+      run: { ...existing, description: `${existing.description} Optional \u2014 defaults to ${defaultRun}.` }
+    },
+    required: schema.required.filter((r) => r !== "run")
+  };
+}
+
+// src/mcp/prompts.ts
+var PromptError = class extends Error {
+};
+var runArg = { name: "run", description: "The evaluation run directory.", required: true };
+var PROMPTS = [
+  {
+    name: "evaluate_skill",
+    title: "Evaluate a skill or codebase, end to end",
+    description: "The full evaluation workflow: survey the target, research each dimension against the real thing, write findings that cite file:line, verify them adversarially, and only then score.",
+    arguments: [runArg]
+  },
+  {
+    name: "write_findings",
+    title: "Research one dimension into findings",
+    description: "The research workflow for a single dimension: test the target's actual behaviour rather than reading its documentation, and write findings someone could act on without trusting you.",
+    arguments: [runArg, { name: "dimension", description: "The dimension to research.", required: false }]
+  },
+  {
+    name: "judge_dimension",
+    title: "Judge a dimension on its evidence",
+    description: "The judging workflow: grade a dimension against what the findings actually establish \u2014 including the honeypots, which exist to catch a panel that graded without reading.",
+    arguments: [runArg, { name: "dimension", description: "The dimension to judge.", required: false }]
+  }
+];
+function getPrompt(name2, args2 = {}) {
+  const decl = PROMPTS.find((p) => p.name === name2);
+  if (!decl) throw new PromptError(`unknown prompt: ${name2 || "(none given)"}`);
+  for (const arg of decl.arguments) {
+    if (arg.required && !str4(args2[arg.name])) throw new PromptError(`\`${arg.name}\` is required for prompt "${name2}"`);
+  }
+  const text = name2 === "evaluate_skill" ? evaluateSkill(args2) : name2 === "write_findings" ? writeFindings(args2) : judgeDimension(args2);
+  return { description: decl.description, messages: [{ role: "user", content: { type: "text", text } }] };
+}
+var CORE_RULE = `The engine scaffolds the run and reduces what you write; the research, the findings and the judgement are yours. ultraeval_score is a pure reduction of the judgements RECORDED in the run \u2014 with none recorded it scores nothing, and that is a fact about the run rather than a passing grade. Every finding cites a file:line that resolves.`;
+var GATE = `\`ultraeval_check\` returning \`ok: false\` is a VERDICT, not a tool failure. A finding citing a line that does not exist is an invented finding, and that is exactly what the gate exists to catch. Fix it or drop it, and check again.`;
+function evaluateSkill(args2) {
+  const run2 = str4(args2.run);
+  return `Evaluate the target of the run at \`${run2}\`.
+
+${CORE_RULE}
+
+**Sequence:**
+
+1. \`ultraeval_status\` \u2014 where the run got to and what is still empty.
+2. \`ultraeval_analyze\` \u2014 hotspots, churn, dependency and test gaps. This is where to LOOK, not what to conclude.
+3. Per dimension: research it against the real target, then write findings that cite file:line. \`ultraeval_read\` opens the target's own code.
+4. \`ultraeval_check\` \u2014 prove every citation resolves before spending anything on verification.
+5. \`ultraeval_verify\` with \`honeypots\` \u2014 adjudicate each finding adversarially. The traps catch an adjudication done without reading.
+6. \`ultraeval_score\`, then \`ultraeval_backlog\` with \`tdd: true\` to turn what survived into work someone can pick up.
+
+**Evaluate the target, not its documentation.** A README claiming a behaviour is evidence about the README. Run the thing, read the code that implements the claim, and cite that.
+
+**A finding is not an opinion.** It names what is wrong, where, and what it costs \u2014 and someone who disagrees with you can check it. "Could be better organised" is not a finding; "these three modules each re-implement the retry policy, at [a.ts:40], [b.ts:88], [c.ts:12], so a fix has to land in three places" is.
+
+${GATE}`;
+}
+function writeFindings(args2) {
+  const run2 = str4(args2.run);
+  const dimension = str4(args2.dimension);
+  return `Research ${dimension ? `the \`${dimension}\` dimension` : "the next unresearched dimension"} of the run at \`${run2}\`.
+
+${CORE_RULE}
+
+**Sequence:**
+
+1. \`ultraeval_status\` to see which dimensions still have nothing${dimension ? "" : ", and take the first"}.
+2. \`ultraeval_analyze\` if you have not yet \u2014 it points at the files worth opening.
+3. \`ultraeval_read\` the target's real code. Test the behaviour where you can: the claim you are checking is about what it DOES.
+4. Write the findings, each citing a file:line.
+5. \`ultraeval_check\`.
+
+**Look for what is actually wrong, not what differs from a template.** A missing file is only a finding if its absence costs something you can name. Conversely, the worst problems rarely look like violations: the interface that cannot express a real case, the invariant nothing enforces, the error path nobody has run.
+
+**Report what you could NOT determine.** A dimension you could not evaluate is a real result, and saying so is what stops a thin evaluation from reading like a clean one.
+
+${GATE}`;
+}
+function judgeDimension(args2) {
+  const run2 = str4(args2.run);
+  const dimension = str4(args2.dimension);
+  return `Judge ${dimension ? `the \`${dimension}\` dimension` : "each dimension"} of the run at \`${run2}\`.
+
+${CORE_RULE}
+
+**Sequence:**
+
+1. \`ultraeval_read\` the findings for the dimension, and the code each one cites. Judge the evidence, not the summary.
+2. \`ultraeval_verify\` \u2014 adjudicate each finding: does its evidence carry it?
+3. Record the judgement, then \`ultraeval_score\` to reduce them.
+4. \`ultraeval_compare\` against a baseline run when one exists \u2014 a score without a trend is hard to act on.
+
+**The honeypots are the point.** \`ultraeval_verify\` can plant trap pairs, and grading one 'supported' fails the fold. If you find yourself agreeing with every finding, that is the signal to slow down \u2014 the traps exist because rubber-stamping is the default failure of a judge panel, not a rare one.
+
+**Grade what the evidence establishes.** A finding whose citation resolves but whose claim the code does not support is refuted, however reasonable it sounds. And a dimension with two real findings is not automatically worse than one with nine shallow ones \u2014 say what you weighted and why.
+
+${GATE}`;
+}
+function str4(v) {
+  return typeof v === "string" && v.trim() !== "" ? v : void 0;
+}
+var DECLARED = new Set([...TOOLS2, ...WRITE_TOOLS].map((t) => t.name));
+
+// src/mcp/resources.ts
+import { existsSync as existsSync10, readdirSync as readdirSync7, readFileSync as readFileSync11, realpathSync as realpathSync4, statSync as statSync7 } from "fs";
+import { basename as basename3, dirname as dirname7, join as join40, resolve as resolve7, sep as sep6 } from "path";
+import { fileURLToPath as fileURLToPath3 } from "url";
+var SKILL_NAME = "ultraeval";
+var URI_SCHEME = "skill://";
+function resolveSkillRoot(moduleDir) {
+  const here = moduleDir ?? dirname7(fileURLToPath3(import.meta.url));
+  const candidates = [resolve7(here, ".."), resolve7(here, "..", "skills", SKILL_NAME), resolve7(here, "..", "..", "skills", SKILL_NAME)];
+  return candidates.find((dir) => existsSync10(join40(dir, "SKILL.md")));
+}
+function listResources(moduleDir) {
+  const root = resolveSkillRoot(moduleDir);
+  if (!root) return [];
+  const out2 = [describe(root, "SKILL.md", `${SKILL_NAME}: the skill`)];
+  const refDir = join40(root, "references");
+  if (!existsSync10(refDir)) return out2;
+  for (const file of readdirSync7(refDir).sort()) {
+    if (!file.endsWith(".md")) continue;
+    out2.push(describe(root, join40("references", file), `${SKILL_NAME} reference: ${basename3(file, ".md")}`));
+  }
+  return out2;
+}
+function readResource(uri, moduleDir) {
+  if (!uri.startsWith(URI_SCHEME)) {
+    throw new ResourceError(`unknown resource scheme in "${uri}" (expected ${URI_SCHEME}\u2026)`);
+  }
+  const root = resolveSkillRoot(moduleDir);
+  if (!root) throw new ResourceError("no skill payload found next to this build \u2014 nothing to read");
+  const rel = uri.slice(URI_SCHEME.length);
+  if (!rel) throw new ResourceError("empty resource path");
+  const target = resolve7(root, rel);
+  const rootReal = realpathSync4(root);
+  let targetReal;
+  try {
+    targetReal = realpathSync4(target);
+  } catch {
+    throw new ResourceError(`no such resource: ${uri}`);
+  }
+  if (targetReal !== rootReal && !targetReal.startsWith(rootReal + sep6)) {
+    throw new ResourceError(`resource path escapes the skill root: ${uri}`);
+  }
+  if (!statSync7(targetReal).isFile()) throw new ResourceError(`not a file: ${uri}`);
+  return { uri, mimeType: "text/markdown", text: readFileSync11(targetReal, "utf8") };
+}
+var ResourceError = class extends Error {
+};
+function describe(root, rel, fallbackTitle) {
+  const decl = {
+    uri: `${URI_SCHEME}${rel.split(sep6).join("/")}`,
+    name: rel.split(sep6).join("/"),
+    title: fallbackTitle,
+    mimeType: "text/markdown"
+  };
+  const summary = firstProse(join40(root, rel));
+  if (summary) decl.description = summary;
+  return decl;
+}
+function firstProse(file) {
+  let text;
+  try {
+    text = readFileSync11(file, "utf8");
+  } catch {
+    return void 0;
+  }
+  const body2 = text.startsWith("---\n") ? text.slice(text.indexOf("\n---", 3) + 4) : text;
+  for (const block of body2.split(/\n\s*\n/)) {
+    const line = block.trim();
+    if (!line || line.startsWith("#") || line.startsWith(">") || line.startsWith("|") || line.startsWith("```")) continue;
+    const flat = line.replace(/\s+/g, " ").replace(/[*`]/g, "");
+    return flat.length > 300 ? `${flat.slice(0, 297)}\u2026` : flat;
+  }
+  return void 0;
+}
+
+// src/mcp/server.ts
+var ERR_INVALID_REQUEST = -32600;
+var ERR_METHOD_NOT_FOUND = -32601;
+var ERR_INVALID_PARAMS = -32602;
+var ERR_INTERNAL = -32603;
+function createServer(opts = {}) {
+  const serverInfo = { name: opts.serverName ?? "ultraeval", version: VERSION };
+  const maxBytes = opts.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES2;
+  let protocol = LATEST_PROTOCOL2;
+  const cancelled = /* @__PURE__ */ new Set();
+  const CANCELLED_MAX = 1024;
+  const listTools = () => toolsFor2(protocol, { defaultRun: opts.defaultRun, allowWrite: opts.allowWrite });
+  async function handle2(msg, send) {
+    if (msg === null || typeof msg !== "object" || Array.isArray(msg)) {
+      send({ jsonrpc: "2.0", id: null, error: { code: ERR_INVALID_REQUEST, message: "invalid request: expected a JSON-RPC object" } });
+      return;
+    }
+    if (msg.id === void 0 || msg.id === null) {
+      if (msg.method === "notifications/cancelled") {
+        const target = msg.params?.requestId;
+        if (typeof target === "string" || typeof target === "number") {
+          if (cancelled.size >= CANCELLED_MAX) cancelled.delete(cancelled.values().next().value);
+          cancelled.add(String(target));
+        }
+      }
+      return;
+    }
+    const id = msg.id;
+    const reply = (out2) => {
+      if (cancelled.delete(String(id))) return;
+      send({ jsonrpc: "2.0", id, ...out2 });
+    };
+    try {
+      switch (msg.method) {
+        case "initialize": {
+          protocol = negotiateProtocol2(msg.params?.protocolVersion);
+          reply({
+            result: {
+              protocolVersion: protocol,
+              // Three primitives, because a skill is three things: the engine
+              // (tools), the method (prompts) and the documentation the method
+              // refers to (resources). A client given only the first has to
+              // invent the other two.
+              capabilities: {
+                tools: { listChanged: false },
+                resources: { subscribe: false, listChanged: false },
+                prompts: { listChanged: false }
+              },
+              serverInfo
+            }
+          });
+          return;
+        }
+        case "ping":
+          reply({ result: {} });
+          return;
+        case "tools/list":
+          reply({ result: { tools: listTools() } });
+          return;
+        case "tools/call":
+          await handleToolCall(msg, reply);
+          return;
+        case "resources/list":
+          reply({ result: { resources: listResources(opts.skillDir) } });
+          return;
+        case "resources/read": {
+          const uri = typeof msg.params?.uri === "string" ? msg.params.uri : "";
+          if (!uri) {
+            reply({ error: { code: ERR_INVALID_PARAMS, message: "`uri` is required" } });
+            return;
+          }
+          try {
+            reply({ result: { contents: [readResource(uri, opts.skillDir)] } });
+          } catch (e) {
+            if (e instanceof ResourceError) reply({ error: { code: ERR_INVALID_PARAMS, message: e.message } });
+            else reply({ error: { code: ERR_INTERNAL, message: errMessage2(e) } });
+          }
+          return;
+        }
+        case "prompts/list":
+          reply({ result: { prompts: PROMPTS } });
+          return;
+        case "prompts/get": {
+          const name2 = typeof msg.params?.name === "string" ? msg.params.name : "";
+          const args2 = msg.params?.arguments ?? {};
+          try {
+            reply({ result: getPrompt(name2, args2) });
+          } catch (e) {
+            if (e instanceof PromptError) reply({ error: { code: ERR_INVALID_PARAMS, message: e.message } });
+            else reply({ error: { code: ERR_INTERNAL, message: errMessage2(e) } });
+          }
+          return;
+        }
+        default:
+          reply({ error: { code: ERR_METHOD_NOT_FOUND, message: `method not found: ${String(msg.method)}` } });
+          return;
+      }
+    } catch (e) {
+      reply({ error: { code: ERR_INTERNAL, message: errMessage2(e) } });
+    }
+  }
+  async function handleToolCall(msg, reply) {
+    const params = msg.params ?? {};
+    const name2 = typeof params.name === "string" ? params.name : "";
+    const args2 = params.arguments ?? {};
+    const decl = listTools().find((t) => t.name === name2);
+    if (!decl) {
+      reply({ error: { code: ERR_INVALID_PARAMS, message: `unknown tool: ${name2 || "(none given)"}` } });
+      return;
+    }
+    const invalid = validateArgs2(decl.inputSchema, args2);
+    if (invalid) {
+      reply({ error: { code: ERR_INVALID_PARAMS, message: invalid } });
+      return;
+    }
+    try {
+      const { text: raw, artifact } = await callTool2(name2, args2, { defaultRun: opts.defaultRun, allowWrite: opts.allowWrite });
+      const text = capResponse2(raw, name2, maxBytes, artifact);
+      const capped = text !== raw;
+      const structured = protocol >= RICH_TOOLS_SINCE2 ? structuredContentFor2(text, capped, decl.outputSchema !== void 0) : void 0;
+      reply({ result: { content: [{ type: "text", text }], ...structured ? { structuredContent: structured } : {} } });
+    } catch (e) {
+      if (e instanceof ToolError) {
+        reply({ result: { content: [{ type: "text", text: e.message }], isError: true } });
+        return;
+      }
+      reply({ error: { code: ERR_INTERNAL, message: errMessage2(e) } });
+    }
+  }
+  return {
+    handle: handle2,
+    protocolVersion: () => protocol,
+    setProtocolVersion: (v) => {
+      protocol = v;
+    },
+    tools: listTools
+  };
+}
+function errMessage2(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+
+// src/mcp/stdio.ts
+var MAX_IN_FLIGHT = 4;
+async function runStdioServer(opts = {}) {
+  const input = opts.input ?? process.stdin;
+  const output = opts.output ?? process.stdout;
+  const emit2 = output.write.bind(output);
+  let restore;
+  if (!opts.captureStdout && output === process.stdout) {
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk, ...rest) => process.stderr.write(chunk, ...rest));
+    restore = () => {
+      process.stdout.write = original;
+    };
+  }
+  const server = createServer(opts);
+  const send = (msg) => {
+    emit2(JSON.stringify(msg) + "\n");
+  };
+  const inFlight = /* @__PURE__ */ new Set();
+  const track = (p) => {
+    inFlight.add(p);
+    void p.finally(() => inFlight.delete(p));
+    return p;
+  };
+  const drainToLimit = async () => {
+    while (inFlight.size >= MAX_IN_FLIGHT) await Promise.race(inFlight);
+  };
+  const rl = createInterface2({ input, terminal: false });
+  try {
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
+        continue;
+      }
+      await drainToLimit();
+      if (Array.isArray(parsed)) {
+        track(
+          (async () => {
+            const out2 = [];
+            await Promise.all(parsed.map((m) => server.handle(m, (r) => void out2.push(r))));
+            if (out2.length) emit2(JSON.stringify(out2) + "\n");
+          })().catch(reportInternal(send))
+        );
+        continue;
+      }
+      if (parsed === null || typeof parsed !== "object") {
+        send({ jsonrpc: "2.0", id: null, error: { code: ERR_INVALID_REQUEST, message: "invalid request: expected a JSON-RPC object" } });
+        continue;
+      }
+      track(server.handle(parsed, send).catch(reportInternal(send)));
+    }
+    await Promise.all(inFlight);
+  } finally {
+    rl.close();
+    restore?.();
+  }
+}
+function reportInternal(send) {
+  return (e) => {
+    send({ jsonrpc: "2.0", id: null, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } });
+  };
+}
+
+// src/mcp/http.ts
+import { createServer as createHttpServer } from "http";
+var MCP_PATH = "/mcp";
+var MAX_BODY_BYTES = 4 * 1024 * 1024;
+var CORS_HEADERS = "content-type, accept, mcp-protocol-version, mcp-session-id, authorization, last-event-id";
+var LOOPBACK_BIND = /* @__PURE__ */ new Set(["127.0.0.1", "::1", "localhost"]);
+function startHttpServer(opts = {}) {
+  const bind = opts.bind ?? "127.0.0.1";
+  if (!LOOPBACK_BIND.has(bind) && !opts.allowRemote) {
+    return Promise.reject(
+      new Error(
+        `refusing to bind ${bind}: ultraeval's MCP server clones arbitrary git URLs and reads local files. Pass --allow-remote if that is really what you want.`
+      )
+    );
+  }
+  const server = createHttpServer((req, res) => {
+    void route(req, res, opts).catch((e) => {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      sendJson(res, 500, { jsonrpc: "2.0", id: null, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } });
+    });
+  });
+  server.requestTimeout = 0;
+  server.headersTimeout = 6e4;
+  server.keepAliveTimeout = 12e4;
+  return new Promise((resolve9, reject) => {
+    server.once("error", reject);
+    server.listen(opts.port ?? 0, bind, () => {
+      server.removeListener("error", reject);
+      const addr2 = server.address();
+      const port = typeof addr2 === "object" && addr2 ? addr2.port : opts.port ?? 0;
+      const host = bind.includes(":") ? `[${bind}]` : bind;
+      resolve9({
+        server,
+        port,
+        url: `http://${host}:${port}${MCP_PATH}`,
+        close: () => new Promise((done) => {
+          server.closeAllConnections?.();
+          server.close(() => done());
+        })
+      });
+    });
+  });
+}
+async function route(req, res, opts) {
+  const path = (req.url ?? "").split("?")[0];
+  const origin = header(req, "origin");
+  if (!isOriginAllowed(origin, opts.allowOrigin)) {
+    sendJson(res, 403, { error: "origin not allowed", origin });
+    return;
+  }
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      ...corsHeaders(origin),
+      "access-control-allow-methods": "POST, GET, DELETE, OPTIONS",
+      "access-control-allow-headers": CORS_HEADERS,
+      "access-control-max-age": "86400"
+    });
+    res.end();
+    return;
+  }
+  if (path !== MCP_PATH) {
+    sendJson(res, 404, { error: `not found: ${path} (the MCP endpoint is ${MCP_PATH})` }, origin);
+    return;
+  }
+  if (req.method === "GET" || req.method === "DELETE") {
+    res.writeHead(405, { allow: "POST, OPTIONS", ...corsHeaders(origin) });
+    res.end(JSON.stringify({ error: `${req.method} is not supported: this server is stateless and offers no server-initiated stream` }));
+    return;
+  }
+  if (req.method !== "POST") {
+    res.writeHead(405, { allow: "POST, OPTIONS", ...corsHeaders(origin) });
+    res.end(JSON.stringify({ error: `${req.method} is not supported` }));
+    return;
+  }
+  const contentType = (header(req, "content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (contentType && contentType !== "application/json") {
+    sendJson(res, 415, { error: `unsupported content-type "${contentType}" \u2014 send application/json` }, origin);
+    return;
+  }
+  const accept = (header(req, "accept") ?? "").toLowerCase();
+  if (accept && !/application\/json|text\/event-stream|\*\/\*/.test(accept)) {
+    sendJson(res, 406, { error: "this endpoint replies with application/json" }, origin);
+    return;
+  }
+  const declared = header(req, "mcp-protocol-version");
+  if (declared !== void 0 && !isProtocolVersion(declared)) {
+    sendJson(res, 400, { error: `unsupported MCP-Protocol-Version: ${declared}` }, origin);
+    return;
+  }
+  const protocol = declared ?? ASSUMED_HTTP_PROTOCOL;
+  let raw;
+  try {
+    raw = await readBody(req);
+  } catch (e) {
+    if (e.message === "too large") {
+      sendJson(res, 413, { error: `request body exceeds ${MAX_BODY_BYTES} bytes` }, origin);
+      return;
+    }
+    sendJson(res, 400, { error: `could not read request body: ${e.message}` }, origin);
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    sendJson(res, 200, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, origin);
+    return;
+  }
+  const mcp = createServer(opts);
+  mcp.setProtocolVersion(protocol);
+  const out2 = [];
+  const collect2 = (m) => void out2.push(m);
+  const messages = Array.isArray(parsed) ? parsed : [parsed];
+  for (const m of messages) await mcp.handle(m, collect2);
+  if (out2.length === 0) {
+    res.writeHead(202, corsHeaders(origin));
+    res.end();
+    return;
+  }
+  sendJson(res, 200, Array.isArray(parsed) ? out2 : out2[0], origin);
+}
+function header(req, name2) {
+  const v = req.headers[name2];
+  return Array.isArray(v) ? v[0] : v;
+}
+function corsHeaders(origin) {
+  return origin ? { "access-control-allow-origin": origin, vary: "origin" } : {};
+}
+function sendJson(res, status, body2, origin, extra = {}) {
+  const text = JSON.stringify(body2);
+  res.writeHead(status, {
+    "content-type": "application/json",
+    "content-length": String(Buffer.byteLength(text, "utf8")),
+    ...corsHeaders(origin),
+    ...extra
+  });
+  res.end(text);
+}
+var DRAIN_LIMIT = MAX_BODY_BYTES * 8;
+function readBody(req) {
+  return new Promise((resolve9, reject) => {
+    const chunks = [];
+    let size = 0;
+    let over = false;
+    const declared = Number(req.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) over = true;
+    req.on("data", (c2) => {
+      size += c2.length;
+      if (over) {
+        if (size > DRAIN_LIMIT) {
+          req.destroy();
+          reject(new Error("too large"));
+        }
+        return;
+      }
+      if (size > MAX_BODY_BYTES) {
+        over = true;
+        chunks.length = 0;
+        return;
+      }
+      chunks.push(c2);
+    });
+    req.on("end", () => {
+      if (over) reject(new Error("too large"));
+      else resolve9(Buffer.concat(chunks).toString("utf8"));
+    });
+    req.on("error", reject);
+    req.on("aborted", () => reject(new Error("client aborted the request")));
+  });
 }
 
 // src/cli.ts
@@ -16677,6 +17845,11 @@ Commands:
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
+  mcp      [--transport stdio|http] [--run <run>] [--allow-write] [--port <n>] [--bind <addr>]
+           [--allow-origin <o,...>] [--allow-remote] [--max-response-bytes <n>]
+           Serve the evaluation over the Model Context Protocol, so a non-Claude-Code
+           host (Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
+           and SKILL.md + references/ as resources. Read-only unless --allow-write.
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
   help | --help | -h        version | --version | -v
@@ -16732,7 +17905,7 @@ function cmdOneshot(args2) {
   const target = str2(args2.target);
   const out2 = str2(args2.out);
   if (!target || !out2) throw new Error("oneshot requires --target <path> and --out <run>");
-  const engine = fileURLToPath3(import.meta.url);
+  const engine = fileURLToPath4(import.meta.url);
   const { cfg, runDir, gitignore } = oneshotRun(
     {
       target,
@@ -16756,7 +17929,7 @@ Single pass: follow ${runDir}/ONESHOT.md, then gate with: check --run ${runDir}`
 function cmdPlan(args2, cmd) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error(`${cmd} requires --run <run>`);
-  const engine = fileURLToPath3(import.meta.url);
+  const engine = fileURLToPath4(import.meta.url);
   const eco = args2.eco === true;
   const written = planRun(run2, engine, { eco });
   console.log(`ultraeval ${cmd}: generated
@@ -16772,7 +17945,7 @@ function cmdAnalyze(args2) {
   let targetAbs;
   let out2;
   if (run2) {
-    const cfg = readJson(join39(run2, "eval.config.json"));
+    const cfg = readJson(join41(run2, "eval.config.json"));
     targetAbs = resolveTargetAbs(cfg.targetAbs, cfg.target, run2);
     out2 = run2;
   } else {
@@ -16831,7 +18004,7 @@ function cmdCompare(args2) {
 function cmdCheck(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("check requires --run <run>");
-  if (!exists(join39(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
+  if (!exists(join41(run2, "eval.config.json"))) throw new Error(`no eval.config.json under ${run2} \u2014 not an ultraeval run; run \`ultraeval init\` first`);
   const r = checkRun(run2, {
     semantic: !!args2.semantic,
     requireVerify: !!args2["require-verify"],
@@ -16872,8 +18045,8 @@ function cmdBacklog(args2) {
   const out2 = str2(args2.out);
   const bl = buildBacklog(run2, { tdd: !!args2.tdd, out: out2 });
   console.log(`ultraeval backlog: ${bl.tasks.length} fix task(s)${args2.tdd ? " + TDD cards" : ""} -> ${out2 ?? run2}`);
-  if (out2 && resolve6(out2) !== resolve6(run2))
-    console.log(`warning: BACKLOG.json was written outside the run \u2014 fix and verify-fix read ${join39(run2, "BACKLOG.json")} only, and will not find it there`);
+  if (out2 && resolve8(out2) !== resolve8(run2))
+    console.log(`warning: BACKLOG.json was written outside the run \u2014 fix and verify-fix read ${join41(run2, "BACKLOG.json")} only, and will not find it there`);
 }
 function cmdStatus(args2) {
   const run2 = str2(args2.run);
@@ -16909,7 +18082,7 @@ function cmdHistory(args2) {
 function cmdFix(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("fix requires --run <run>");
-  const engine = fileURLToPath3(import.meta.url);
+  const engine = fileURLToPath4(import.meta.url);
   const written = emitFixAgents(run2, engine, { task: str2(args2.task), workflow: !!args2.workflow });
   console.log(`ultraeval fix: ${written.length} file(s) -> ${run2}/fixes/agents (dispatch each *.agent.md to an autonomous fix agent)`);
 }
@@ -16926,7 +18099,7 @@ function cmdRejudge(args2) {
   const run2 = str2(args2.run);
   const out2 = str2(args2.out);
   if (!run2 || !out2) throw new Error("rejudge requires --run <run> and --out <run2>");
-  const engine = fileURLToPath3(import.meta.url);
+  const engine = fileURLToPath4(import.meta.url);
   const copied = rejudgeRun(run2, out2, engine);
   console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out2}`);
   console.log(`  launch ${out2}/rejudge.workflow.mjs, then: score --run ${out2} && compare --run ${out2} --base ${run2}`);
@@ -16939,6 +18112,41 @@ function cmdRender(args2) {
   console.log(`ultraeval render:
 ${written.map((w) => `  ${w}`).join("\n")}`);
 }
+function cmdMcp(args2) {
+  const transport = str2(args2.transport) ?? "stdio";
+  if (transport !== "stdio" && transport !== "http") throw new Error(`invalid --transport "${transport}" (expected: stdio, http)`);
+  const maxRaw = str2(args2["max-response-bytes"]);
+  const maxResponseBytes = maxRaw === void 0 ? void 0 : Number(maxRaw);
+  if (maxResponseBytes !== void 0 && (!Number.isFinite(maxResponseBytes) || maxResponseBytes <= 0)) throw new Error("invalid --max-response-bytes");
+  const options = {
+    // A default run makes `run` optional on every tool, for a server dedicated
+    // to one evaluation.
+    defaultRun: str2(args2.run),
+    allowWrite: !!args2["allow-write"],
+    maxResponseBytes
+  };
+  if (transport === "stdio") {
+    mcpServing = runStdioServer(options);
+    return;
+  }
+  const port = str2(args2.port) ? Number(str2(args2.port)) : 7344;
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("invalid --port");
+  const originRaw = str2(args2["allow-origin"]);
+  const allowOrigin = originRaw ? originRaw.split(",").map((x) => x.trim()).filter(Boolean) : void 0;
+  mcpServing = startHttpServer({ ...options, port, bind: str2(args2.bind), allowOrigin, allowRemote: !!args2["allow-remote"] }).then(
+    (running) => {
+      console.error(`ultraeval: MCP server listening on ${running.url}`);
+      console.error(`  client: claude mcp add --transport http ultraeval ${running.url}`);
+      for (const sig of ["SIGINT", "SIGTERM"]) {
+        process.once(sig, () => {
+          void running.close().then(() => process.exit(0));
+        });
+      }
+      return new Promise((res) => running.server.once("close", res));
+    }
+  );
+}
+var mcpServing;
 function cmdClean(args2) {
   const run2 = str2(args2.run);
   if (!run2) throw new Error("clean requires --run <run>");
@@ -16964,9 +18172,10 @@ var commandHandlers = {
   "verify-fix": cmdVerifyFix,
   rejudge: cmdRejudge,
   render: cmdRender,
-  clean: cmdClean
+  clean: cmdClean,
+  mcp: cmdMcp
 };
-function main() {
+async function main() {
   const args2 = parse(process.argv.slice(2));
   const cmd = args2._[0];
   if (args2.version || cmd === "version") {
@@ -16993,6 +18202,7 @@ ${HELP2}`);
       return;
     }
     handler(args2, cmd);
+    if (mcpServing) return mcpServing;
   } catch (e) {
     console.error(`ultraeval ${cmd}: ${e.message}`);
     process.exitCode = 2;
@@ -17000,12 +18210,17 @@ ${HELP2}`);
 }
 function isEntrypoint() {
   try {
-    return import.meta.url === pathToFileURL3(realpathSync3(process.argv[1] ?? "")).href;
+    return import.meta.url === pathToFileURL3(realpathSync5(process.argv[1] ?? "")).href;
   } catch {
     return false;
   }
 }
-if (isEntrypoint()) main();
+if (isEntrypoint()) {
+  main().catch((e) => {
+    console.error(`ultraeval: ${e.message}`);
+    process.exitCode = 2;
+  });
+}
 export {
   commandHandlers
 };
