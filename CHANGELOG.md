@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.20.0](https://github.com/maxgfr/ultraeval/compare/v1.19.0...v1.20.0) (2026-07-29)
+
+
+### Features
+
+* **mcp:** serve ultraeval over the Model Context Protocol ([6af7a5f](https://github.com/maxgfr/ultraeval/commit/6af7a5fcd13f5ebb84e39b5d7dcaff008e1cdfb5))
+
 # [1.19.0](https://github.com/maxgfr/ultraeval/compare/v1.18.0...v1.19.0) (2026-07-26)
 
 
