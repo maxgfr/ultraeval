@@ -3,7 +3,7 @@ name: ultraeval
 description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and give me a fix plan", "find what is wrong and give me a TDD backlog", "does this meet expectations". Also when regression-proofing your own skill after changes, vetting a third-party one before trusting it, or gating a PR on a normed score. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations, normed evaluation.'
 license: MIT
 metadata:
-  version: 1.22.0
+  version: 1.23.0
 ---
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs
