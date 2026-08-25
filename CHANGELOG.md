@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.24.1](https://github.com/maxgfr/ultraeval/compare/v1.24.0...v1.24.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* make ultraeval compatible with Codex ([33fd5c1](https://github.com/maxgfr/ultraeval/commit/33fd5c1210eefffbd5715c8413e501a06da70762))
+
 # [1.24.0](https://github.com/maxgfr/ultraeval/compare/v1.23.0...v1.24.0) (2026-08-13)
 
 
