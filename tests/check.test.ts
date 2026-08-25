@@ -193,6 +193,25 @@ describe("check — grounding gate", () => {
     expect(checkRun(scaffold([genuine]), { requireVerify: true }).ok).toBe(false);
   });
 
+  it("--require-verify accepts an applied empty ledger when the run has no findings", () => {
+    const run = scaffold([], {
+      "VERIFY.json": JSON.stringify({
+        ok: true,
+        failures: [],
+        adjudicated: 0,
+        supported: 0,
+        partial: 0,
+        refuted: 0,
+        unsupported: 0,
+        unadjudicated: [],
+        verdicts: [],
+      }),
+    });
+    const result = checkRun(run, { semantic: true, requireVerify: true });
+    expect(result.ok).toBe(true);
+    expect(result.warnings.some((warning) => warning.startsWith("--semantic:"))).toBe(false);
+  });
+
   it("--semantic fails when a non-dismissed finding was refuted", () => {
     const run = scaffold([genuine], {
       "VERIFY.json": JSON.stringify({

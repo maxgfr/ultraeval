@@ -18390,6 +18390,7 @@ function checkRun(runDir, opts = {}) {
     return { ok: false, errors, warnings, usageError: true };
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
+  const liveFindings = findings.filter((finding) => finding.status !== "dismissed");
   const ids = new Set(findings.map((f) => f.id));
   const STATUSES = ["open", "confirmed", "dismissed"];
   const seenIds = /* @__PURE__ */ new Set();
@@ -18472,7 +18473,7 @@ function checkRun(runDir, opts = {}) {
       try {
         const v = readJson(verifyPath);
         const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
-        if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (!v.adjudicated && liveFindings.length > 0) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
         if (v.honeypots?.failed?.length)
           errors.push(
             `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) \u2014 the skeptic rubber-stamped; re-verify with a fresh skeptic`
@@ -18525,7 +18526,7 @@ function checkRun(runDir, opts = {}) {
           if (f && f.status !== "dismissed")
             errors.push(`--semantic: ${fid} was refuted/unsupported by verification but is still "${f.status}" \u2014 dismiss it or fix the claim`);
         }
-        if (!v.verdicts?.length)
+        if (!v.verdicts?.length && liveFindings.length > 0)
           warnings.push(
             "--semantic: VERIFY.json carries no verdict rows \u2014 the trustless re-reduction had nothing to adjudicate; the verdict/semantic layer was not (re)applied to the current findings"
           );

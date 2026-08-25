@@ -56,6 +56,7 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
     return { ok: false, errors, warnings, usageError: true };
   }
   const findings = Array.isArray(doc.findings) ? doc.findings : [];
+  const liveFindings = findings.filter((finding) => finding.status !== "dismissed");
   const ids = new Set(findings.map((f) => f.id));
 
   // 0. Findings-record schema integrity (shape, not grounding).
@@ -164,7 +165,7 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
       try {
         const v = readJson<VerifyResult>(verifyPath);
         const reReduced = reduceVerdicts(v.verdicts ?? [], findings);
-        if (!v.adjudicated) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
+        if (!v.adjudicated && liveFindings.length > 0) errors.push("--require-verify: VERIFY.json has no adjudicated verdicts");
         if (v.honeypots?.failed?.length)
           errors.push(
             `--require-verify: ${v.honeypots.failed.length} honeypot(s) graded supported (${v.honeypots.failed.join(", ")}) — the skeptic rubber-stamped; re-verify with a fresh skeptic`,
@@ -256,7 +257,7 @@ export function checkRun(runDir: string, opts: CheckOpts = {}): CheckResult {
         // to adjudicate against the current findings (the gate can only trust the
         // stored summary). Surface that so the operator knows the layer was not
         // (re)applied — same silent-degradation risk as a missing ledger.
-        if (!v.verdicts?.length)
+        if (!v.verdicts?.length && liveFindings.length > 0)
           warnings.push(
             "--semantic: VERIFY.json carries no verdict rows — the trustless re-reduction had nothing to adjudicate; the verdict/semantic layer was not (re)applied to the current findings",
           );
