@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.26.0](https://github.com/maxgfr/ultraeval/compare/v1.25.0...v1.26.0) (2026-09-02)
+
+
+### Features
+
+* **engine:** re-pin vendored engines ([d98f857](https://github.com/maxgfr/ultraeval/commit/d98f857a284a8c1bcc11ed6246958374dce8648e))
+
 # [1.25.0](https://github.com/maxgfr/ultraeval/compare/v1.24.1...v1.25.0) (2026-08-31)
 
 
