@@ -315,7 +315,7 @@ var EXTRACTOR_VERSION;
 var init_types = __esm({
   "src/types.ts"() {
     "use strict";
-    ENGINE_VERSION = "2.28.2";
+    ENGINE_VERSION = "2.28.4";
     SCHEMA_VERSION = 5;
     EXTRACTOR_VERSION = 14;
   }
@@ -646,18 +646,29 @@ var init_ignore = __esm({
 function isIgnoredDirectory(name2, ignoreDirs) {
   return name2 === GIT_ENTRY || ignoreDirs.has(name2) || name2.startsWith(".codeindex-edit-");
 }
-function readInfoExclude(root, entries) {
+function gitDirOf(dir, entries) {
   const marker = entries.find((e) => e.name === GIT_ENTRY);
-  if (!marker) return "";
-  let gitDir = join2(root, GIT_ENTRY);
+  if (!marker) return void 0;
+  const path = join2(dir, GIT_ENTRY);
   try {
-    if (!marker.isDirectory()) {
-      const m = /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(readFileSync2(gitDir, "utf8"));
-      if (!m) return "";
-      gitDir = resolve2(root, m[1]);
-      const common = join2(gitDir, "commondir");
-      if (existsSync2(common)) gitDir = resolve2(gitDir, readFileSync2(common, "utf8").trim());
-    }
+    if (marker.isDirectory()) return path;
+    const st = statSync(path);
+    if (st.isDirectory()) return path;
+    if (!st.isFile() || st.size > MAX_GITFILE_BYTES) return void 0;
+    const content = readFileSync2(path, "utf8");
+    if (!content.startsWith(GITFILE_PREFIX)) return void 0;
+    const target = content.slice(GITFILE_PREFIX.length).replace(/[\r\n]+$/, "");
+    if (!target) return void 0;
+    const gitDir = resolve2(dir, target);
+    const common = join2(gitDir, "commondir");
+    return existsSync2(common) ? resolve2(gitDir, readFileSync2(common, "utf8").trim()) : gitDir;
+  } catch {
+    return void 0;
+  }
+}
+function readInfoExclude(gitDir) {
+  if (!gitDir) return "";
+  try {
     const exclude = join2(gitDir, "info", "exclude");
     return existsSync2(exclude) ? readText2(exclude) : "";
   } catch {
@@ -702,13 +713,14 @@ function walk(root, opts = {}) {
     } catch {
       continue;
     }
-    if (frame.rel && entries.some((e) => e.name === GIT_ENTRY)) {
+    const gitDir = entries.some((e) => e.name === GIT_ENTRY) ? gitDirOf(frame.dir, entries) : void 0;
+    if (frame.rel && gitDir) {
       excluded++;
       continue;
     }
     let rules = frame.rules;
     if (useGitignore && !frame.rel) {
-      const parsed = parseGitignore(readInfoExclude(frame.dir, entries), "");
+      const parsed = parseGitignore(readInfoExclude(gitDir), "");
       if (parsed.length) rules = [...rules, ...parsed];
     }
     if (useGitignore && entries.some((e) => e.name === ".gitignore")) {
@@ -794,6 +806,8 @@ function readText2(abs) {
 }
 var IGNORE_DIRS;
 var GIT_ENTRY;
+var GITFILE_PREFIX;
+var MAX_GITFILE_BYTES;
 var LOCKFILES;
 var BINARY_EXT;
 var DEFAULT_MAX_FILES;
@@ -836,6 +850,8 @@ var init_walk = __esm({
       ".dart_tool"
     ]);
     GIT_ENTRY = ".git";
+    GITFILE_PREFIX = "gitdir: ";
+    MAX_GITFILE_BYTES = 4096;
     LOCKFILES = /* @__PURE__ */ new Set([
       "package-lock.json",
       "npm-shrinkwrap.json",
@@ -16501,26 +16517,39 @@ init_complexity();
 init_viz();
 init_sort();
 var DEPENDS_KINDS = /* @__PURE__ */ new Set(["import", "use", "call"]);
-var dependentsMemo = /* @__PURE__ */ new WeakMap();
-function dependentsOf(edges) {
-  const hit = dependentsMemo.get(edges);
-  if (hit && hit.length === edges.length) return hit.map;
-  const map = /* @__PURE__ */ new Map();
-  for (const e of edges) {
-    if (e.dangling || !DEPENDS_KINDS.has(e.kind)) continue;
-    let arr = map.get(e.to);
-    if (!arr) map.set(e.to, arr = []);
-    arr.push(e);
+var FIELDS2 = 6;
+function snapshot(edges) {
+  const snap = new Array(edges.length * FIELDS2);
+  for (let i2 = 0; i2 < edges.length; i2++) {
+    const e = edges[i2];
+    const o = i2 * FIELDS2;
+    snap[o] = e.from;
+    snap[o + 1] = e.to;
+    snap[o + 2] = e.kind;
+    snap[o + 3] = e.weight;
+    snap[o + 4] = e.dangling;
+    snap[o + 5] = e.confidence;
   }
-  for (const arr of map.values()) arr.sort((a, b) => byStr(a.from, b.from));
-  dependentsMemo.set(edges, { length: edges.length, map });
-  return map;
+  return snap;
+}
+function unchanged(edges, snap) {
+  if (snap.length !== edges.length * FIELDS2) return false;
+  for (let i2 = 0; i2 < edges.length; i2++) {
+    const e = edges[i2];
+    const o = i2 * FIELDS2;
+    if (snap[o] !== e.from || snap[o + 1] !== e.to || snap[o + 2] !== e.kind || snap[o + 3] !== e.weight || snap[o + 4] !== e.dangling || snap[o + 5] !== e.confidence) {
+      return false;
+    }
+  }
+  return true;
 }
 var adjacencyMemo = /* @__PURE__ */ new WeakMap();
 function adjacencyOf(edges, kinds) {
   const viewKey = kinds ? [...kinds].sort(byStr).join(",") : "*";
   let entry = adjacencyMemo.get(edges);
-  if (!entry || entry.length !== edges.length) adjacencyMemo.set(edges, entry = { length: edges.length, views: /* @__PURE__ */ new Map() });
+  if (!entry || !unchanged(edges, entry.snap)) {
+    adjacencyMemo.set(edges, entry = { snap: snapshot(edges), views: /* @__PURE__ */ new Map() });
+  }
   const cached = entry.views.get(viewKey);
   if (cached) return cached;
   const out2 = /* @__PURE__ */ new Map();
@@ -16547,14 +16576,20 @@ function hubThreshold(degrees) {
   return Math.max(50, p99);
 }
 function reverseClosure(edges, seeds, depth = Infinity) {
-  const dependents = dependentsOf(edges);
+  const dependents = /* @__PURE__ */ new Map();
+  for (const e of edges) {
+    if (e.dangling || !DEPENDS_KINDS.has(e.kind)) continue;
+    let arr = dependents.get(e.to);
+    if (!arr) dependents.set(e.to, arr = []);
+    arr.push(e);
+  }
   const depthOf = /* @__PURE__ */ new Map();
   const seen = new Set(seeds);
   let frontier = [...seeds];
   for (let d = 1; d <= depth && frontier.length; d++) {
     const next = [];
     for (const node of frontier) {
-      for (const e of dependents.get(node) ?? []) {
+      for (const e of (dependents.get(node) ?? []).slice().sort((a, b) => byStr(a.from, b.from))) {
         if (seen.has(e.from)) continue;
         seen.add(e.from);
         depthOf.set(e.from, d);
