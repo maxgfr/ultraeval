@@ -17999,7 +17999,7 @@ import { readdirSync as readdirSync4 } from "fs";
 import { join as join24, relative as relative2 } from "path";
 
 // src/types.ts
-var VERSION = "1.26.0";
+var VERSION = "1.27.0";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits
