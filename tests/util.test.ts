@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -255,5 +255,95 @@ describe("resolveEvidence — run: containment guard", () => {
     const { targetAbs, runDir } = scaffold();
     expect(resolveEvidence("run:runs/core.md#L2", { targetAbs, runDir }).resolved).toBe(true);
     expect(resolveEvidence("run:runs/core.md#L9", { targetAbs, runDir }).resolved).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F3 — containment is a REAL-path property. A symlink that sits inside the
+// target but points outside it is lexically contained; following it would put
+// foreign content into the VERIFY digest, breaking the never-read-outside
+// contract. Nothing outside the root may be read, and nothing may crash.
+// ---------------------------------------------------------------------------
+const MARKER = "OUTSIDE-SECRET-MARKER";
+
+function symlinkScaffold(): { targetAbs: string; runDir: string; outsideDir: string } {
+  const root = mkdtempSync(join(tmpdir(), "ue-link-"));
+  tmps.push(root);
+  const targetAbs = join(root, "target");
+  const runDir = join(root, "run");
+  const outsideDir = join(root, "outside");
+  mkdirSync(join(targetAbs, "src"), { recursive: true });
+  mkdirSync(runDir, { recursive: true });
+  mkdirSync(outsideDir, { recursive: true });
+  writeFileSync(join(targetAbs, "src", "app.ts"), "one\ntwo\nthree\n");
+  writeFileSync(join(outsideDir, "secret.txt"), `${MARKER}\n`);
+  writeFileSync(join(runDir, "log.md"), "run line 1\nrun line 2\n");
+  return { targetAbs, runDir, outsideDir };
+}
+
+describe("resolveEvidence — symlink containment (F3)", () => {
+  it("an ordinary file inside the target still resolves", () => {
+    const { targetAbs, runDir } = symlinkScaffold();
+    const r = resolveEvidence("src/app.ts:2", { targetAbs, runDir });
+    expect(r.resolved).toBe(true);
+    expect(r.gradeable).toBe(true);
+  });
+
+  it("a symlink whose destination is a regular file inside the target is accepted", () => {
+    const { targetAbs, runDir } = symlinkScaffold();
+    symlinkSync(join(targetAbs, "src", "app.ts"), join(targetAbs, "alias.ts"));
+    const r = resolveEvidence("alias.ts:2", { targetAbs, runDir });
+    expect(r.resolved).toBe(true);
+    expect(r.gradeable).toBe(true);
+    expect(extractContext(r.absPath as string, r.lineStart, r.lineEnd)).toMatch(/two/);
+  });
+
+  it("a symlink inside the target pointing OUTSIDE it is never read or graded", () => {
+    const { targetAbs, runDir, outsideDir } = symlinkScaffold();
+    symlinkSync(join(outsideDir, "secret.txt"), join(targetAbs, "leak.txt"));
+    const r = resolveEvidence("leak.txt:1", { targetAbs, runDir });
+    expect(r.resolved).toBe(false);
+    expect(r.gradeable).toBe(false);
+    expect(r.reason).toMatch(/outside|escape|symlink/i);
+    expect(JSON.stringify(r)).not.toContain(MARKER);
+  });
+
+  it("a nested parent directory symlink cannot smuggle an outside file in", () => {
+    const { targetAbs, runDir, outsideDir } = symlinkScaffold();
+    symlinkSync(outsideDir, join(targetAbs, "vendor"));
+    const r = resolveEvidence("vendor/secret.txt:1", { targetAbs, runDir });
+    expect(r.resolved).toBe(false);
+    expect(r.gradeable).toBe(false);
+    expect(JSON.stringify(r)).not.toContain(MARKER);
+  });
+
+  it("a run: symlink that leaves the run directory is never read or graded", () => {
+    const { targetAbs, runDir, outsideDir } = symlinkScaffold();
+    symlinkSync(join(outsideDir, "secret.txt"), join(runDir, "leak.md"));
+    const r = resolveEvidence("run:leak.md#L1", { targetAbs, runDir });
+    expect(r.resolved).toBe(false);
+    expect(r.gradeable).toBe(false);
+    expect(JSON.stringify(r)).not.toContain(MARKER);
+  });
+
+  it("a broken or cyclic symlink is an unresolved diagnostic, not a crash", () => {
+    const { targetAbs, runDir } = symlinkScaffold();
+    symlinkSync(join(targetAbs, "gone.txt"), join(targetAbs, "broken.txt"));
+    symlinkSync(join(targetAbs, "loop-b.txt"), join(targetAbs, "loop-a.txt"));
+    symlinkSync(join(targetAbs, "loop-a.txt"), join(targetAbs, "loop-b.txt"));
+    const broken = resolveEvidence("broken.txt:1", { targetAbs, runDir });
+    expect(broken.resolved).toBe(false);
+    expect(broken.reason).toBeTruthy();
+    const cyclic = resolveEvidence("loop-a.txt:1", { targetAbs, runDir });
+    expect(cyclic.resolved).toBe(false);
+    expect(cyclic.reason).toBeTruthy();
+  });
+
+  it("a directory is not gradeable evidence — it is reported, never read", () => {
+    const { targetAbs, runDir } = symlinkScaffold();
+    const r = resolveEvidence("src", { targetAbs, runDir });
+    expect(r.resolved).toBe(false);
+    expect(r.reason).toMatch(/file/i);
+    expect(() => resolveEvidence("src:1", { targetAbs, runDir })).not.toThrow();
   });
 });

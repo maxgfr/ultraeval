@@ -36,7 +36,11 @@ export function buildWorklist(runDir: string, maxVerify: number = CAPS.maxVerify
     for (const e of f.evidence ?? []) {
       if (pairs.length >= maxVerify) break;
       const r = resolveEvidence(e.ref, resolveOpts);
-      if (!r.gradeable) continue; // url/external refs are not adversarially graded offline
+      if (r.kind === "url") continue; // an external URL cannot be graded offline
+      // A path ref the engine REFUSES to read (it escapes the target/run dir,
+      // lexically or through a symlink) is not silently dropped: the skeptic
+      // gets the diagnostic where the digest would be, so an uncheckable
+      // citation stays visible in the gate instead of disappearing from it.
       const digest = r.resolved && r.absPath ? extractContext(r.absPath, r.lineStart, r.lineEnd, 2, resolveOpts.lineCache) : `(unresolved: ${r.reason})`;
       pairs.push({ claimId: f.id, evidenceRef: e.ref, claim: f.statement, digest, verdict: null, note: "" });
     }

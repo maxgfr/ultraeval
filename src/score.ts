@@ -1,28 +1,99 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { MEETS_BAR } from "./types.js";
+import { CALIBRATION_FIXTURE, MAX_DIMENSION_SCORE, MEETS_BAR } from "./types.js";
 import type { EvalConfig, FindingsDoc, JudgeLine, Scorecard } from "./types.js";
 import { exists, readJson, readText, resolveTargetAbs, writeJson } from "./util.js";
 
+// A malformed non-blank line is NEVER dropped: silently skipping it deletes a
+// verdict from the panel (a torn dissenting line would flip the run to MEETS),
+// so an unparseable row is an error naming the file and the 1-based line.
 export function readJudges(runDir: string): JudgeLine[] {
   const p = join(runDir, "judges.jsonl");
   if (!exists(p)) return [];
-  return readText(p)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => {
-      try {
-        return JSON.parse(l) as JudgeLine;
-      } catch {
-        return null;
-      }
-    })
-    .filter((x): x is JudgeLine => x !== null);
+  const out: JudgeLine[] = [];
+  const lines = readText(p).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = (lines[i] ?? "").trim();
+    if (!line) continue; // blank padding between verdicts is not a verdict
+    const where = `judges.jsonl:${i + 1}`;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      throw new Error(`${where}: not valid JSON — repair or remove the line; a malformed verdict is never dropped silently (a dissenting judge would vanish)`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error(`${where}: expected a JSON object verdict, got ${Array.isArray(parsed) ? "an array" : typeof parsed}`);
+    out.push(parsed as JudgeLine);
+  }
+  return out;
+}
+
+// A judge line is written by an autonomous subagent, so the rubric it claims to
+// have applied is checked here before anything it says can move the score: an
+// off-scale score (100 rendered a "2000/100 MEETS"), a dimension scored twice
+// (one opinion, double weight), an invented dimension id, or a silently skipped
+// dimension are all hard errors — not quietly averaged away. Optional fields
+// (lens/author/rationale/overall/topFindings) stay optional.
+function judgeLabel(i: number, j: JudgeLine): string {
+  const lens = typeof j?.lens === "string" && j.lens ? ` (lens=${j.lens})` : "";
+  return `judges.jsonl judge ${i + 1}${lens}`;
+}
+
+export function validateJudges(cfg: EvalConfig, judges: JudgeLine[]): void {
+  const dims = cfg.dimensions ?? [];
+  const known = new Set(dims.map((d) => d.id));
+  judges.forEach((j, i) => {
+    const where = judgeLabel(i, j);
+    if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error(`${where}: expected a JSON object verdict`);
+    if (!Array.isArray(j.dimensionScores))
+      throw new Error(
+        `${where}: dimensionScores must be an array of {id, score} — one score per configured dimension (${dims.map((d) => d.id).join(", ") || "none configured"})`,
+      );
+    if (j.meetsExpectations !== undefined && typeof j.meetsExpectations !== "boolean")
+      throw new Error(`${where}: meetsExpectations must be a boolean when present`);
+    const seen = new Set<string>();
+    for (const s of j.dimensionScores) {
+      if (!s || typeof s !== "object" || typeof s.id !== "string" || !s.id)
+        throw new Error(`${where}: every dimensionScores entry needs a non-empty string dimension id`);
+      if (typeof s.score !== "number" || !Number.isFinite(s.score))
+        throw new Error(`${where}: score for "${s.id}" must be a finite number 0-${MAX_DIMENSION_SCORE}, got ${JSON.stringify(s.score)}`);
+      if (s.score < 0 || s.score > MAX_DIMENSION_SCORE)
+        throw new Error(`${where}: score ${s.score} for "${s.id}" is outside the 0-${MAX_DIMENSION_SCORE} rubric range`);
+      // An empty rubric (a legacy/ad-hoc config) has nothing to check ids against.
+      if (dims.length && !known.has(s.id))
+        throw new Error(`${where}: unknown dimension "${s.id}" — the configured rubric is ${dims.map((d) => d.id).join(", ")}`);
+      if (seen.has(s.id))
+        throw new Error(`${where}: dimension "${s.id}" is scored more than once — one score per dimension (a repeat double-weights one opinion)`);
+      seen.add(s.id);
+      if (s.rationale !== undefined && typeof s.rationale !== "string") throw new Error(`${where}: rationale for "${s.id}" must be a string when present`);
+    }
+    const missing = dims.filter((d) => !seen.has(d.id)).map((d) => d.id);
+    if (missing.length) throw new Error(`${where}: no score for configured dimension(s) ${missing.join(", ")} — every dimension must be scored exactly once`);
+  });
+}
+
+// Calibration is DERIVED from the golden fixture, never taken on trust: a judge
+// reporting `passed: true` alongside fixture scores that contradict
+// CALIBRATION_FIXTURE (or no scores at all) is UNCALIBRATED. Both halves must
+// hold — every fixture dimension scored, in range and within tolerance, AND the
+// explicit self-reported pass. A malformed calibration counts as uncalibrated
+// (it feeds the panel veto), it never throws.
+export function isCalibrated(cal: JudgeLine["calibration"]): boolean {
+  if (!cal || typeof cal !== "object" || cal.passed !== true) return false;
+  const scores = cal.scores;
+  if (!scores || typeof scores !== "object" || Array.isArray(scores)) return false;
+  return CALIBRATION_FIXTURE.every((d) => {
+    const v = (scores as Record<string, unknown>)[d.id];
+    return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_DIMENSION_SCORE && Math.abs(v - d.expected) <= d.tolerance;
+  });
 }
 
 export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: FindingsDoc): Scorecard {
+  // Public entry point: an MCP/library consumer must not be able to bypass the
+  // rubric check by calling computeScore with hand-built verdicts.
+  validateJudges(cfg, judges);
   const dims = cfg.dimensions ?? [];
   const dimensions = dims.map((d) => {
     const scores = judges.flatMap((j) => (j.dimensionScores ?? []).filter((s) => s.id === d.id).map((s) => s.score)).filter((n) => typeof n === "number");
@@ -46,7 +117,9 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
   const judgeSaysNo = judges.length > 0 && judges.some((j) => j.meetsExpectations === false);
   // Judge calibration (references/calibration-run.json): a panel with zero
   // passed calibrations cannot green-light the verdict — its scale is untrusted.
-  const calibrated = judges.filter((j) => j.calibration?.passed === true).length;
+  // The pass is re-derived from the fixture scores (isCalibrated), so a judge
+  // that merely claims `passed: true` does not lift the veto.
+  const calibrated = judges.filter((j) => isCalibrated(j.calibration)).length;
   const judgesCalibrated = judges.length ? `${calibrated}/${judges.length}` : undefined;
   const calibrationVeto = judges.length > 0 && calibrated === 0;
   // Agreement assumes an independent panel: when every line carries the same
@@ -70,7 +143,7 @@ export function computeScore(cfg: EvalConfig, judges: JudgeLine[], doc: Findings
     : judgeSaysNo
       ? "a judge ruled it does not meet expectations"
       : calibrationVeto
-        ? "no judge passed calibration — an uncalibrated panel cannot green-light the verdict"
+        ? "no judge passed calibration on the golden fixture — an uncalibrated panel cannot green-light the verdict"
         : overall < bar
           ? `weighted score ${overall} is below the ${bar} bar`
           : `no P0, judges agree, score ${overall} >= ${bar}`;

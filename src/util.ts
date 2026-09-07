@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { Effort, Impact, Provenance } from "./types.js";
 
@@ -141,6 +141,42 @@ function lineCount(absPath: string, cache?: LineCache): number {
   return readFileCached(absPath, cache).count;
 }
 
+// Containment is a REAL-path property, not a string one. A symlink that sits
+// inside the root but points outside it passes every lexical check, and
+// following it would pull foreign text into a VERIFY digest — breaking the
+// never-read-outside contract. So the real path is resolved BEFORE any read:
+// an escaping link (including a directory link in the middle of the path) is
+// refused, a broken/cyclic link and a directory become diagnostics, and nothing
+// outside the root is ever opened.
+type Containment = { status: "ok"; realPath: string } | { status: "missing" | "escapes" | "notfile" | "unreadable"; reason: string };
+
+function containedRealPath(absPath: string, rootAbs: string, rootLabel: string): Containment {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(rootAbs);
+  } catch {
+    realRoot = resolve(rootAbs); // root not on disk (moved/committed run): keep the lexical form
+  }
+  let realPath: string;
+  try {
+    realPath = realpathSync(absPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // A dangling symlink and a plain missing file tell the caller the same
+    // story; ELOOP (a symlink cycle) is a diagnostic, never a crash.
+    if (code === "ENOENT") return { status: "missing", reason: "missing" };
+    return { status: "unreadable", reason: `cannot be resolved (${code ?? "error"}) — a broken or cyclic symlink is not evidence` };
+  }
+  const rel = relative(realRoot, realPath);
+  if (rel.startsWith("..") || isAbsolute(rel)) return { status: "escapes", reason: `symlink resolves outside the ${rootLabel} (not read, not graded)` };
+  try {
+    if (!statSync(realPath).isFile()) return { status: "notfile", reason: "evidence must cite a file, not a directory" };
+  } catch (err) {
+    return { status: "unreadable", reason: `cannot be read (${(err as NodeJS.ErrnoException).code ?? "error"})` };
+  }
+  return { status: "ok", realPath };
+}
+
 export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidence {
   let raw = String(ref ?? "").trim();
 
@@ -163,7 +199,12 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
     if (relFromRun.startsWith("..") || isAbsolute(relFromRun)) {
       return { raw, kind: "external", gradeable: false, resolved: false, reason: "path escapes the run directory (not graded)", absPath };
     }
-    if (!existsSync(absPath)) return { raw, kind: "run", gradeable: true, resolved: false, reason: `run artifact not found: ${rel}`, absPath };
+    // …and the same REAL-path guard: a link inside the run dir pointing out of
+    // it must not put outside text into a digest either.
+    const guard = containedRealPath(absPath, opts.runDir, "run directory");
+    if (guard.status === "escapes") return { raw, kind: "external", gradeable: false, resolved: false, reason: guard.reason, absPath };
+    if (guard.status === "missing") return { raw, kind: "run", gradeable: true, resolved: false, reason: `run artifact not found: ${rel}`, absPath };
+    if (guard.status !== "ok") return { raw, kind: "run", gradeable: true, resolved: false, reason: guard.reason, absPath };
     const line = anchor?.match(/^L(\d+)$/);
     if (line) {
       const n = Number(line[1]);
@@ -194,13 +235,20 @@ export function resolveEvidence(ref: string, opts: ResolveOpts): ResolvedEvidenc
     // Never read outside the target (path-traversal guard); record but don't grade.
     return { raw, kind: "external", gradeable: false, resolved: false, reason: "path is outside the target repo (not graded)", absPath };
   }
-  if (!existsSync(absPath)) {
+  // Lexical containment held; now prove it on the REAL path before reading a
+  // byte — a symlink (or a symlinked parent directory) that leaves the target
+  // is refused here, so its content can never reach a digest.
+  const guard = containedRealPath(absPath, opts.targetAbs, "target repo");
+  if (guard.status === "escapes") {
+    return { raw, kind: "external", gradeable: false, resolved: false, reason: guard.reason, absPath };
+  }
+  if (guard.status !== "ok") {
     return {
       raw,
       kind: "file",
       gradeable: true,
       resolved: false,
-      reason: `file not found: ${path}`,
+      reason: guard.status === "missing" ? `file not found: ${path}` : guard.reason,
       absPath,
       lineStart: lineSpec?.start,
       lineEnd: lineSpec?.end,

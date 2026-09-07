@@ -1,6 +1,7 @@
 ---
 name: ultraeval
-description: 'Use when the user wants to rigorously EVALUATE a skill or a codebase and get back grounded, AI-actionable fix docs — e.g. "evaluate this skill", "audit/grade/score this repo", "is my skill production-ready", "review this codebase and give me a fix plan", "find what is wrong and give me a TDD backlog", "does this meet expectations". Also when regression-proofing your own skill after changes, vetting a third-party one before trusting it, or gating a PR on a normed score. Keywords: evaluate, eval, audit, grade, assess, review, score, test a skill, code review, fix plan, remediation, TDD backlog, meets expectations, normed evaluation.'
+description: "Evaluate a skill or codebase against grounded criteria and produce a prioritized, test-driven remediation backlog."
+disable-model-invocation: true
 license: MIT
 metadata:
   version: 1.27.0
@@ -13,6 +14,13 @@ The markdown is the program. A tiny deterministic engine scaffolds the run, gene
 New to it? `references/worked-example.md` is a real five-minute run, including a finding the gate rejects. Read that first.
 
 ## When to use
+
+When the question is whether a skill actually helps versus not using it, follow
+[the paired benchmark protocol](references/benchmark.md). It prepares identical
+tasks/budgets, ingests real observations, and emits a blinded review packet before
+revealing the comparison. Do not substitute repository test counts or a code
+quality score for measured utility. Never fill measurement rows with estimates
+or synthetic successes; fixture results test the engine, not the skill's benefit.
 
 - "Evaluate / audit / grade / score this skill (or repo)"; "is it production-ready / does it meet expectations?"
 - "Review this codebase and give me a fix plan / a TDD backlog."

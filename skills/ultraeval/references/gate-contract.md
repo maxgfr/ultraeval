@@ -37,6 +37,8 @@ The anti-hallucination core. Two layers: `check` (structural — does the citati
 | `url:https://…` | — | recorded, **not** graded offline (cannot alone ground a finding) |
 | absolute / outside-target path | — | never read (traversal guard); not graded |
 | `run:../…` escaping the run dir | — | never read (same guard applied to `run:` refs); not graded |
+| a symlink (or symlinked parent dir) resolving outside the target/run dir | — | never read (containment is checked on the **real** path, not the string); not graded |
+| a directory, a broken or cyclic symlink | — | not read; reported as unresolved evidence |
 
 `--scope` globs use a minimal zero-dependency dialect: `**`, `*`, `?` and `{a,b}` only — **no negation, no nested braces**. Absolute paths and `..` are rejected at `init`.
 

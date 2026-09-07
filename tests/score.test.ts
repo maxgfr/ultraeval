@@ -1,8 +1,10 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { appendHistory, formatHistory, formatScore, readHistory, scoreRun } from "../src/score.js";
+import { appendHistory, computeScore, formatHistory, formatScore, readHistory, scoreRun } from "../src/score.js";
+import type { EvalConfig } from "../src/types.js";
 
 const tmps: string[] = [];
 
@@ -32,6 +34,17 @@ afterEach(() => {
   for (const t of tmps.splice(0)) rmSync(t, { recursive: true, force: true });
 });
 
+// The two dimensions the scaffold configures, fully scored — the shape every
+// judge verdict owes the rubric.
+const FULL = [
+  { id: "security", score: 5 },
+  { id: "correctness", score: 5 },
+];
+// The golden answers of skills/ultraeval/references/calibration-run.json
+// (grounding 1±1, coverage 4±1, docs 2±1) — what a genuinely calibrated judge
+// reports alongside passed: true.
+const CALIBRATED = { scores: { grounding: 1, coverage: 4, docs: 2 }, passed: true };
+
 describe("score — weighted scorecard from judges.jsonl", () => {
   it("averages each dimension across judges and weights to 0-100", () => {
     const run = scaffold([
@@ -41,7 +54,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
       {
         dimensionScores: [
@@ -49,7 +62,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const sc = scoreRun(run);
@@ -98,7 +111,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 3 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const sc = scoreRun(run);
@@ -107,13 +120,13 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("writes scorecard.json", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     scoreRun(run);
     expect(existsSync(join(run, "scorecard.json"))).toBe(true);
   });
 
   it("stamps the scorecard with the run provenance and scoredAt when the config has it", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.provenance = {
@@ -133,7 +146,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("a legacy config without provenance still scores and omits it from the scorecard", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const sc = scoreRun(run);
     expect(sc.provenance).toBeUndefined();
     expect(sc.overall).toBeGreaterThan(0);
@@ -147,7 +160,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 3 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const cfgPath = join(run, "eval.config.json");
@@ -161,12 +174,12 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("defaults the bar to 80 and records it", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     expect(scoreRun(run).bar).toBe(80);
   });
 
   it("stamps judgesIndependent: false when every judge line shares one author", () => {
-    const line = { dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } };
+    const line = { dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED };
     const run = scaffold([
       { ...line, lens: "a", author: "sess-1" },
       { ...line, lens: "b", author: "sess-1" },
@@ -178,7 +191,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("judgesIndependent is true with distinct authors and unset when authors are absent", () => {
-    const line = { dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } };
+    const line = { dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED };
     const distinct = scoreRun(
       scaffold([
         { ...line, author: "s1" },
@@ -191,7 +204,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("refuses to score without judges — no judges.jsonl or an empty panel errors instead of a silent 0/100", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     rmSync(join(run, "judges.jsonl"));
     expect(() => scoreRun(run)).toThrow(/judges\.jsonl/);
     writeFileSync(join(run, "judges.jsonl"), "");
@@ -207,7 +220,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { scores: { grounding: 1 }, passed: true },
+        calibration: CALIBRATED,
       },
       {
         dimensionScores: [
@@ -215,7 +228,8 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { scores: { grounding: 2 }, passed: true },
+        // the far edge of every tolerance band — still calibrated
+        calibration: { scores: { grounding: 2, coverage: 3, docs: 3 }, passed: true },
       },
       {
         dimensionScores: [
@@ -262,7 +276,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const sc = scoreRun(run);
@@ -278,7 +292,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 2.5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const sc = scoreRun(run);
@@ -290,7 +304,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("computes sensitivity when weights do not sum to 1 (renormalized like the score)", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.dimensions = [
@@ -310,7 +324,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     expect(formatScore(scoreRun(run))).toMatch(/±0\.05/);
@@ -325,7 +339,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
             { id: "correctness", score: 5 },
           ],
           meetsExpectations: true,
-          calibration: { passed: true },
+          calibration: CALIBRATED,
         },
       ],
       [
@@ -364,7 +378,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("history: omits the commit field on a run without provenance", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     scoreRun(run);
     const file = join(run, "ledger.jsonl");
     appendHistory(run, file);
@@ -374,7 +388,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
   });
 
   it("history: creates the parent directory when seeding a fresh ledger", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     scoreRun(run);
     const file = join(run, "evals", "history.jsonl");
     appendHistory(run, file);
@@ -414,7 +428,7 @@ describe("score — weighted scorecard from judges.jsonl", () => {
           { id: "correctness", score: 5 },
         ],
         meetsExpectations: true,
-        calibration: { passed: true },
+        calibration: CALIBRATED,
       },
     ]);
     const sc = scoreRun(run);
@@ -532,7 +546,7 @@ describe("history — reading and formatting the score-trend ledger (FIX-022)", 
   });
 
   it("appendHistory records the protocol/rubric versions from provenance so the trend can flag incomparable runs", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.provenance = {
@@ -555,7 +569,7 @@ describe("history — reading and formatting the score-trend ledger (FIX-022)", 
   });
 
   it("stamps oneshot on the scorecard and the ledger entry for a one-shot run", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const cfgPath = join(run, "eval.config.json");
     const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
     cfg.oneshot = true;
@@ -569,11 +583,226 @@ describe("history — reading and formatting the score-trend ledger (FIX-022)", 
   });
 
   it("a full run stamps no oneshot marker anywhere", () => {
-    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: { passed: true } }]);
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
     const sc = scoreRun(run);
     expect(sc.oneshot).toBeUndefined();
     const file = join(run, "ledger.jsonl");
     appendHistory(run, file);
     expect(JSON.parse(readFileSync(file, "utf8").trim()).oneshot).toBeUndefined();
+  });
+});
+
+// Append a RAW (possibly torn) line to an existing judges.jsonl.
+function appendRawJudge(run: string, line: string): void {
+  const p = join(run, "judges.jsonl");
+  writeFileSync(p, `${readFileSync(p, "utf8")}\n${line}\n`);
+}
+
+describe("score — judges.jsonl integrity (F1)", () => {
+  it("rejects a malformed non-blank row naming the file and line, and writes no scorecard", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
+    appendRawJudge(run, JSON.stringify({ lens: "b", dimensionScores: FULL }).slice(0, 20)); // a torn write
+    expect(() => scoreRun(run)).toThrow(/judges\.jsonl:2/);
+    expect(existsSync(join(run, "scorecard.json"))).toBe(false); // nothing plausible written
+  });
+
+  it("a malformed DISSENTING judge is never silently dropped into a passing verdict", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
+    // The second line votes no but is truncated — dropping it flips the verdict.
+    appendRawJudge(run, JSON.stringify({ lens: "skeptic", meetsExpectations: false, dimensionScores: FULL }).slice(0, -5));
+    expect(() => scoreRun(run)).toThrow(/judges\.jsonl:2/);
+    expect(existsSync(join(run, "scorecard.json"))).toBe(false);
+  });
+
+  it("rejects a score outside the 0-5 rubric range instead of emitting 2000/100 MEETS", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 100 },
+          { id: "correctness", score: 100 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(() => scoreRun(run)).toThrow(/0-5/);
+    expect(existsSync(join(run, "scorecard.json"))).toBe(false);
+  });
+
+  it("rejects a negative score", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: -1 },
+          { id: "correctness", score: 3 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(() => scoreRun(run)).toThrow(/0-5/);
+  });
+
+  it("rejects a non-numeric or non-finite score", () => {
+    const strung = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: "5" },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(() => scoreRun(strung)).toThrow(/score/i);
+    const nulled = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: null },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(() => scoreRun(nulled)).toThrow(/score/i);
+  });
+
+  it("rejects a dimension scored twice in one verdict (double-weighting one opinion)", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 5 },
+          { id: "security", score: 5 },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(() => scoreRun(run)).toThrow(/security/);
+    expect(existsSync(join(run, "scorecard.json"))).toBe(false);
+  });
+
+  it("rejects a dimension id outside the configured rubric", () => {
+    const run = scaffold([{ dimensionScores: [...FULL, { id: "vibes", score: 5 }], meetsExpectations: true, calibration: CALIBRATED }]);
+    expect(() => scoreRun(run)).toThrow(/vibes/);
+  });
+
+  it("rejects a verdict that leaves a configured dimension unscored", () => {
+    const run = scaffold([{ dimensionScores: [{ id: "security", score: 5 }], meetsExpectations: true, calibration: CALIBRATED }]);
+    expect(() => scoreRun(run)).toThrow(/correctness/);
+  });
+
+  it("accepts fractional in-range scores (a 4.5 is a legitimate verdict)", () => {
+    const run = scaffold([
+      {
+        dimensionScores: [
+          { id: "security", score: 4.5 },
+          { id: "correctness", score: 0 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(scoreRun(run).dimensions.find((d) => d.id === "security")?.score).toBe(4.5);
+  });
+
+  it("keeps lens, author and rationale optional — a bare complete verdict still scores", () => {
+    const bare = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
+    expect(scoreRun(bare).overall).toBe(100);
+    const rich = scaffold([
+      {
+        lens: "security",
+        author: "s1",
+        dimensionScores: [
+          { id: "security", score: 5, rationale: "read src/x.ts:1" },
+          { id: "correctness", score: 5 },
+        ],
+        meetsExpectations: true,
+        calibration: CALIBRATED,
+      },
+    ]);
+    expect(scoreRun(rich).overall).toBe(100);
+  });
+
+  it("computeScore validates its own input so a direct consumer cannot bypass the rubric", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
+    const cfg = JSON.parse(readFileSync(join(run, "eval.config.json"), "utf8")) as EvalConfig;
+    const bad = (scores: { id: string; score: number }[]) => () => computeScore(cfg, [{ dimensionScores: scores, meetsExpectations: true }], { findings: [] });
+    expect(
+      bad([
+        { id: "security", score: 100 },
+        { id: "correctness", score: 5 },
+      ]),
+    ).toThrow(/0-5/);
+    expect(
+      bad([
+        { id: "security", score: 5 },
+        { id: "security", score: 5 },
+        { id: "correctness", score: 5 },
+      ]),
+    ).toThrow(/security/);
+  });
+});
+
+describe("score — calibration is derived from the golden fixture, not trusted (F2)", () => {
+  it("a judge whose fixture scores contradict the golden reference is NOT calibrated", () => {
+    const run = scaffold([
+      {
+        dimensionScores: FULL,
+        meetsExpectations: true,
+        // grounding 5 (expected 1±1), coverage 0 (expected 4±1), docs 5 (expected 2±1)
+        calibration: { scores: { grounding: 5, coverage: 0, docs: 5 }, passed: true },
+      },
+    ]);
+    const sc = scoreRun(run);
+    expect(sc.judgesCalibrated).toBe("0/1");
+    expect(sc.meetsExpectations).toBe(false);
+    expect(sc.reason).toMatch(/calibrat/i);
+  });
+
+  it("a complete in-tolerance fixture score set with passed:true is calibrated", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: CALIBRATED }]);
+    const sc = scoreRun(run);
+    expect(sc.judgesCalibrated).toBe("1/1");
+    expect(sc.meetsExpectations).toBe(true);
+  });
+
+  it("tolerance is honoured: each score may sit one point either side of the expected value", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: { scores: { grounding: 2, coverage: 3, docs: 3 }, passed: true } }]);
+    expect(scoreRun(run).judgesCalibrated).toBe("1/1");
+  });
+
+  it("a legacy passed:true with no fixture scores stays uncalibrated and vetoes the verdict", () => {
+    const run = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: { passed: true } }]);
+    const sc = scoreRun(run);
+    expect(sc.judgesCalibrated).toBe("0/1");
+    expect(sc.meetsExpectations).toBe(false);
+    expect(sc.reason).toMatch(/calibrat/i);
+  });
+
+  it("partial, out-of-range or unpassed fixture scores count as uncalibrated — never a crash", () => {
+    const partial = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: { scores: { grounding: 1 }, passed: true } }]);
+    expect(scoreRun(partial).judgesCalibrated).toBe("0/1");
+    const outOfRange = scaffold([
+      { dimensionScores: FULL, meetsExpectations: true, calibration: { scores: { grounding: 9, coverage: 4, docs: 2 }, passed: true } },
+    ]);
+    expect(scoreRun(outOfRange).judgesCalibrated).toBe("0/1");
+    // Correct fixture answers, but the judge reported a failed calibration: the
+    // explicit flag still has to say passed.
+    const unpassed = scaffold([{ dimensionScores: FULL, meetsExpectations: true, calibration: { scores: CALIBRATED.scores, passed: false } }]);
+    expect(scoreRun(unpassed).judgesCalibrated).toBe("0/1");
+  });
+
+  it("keeps the golden reference in the engine in sync with the shipped calibration fixture", async () => {
+    const { CALIBRATION_FIXTURE } = (await import("../src/types.js")) as unknown as {
+      CALIBRATION_FIXTURE: { id: string; expected: number; tolerance: number }[];
+    };
+    const p = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "ultraeval", "references", "calibration-run.json");
+    const shipped = JSON.parse(readFileSync(p, "utf8")) as { dimensions: { id: string; expected: number; tolerance: number }[] };
+    expect(CALIBRATION_FIXTURE.map((d) => ({ id: d.id, expected: d.expected, tolerance: d.tolerance }))).toEqual(
+      shipped.dimensions.map((d) => ({ id: d.id, expected: d.expected, tolerance: d.tolerance })),
+    );
   });
 });

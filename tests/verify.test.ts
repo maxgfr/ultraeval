@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -46,6 +46,21 @@ describe("verify — worklist + reduce", () => {
   it("excludes dismissed findings from the worklist", () => {
     const run = scaffold([{ ...f1, status: "dismissed" }]);
     expect(runVerify(run).pairs.length).toBe(0);
+  });
+
+  it("a symlink escaping the target never puts outside content in the VERIFY digest (F3)", () => {
+    const run = scaffold([]);
+    const root = join(run, "..");
+    const outside = join(root, "outside-secret.txt");
+    writeFileSync(outside, "OUTSIDE-SECRET-MARKER\n");
+    symlinkSync(outside, join(root, "target", "leak.js"));
+    writeFileSync(join(run, "findings.json"), JSON.stringify({ findings: [{ ...f1, evidence: [{ ref: "leak.js:1" }, { ref: "app.js:3" }] }] }));
+    const todo = runVerify(run);
+    const onDisk = readFileSync(join(run, "VERIFY.md"), "utf8") + readFileSync(join(run, "VERIFY.todo.json"), "utf8");
+    expect(JSON.stringify(todo)).not.toContain("OUTSIDE-SECRET-MARKER");
+    expect(onDisk).not.toContain("OUTSIDE-SECRET-MARKER");
+    // The lexically contained but externally pointing ref is reported, not read.
+    expect(onDisk).toMatch(/unresolved/);
   });
 
   it("apply: a refuted verdict makes the finding fail (exit gate)", () => {

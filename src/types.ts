@@ -275,9 +275,32 @@ export interface JudgeLine {
   topFindings?: string[];
   // Scored against references/calibration-run.json BEFORE judging the run.
   // A judge without a passed calibration is counted but flagged; a panel with
-  // zero calibrated judges cannot green-light the verdict.
+  // zero calibrated judges cannot green-light the verdict. `passed` is a
+  // SELF-REPORT: score.isCalibrated re-derives the answer from `scores` against
+  // CALIBRATION_FIXTURE — both must agree for the judge to count as calibrated.
   calibration?: { scores?: Record<string, number>; passed: boolean };
 }
+
+// The golden judge-calibration fixture, shipped verbatim as
+// skills/ultraeval/references/calibration-run.json (kept in sync by
+// tests/score.test.ts). It lives here, not in the JSON, because the engine must
+// re-derive calibration inside the zero-dependency standalone bundle, which has
+// no skill files to read. A judge is calibrated only when it scored EVERY
+// dimension below within `tolerance` of `expected`.
+export interface CalibrationDim {
+  id: string;
+  name: string;
+  expected: number;
+  tolerance: number;
+}
+export const CALIBRATION_FIXTURE: readonly CalibrationDim[] = [
+  { id: "grounding", name: "Correctness & grounding", expected: 1, tolerance: 1 },
+  { id: "coverage", name: "Functional coverage", expected: 4, tolerance: 1 },
+  { id: "docs", name: "Docs consistency", expected: 2, tolerance: 1 },
+];
+
+// The rubric scale every dimension score (run and calibration fixture) lives on.
+export const MAX_DIMENSION_SCORE = 5;
 
 export interface Scorecard {
   overall: number; // 0-100 weighted

@@ -1,5 +1,26 @@
 # ultraeval
 
+## Measure a skill's usefulness
+
+The new `benchmark` command prepares paired **with / without skill** tasks with
+the same model, environment and token/time budgets. Import actual outputs and
+measurements, review a condition-free packet, then reduce complete criterion
+judgments into observed success, token, time and cost comparisons. Missing pairs,
+changed evidence and incomparable records are refused; failed/budget-exhausted
+attempts remain in the results. It never launches an agent or invents scores.
+
+See the [protocol and three commands](skills/ultraeval/references/benchmark.md).
+This measures task-specific utility separately from the existing normed audit
+score. A successful reducer exit means the records were valid, not that a skill
+improved performance.
+
+## Manual skill invocation
+
+Invoke `$ultraeval` explicitly in Codex or `/ultraeval` in Claude Code.
+The shipped skill disables automatic activation in both hosts; CLI commands
+remain unchanged. Other hosts may not honor these settings. Existing installed
+copies need to be updated to receive this invocation policy.
+
 [![CI](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml/badge.svg)](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml)
 
 > Evaluate a **skill or codebase** with a multi-agent workflow, ground every finding in a real `file:line`, and get back **AI-exploitable fix docs** — a prioritized backlog plus per-fix **TDD cards** a model can implement red→green→refactor.
@@ -50,28 +71,28 @@ init → plan → run(research → test-plan → execute → findings)
 ## Standalone CLI (the engine)
 
 ```bash
-ENGINE=node scripts/ultraeval.mjs
-$ENGINE init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep   # add --since origin/main for a diff-scoped PR-gating run
-$ENGINE init --target ../my-app --out ../my-app/.ultraeval/metier --category métier --scope "src/domain/**"   # business-only eval: métier rubric + file scope (check fails out-of-scope findings)
-$ENGINE oneshot --target ../my-app --out /tmp/quick [--category ...] [--scope ...]   # single-pass quick eval: ONESHOT.md contract, structural gate kept, indicative verdict; plan --run upgrades it
-$ENGINE status --run /tmp/eval                      # pipeline checklist + the exact next command
-$ENGINE plan --run /tmp/eval                       # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
-$ENGINE analyze --run /tmp/eval [--since <ref>] [--json]   # deterministic hotspots/deps/churn/test-gaps -> analysis.json
-$ENGINE brainstorm --run /tmp/eval                  # divergent lenses -> BRAINSTORM.todo.md
-$ENGINE brainstorm --run /tmp/eval --rank [--check] # fold ranked, grounded opportunities into findings.json (and gate them)
-$ENGINE compare --run /tmp/eval-new --base /tmp/eval-old   # diff two runs -> COMPARE.md (score Δ, resolved, introduced)
-$ENGINE check --run /tmp/eval                       # grounding gate (exit 1 on a hallucinated citation); add --json for the CheckResult in CI
-$ENGINE verify --run /tmp/eval --honeypots 3        # adversarial worklist + planted traps that catch a rubber-stamping skeptic
-$ENGINE verify --run /tmp/eval --apply verdicts.json
-$ENGINE check --run /tmp/eval --semantic --require-verify   # exit gate (also fails while a honeypot failure is unresolved)
-$ENGINE backlog --run /tmp/eval --tdd               # BACKLOG.json + fixes/FIX-*.md (dependsOn derived from shared files)
-$ENGINE fix --run /tmp/eval --workflow              # one autonomous fix-agent contract per task + fix.workflow.mjs
-$ENGINE verify-fix --run /tmp/eval --task FIX-001   # replay the task's verify command; stamp status done + verifiedAt
-$ENGINE score --run /tmp/eval --history             # scorecard.json (verdict + weight-sensitivity + judgesCalibrated) + ledger line
-$ENGINE history --run /tmp/eval                     # read the score trend back (overall vs bar, Δ, counts); --json for CI
-$ENGINE rejudge --run /tmp/eval --out /tmp/eval-rj  # fresh judge panel over the same artifacts (test-retest stability)
-$ENGINE render --run /tmp/eval                      # index.html + index.md (shows the verdict)
-$ENGINE clean --run /tmp/eval                       # remove derived artifacts (keeps deliverables)
+# Every line runs the engine bundle directly: node scripts/ultraeval.mjs <command>
+node scripts/ultraeval.mjs init --target ../my-skill --out /tmp/eval --category "agent skill" --mode deep   # add --since origin/main for a diff-scoped PR-gating run
+node scripts/ultraeval.mjs init --target ../my-app --out ../my-app/.ultraeval/metier --category métier --scope "src/domain/**"   # business-only eval: métier rubric + file scope (check fails out-of-scope findings)
+node scripts/ultraeval.mjs oneshot --target ../my-app --out /tmp/quick   # single-pass quick eval (--category/--scope/--bar accepted): ONESHOT.md contract, structural gate kept, indicative verdict; plan --run upgrades it
+node scripts/ultraeval.mjs status --run /tmp/eval          # pipeline checklist + the exact next command
+node scripts/ultraeval.mjs plan --run /tmp/eval            # generate the workflow + agents (Analyze+Brainstorm stages in improve/deep)
+node scripts/ultraeval.mjs analyze --run /tmp/eval         # deterministic hotspots/deps/churn/test-gaps -> analysis.json; --since <ref> scopes it, --json prints it
+node scripts/ultraeval.mjs brainstorm --run /tmp/eval      # divergent lenses -> BRAINSTORM.todo.md
+node scripts/ultraeval.mjs brainstorm --run /tmp/eval --rank   # fold ranked, grounded opportunities into findings.json; add --check to gate them
+node scripts/ultraeval.mjs compare --run /tmp/eval-new --base /tmp/eval-old   # diff two runs -> COMPARE.md (score Δ, resolved, introduced)
+node scripts/ultraeval.mjs check --run /tmp/eval           # grounding gate (exit 1 on a hallucinated citation); add --json for the CheckResult in CI
+node scripts/ultraeval.mjs verify --run /tmp/eval --honeypots 3   # adversarial worklist + planted traps that catch a rubber-stamping skeptic
+node scripts/ultraeval.mjs verify --run /tmp/eval --apply verdicts.json
+node scripts/ultraeval.mjs check --run /tmp/eval --semantic --require-verify   # exit gate (also fails while a honeypot failure is unresolved)
+node scripts/ultraeval.mjs backlog --run /tmp/eval --tdd   # BACKLOG.json + fixes/FIX-*.md (dependsOn derived from shared files)
+node scripts/ultraeval.mjs fix --run /tmp/eval --workflow  # one autonomous fix-agent contract per task + fix.workflow.mjs
+node scripts/ultraeval.mjs verify-fix --run /tmp/eval --task FIX-001   # replay the task's verify command; stamp status done + verifiedAt
+node scripts/ultraeval.mjs score --run /tmp/eval --history # scorecard.json (verdict + weight-sensitivity + judgesCalibrated) + ledger line
+node scripts/ultraeval.mjs history --run /tmp/eval         # read the score trend back (overall vs bar, Δ, counts); --json for CI
+node scripts/ultraeval.mjs rejudge --run /tmp/eval --out /tmp/eval-rj   # fresh judge panel over the same artifacts (test-retest stability)
+node scripts/ultraeval.mjs render --run /tmp/eval          # index.html + index.md (shows the verdict)
+node scripts/ultraeval.mjs clean --run /tmp/eval           # remove derived artifacts (keeps deliverables)
 ```
 
 **Modes.** `--mode audit` (defects, default) · `improve` (grounded improvement **opportunities** — internal health *and* product/capability, rated impact × effort) · `deep` (both). Opportunities are discovered by `analyze` → `brainstorm` and held to the *same* grounding gate, so a lead always anchors to real code or a real metric — never vague "rewrite everything". `render` shows an impact × effort matrix and flags quick wins.

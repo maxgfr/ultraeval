@@ -44,6 +44,7 @@ export const FLAG_SPEC: Record<string, Record<string, FlagArity>> = {
   analyze: { run: "value", since: "value", json: "boolean", target: "value", out: "value" },
   brainstorm: { run: "value", rank: "boolean", check: "boolean" },
   compare: { run: "value", base: "value", json: "boolean", gate: "boolean" },
+  benchmark: { spec: "value", out: "value", run: "value", results: "value", judgments: "value", json: "boolean" },
   check: {
     run: "value",
     semantic: "boolean",

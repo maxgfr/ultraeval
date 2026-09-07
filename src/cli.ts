@@ -6,6 +6,7 @@ import { buildBacklog } from "./backlog.js";
 import { rankBrainstorm, runBrainstorm } from "./brainstorm.js";
 import { checkRun, formatCheckReport } from "./check.js";
 import { gateFailures, runCompare } from "./compare.js";
+import { prepareBenchmark, ingestBenchmarkResults, judgeBenchmark } from "./benchmark.js";
 import { writeSarif } from "./sarif.js";
 import { clean } from "./clean.js";
 import { initRun } from "./init.js";
@@ -29,6 +30,9 @@ const HELP = `ultraeval v${VERSION} — evaluate a skill or codebase, then gener
 Usage: node <skill-dir>/scripts/ultraeval.mjs <command> [flags]
 
 Commands:
+  benchmark --spec <json> --out <fresh-dir> | --run <dir> --results <json> | --run <dir> --judgments <json> [--json]
+             Prepare paired with/without-skill tasks, ingest real observations, then reduce blinded judgments.
+             Never launches an agent or invents measurements; refuses incomplete/incomparable records.
   init     --target <path> --out <run> [--kind skill|codebase] [--category <c>] [--mode audit|improve|deep] [--bar <n>] [--since <ref>]
              [--scope <glob[,glob]>] [--no-gitignore]
              Scaffold an eval run: detect the target, write eval.config.json + starter dimensions + provenance.
@@ -475,6 +479,23 @@ function cmdClean(args: Args): void {
 // The dispatch table: command name -> handler. Keyed identically to FLAG_SPEC so
 // a command the parser dispatches always has a handler (asserted in cli.test.ts).
 export const commandHandlers: Record<string, (args: Args, cmd: string) => void> = {
+  benchmark: (args) => {
+    const spec = str(args.spec),
+      out = str(args.out),
+      run = str(args.run),
+      results = str(args.results),
+      judgments = str(args.judgments);
+    let result: unknown;
+    if (spec && out && !run && !results && !judgments) result = prepareBenchmark(resolve(spec), resolve(out));
+    else if (run && results && !spec && !out && !judgments) result = ingestBenchmarkResults(resolve(run), resolve(results));
+    else if (run && judgments && !spec && !out && !results) result = judgeBenchmark(resolve(run), resolve(judgments));
+    else throw new Error("benchmark requires exactly --spec/--out, --run/--results, or --run/--judgments");
+    if (args.json) console.log(JSON.stringify(result, null, 2));
+    else
+      console.log(
+        `ultraeval benchmark: ${spec ? "protocol prepared; no tasks executed" : results ? "observations imported; blinded review pending" : "observed comparison written"} -> ${resolve(out ?? run!)}`,
+      );
+  },
   init: cmdInit,
   oneshot: cmdOneshot,
   plan: cmdPlan,

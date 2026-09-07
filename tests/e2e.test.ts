@@ -162,7 +162,10 @@ describe("e2e — the shipped bundle drives the whole flow", () => {
     cpSync(join(FIX, "sample-run"), dir, { recursive: true });
     writeFileSync(
       join(dir, "judges.jsonl"),
-      '{"lens":"a","dimensionScores":[{"id":"security","score":4}],"meetsExpectations":true,"calibration":{"passed":true}}\n',
+      // a complete verdict: every configured dimension scored once, calibration
+      // scored against the golden fixture (grounding 1±1, coverage 4±1, docs 2±1)
+      '{"lens":"a","dimensionScores":[{"id":"security","score":4},{"id":"correctness","score":4}],"meetsExpectations":true,' +
+        '"calibration":{"scores":{"grounding":1,"coverage":4,"docs":2},"passed":true}}\n',
     );
     const out = execFileSync("node", [BUNDLE, "score", "--run", dir, "--history", "--json"], { encoding: "utf8", cwd: dir });
     expect(out.trimStart().startsWith("{")).toBe(true); // --json output stays pure JSON
