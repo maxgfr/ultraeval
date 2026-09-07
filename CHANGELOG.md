@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.29.0](https://github.com/maxgfr/ultraeval/compare/v1.28.0...v1.29.0) (2026-09-07)
+
+
+### Features
+
+* harden verification, add workflows and require explicit skill invocation ([0b7bea0](https://github.com/maxgfr/ultraeval/commit/0b7bea077927d4ba270053b5573a2411b413b77d))
+
 # [1.28.0](https://github.com/maxgfr/ultraeval/compare/v1.27.0...v1.28.0) (2026-09-07)
 
 

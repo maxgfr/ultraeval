@@ -4,7 +4,7 @@ description: "Evaluate a skill or codebase against grounded criteria and produce
 disable-model-invocation: true
 license: MIT
 metadata:
-  version: 1.28.0
+  version: 1.29.0
 ---
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs
