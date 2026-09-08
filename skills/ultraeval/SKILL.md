@@ -9,7 +9,7 @@ metadata:
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs
 
-Use the bundled CodeIndex-backed commands to locate relevant files, symbols and relationships, then inspect the cited source before drawing conclusions. Report caps, skipped files, unavailable extractors and blocked sources as coverage limits. An empty or partial result does not establish that nothing exists.
+For engine evidence and coverage limits, read [engine-evidence](references/engine-evidence.md).
 
 The markdown is the program. A tiny deterministic engine scaffolds the run, generates the multi-agent workflow, and enforces a grounding gate; **you** (with fanned-out subagents) do the research, judgment, and writing. Every finding must resolve to a real `file:line` in the target — the gate rejects hallucinated ones — and the output is a prioritized backlog plus per-fix **TDD cards** a model can implement red→green→refactor.
 
