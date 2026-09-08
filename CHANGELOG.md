@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.30.1](https://github.com/maxgfr/ultraeval/compare/v1.30.0...v1.30.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **engine:** unify pins, repins and shared engine adapters ([aeb892a](https://github.com/maxgfr/ultraeval/commit/aeb892a128aa881e8edf84d059e0a3ee1b0393a8))
+* **engine:** unify pins, repins and shared engine adapters ([6146718](https://github.com/maxgfr/ultraeval/commit/614671816662fd16bbff6b4262efe2cc727191bc))
+
 # [1.30.0](https://github.com/maxgfr/ultraeval/compare/v1.29.0...v1.30.0) (2026-09-08)
 
 
