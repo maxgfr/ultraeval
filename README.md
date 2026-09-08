@@ -216,3 +216,5 @@ ultraeval only **reads** the evaluated target and writes under the run dir; it n
 ## License
 
 MIT © maxgfr
+
+See [shared engine maintenance](ENGINE-MAINTENANCE.md) for pins, source adoption checks and the daily repin workflow.

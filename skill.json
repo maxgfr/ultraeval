@@ -1,0 +1,47 @@
+{
+  "name": "ultraeval",
+  "vendorDir": "src/vendor",
+  "engines": {
+    "codeindex": {
+      "repo": "maxgfr/codeindex",
+      "minRef": "v2.27.1",
+      "meta": "engine.meta.json",
+      "files": [
+        {
+          "remote": "scripts/engine.mjs",
+          "local": "codeindex-engine.mjs"
+        },
+        {
+          "remote": "scripts/engine.d.mts",
+          "local": "codeindex-engine.d.mts"
+        }
+      ],
+      "forks": {
+        "src/types.ts:Hotspot": "Evaluation planning hotspot schema, distinct from index metrics.",
+        "src/util.ts:readText": "Strict UTF-8 artifact reader intentionally throws for missing evidence; engine readText returns empty on failure."
+      },
+      "usageFloor": 6
+    }
+  },
+  "repin": {
+    "artifacts": [
+      "src/vendor",
+      "scripts",
+      "skills",
+      "package.json",
+      "pnpm-lock.yaml",
+      "skill.json",
+      ".github/workflows/engine-repin.yml",
+      "tests/__snapshots__/analyze-golden.test.ts.snap"
+    ],
+    "workflows": [
+      "ci.yml",
+      "release.yml"
+    ],
+    "recall": {
+      "paths": [
+        "tests/__snapshots__/analyze-golden.test.ts.snap"
+      ]
+    }
+  }
+}
