@@ -53,6 +53,8 @@ describe("real host benchmark adapter", () => {
     const [cmd, args] = hostCommand("codex", "cheap", "low", ["/some path/SKILL.md"]);
     expect(cmd).toBe("codex");
     expect(args).toContain("--ignore-user-config");
+    expect(args).toContain("sandbox_workspace_write.network_access=false");
+    expect(hostCommand("codex", "cheap", "low", [], true)[1]).toContain("sandbox_workspace_write.network_access=true");
     expect(args).toContain('skills.config=[{path="/some path/SKILL.md",enabled=false}]');
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(() => hostCommand("unknown", "cheap", "low")).toThrow();

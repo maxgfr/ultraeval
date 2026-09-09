@@ -50,10 +50,10 @@ export function skillPaths(roots) {
   return [...new Set(paths)].sort();
 }
 
-export function hostCommand(host, model, effort, disabledSkills = []) {
+export function hostCommand(host, model, effort, disabledSkills = [], network = false) {
   if (host === "codex") {
     const disable = "skills.config=[" + disabledSkills.map((p) => `{path=${JSON.stringify(p)},enabled=false}`).join(",") + "]";
-    return ["codex", ["exec", "--ignore-user-config", "--ephemeral", "--json", "--skip-git-repo-check", "--disable", "plugins", "--disable", "apps", "--disable", "hooks", "--disable", "multi_agent", "-c", "project_doc_max_bytes=0", "-c", "approval_policy=\"never\"", "-c", `model_reasoning_effort=${JSON.stringify(effort)}`, "-c", disable, "--model", model, "--sandbox", "workspace-write", "-"]];
+    return ["codex", ["exec", "--ignore-user-config", "--ephemeral", "--json", "--skip-git-repo-check", "--disable", "plugins", "--disable", "apps", "--disable", "hooks", "--disable", "multi_agent", "-c", "project_doc_max_bytes=0", "-c", "approval_policy=\"never\"", "-c", `model_reasoning_effort=${JSON.stringify(effort)}`, "-c", disable, "-c", `sandbox_workspace_write.network_access=${network}`, "--model", model, "--sandbox", "workspace-write", "-"]];
   }
   if (host === "claude") {
     return ["claude", ["--print", "--verbose", "--output-format", "stream-json", "--no-session-persistence", "--safe-mode", "--model", model, "--effort", effort, "--permission-mode", "dontAsk", "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash,WebFetch,WebSearch", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}"]];
@@ -155,15 +155,16 @@ export function prepareWorkspace(plan, sample, fixtureRoot, destination) {
   return `${shared}${skill}\n${task.prompt}\n`;
 }
 
-export async function executeBenchmarks({ run, workspace, host, effort = "low", limit = Infinity, dryRun = false }) {
+export async function executeBenchmarks({ run, workspace, host, effort = "low", limit = Infinity, dryRun = false, network = false }) {
   run = realpathSync(run);
   workspace = realpathSync(workspace);
   const plan = verifyPlan(run);
+  if (network && host !== "codex") throw new Error("--network configures Codex shell access only; Claude uses its host network policy");
   const disabledSkills = skillPaths([join(homedir(), ".agents", "skills"), join(process.env.CODEX_HOME || join(homedir(), ".codex"), "skills")]);
-  const [command, args] = hostCommand(host, plan.spec.model, effort, disabledSkills);
+  const [command, args] = hostCommand(host, plan.spec.model, effort, disabledSkills, network);
   const version = spawnSync(command, ["--version"], { encoding: "utf8" });
   if (version.status !== 0) throw new Error(`${command} is unavailable: ${version.stderr || version.error?.message}`);
-  const identity = { protocolSha256: plan.protocolSha256, host, model: plan.spec.model, effort, hostVersion: version.stdout.trim(), workspace, disabledSkills, runnerSha256: hash(readFileSync(fileURLToPath(import.meta.url))) };
+  const identity = { protocolSha256: plan.protocolSha256, host, model: plan.spec.model, effort, hostVersion: version.stdout.trim(), networkAccess: host === "codex" ? network : "host-default", workspace, disabledSkills, runnerSha256: hash(readFileSync(fileURLToPath(import.meta.url))) };
   const identityPath = join(run, "HOST-EXECUTION.json");
   if (existsSync(identityPath) && JSON.stringify(json(identityPath)) !== JSON.stringify(identity)) throw new Error("Execution settings changed; prepare a fresh benchmark run");
   if (dryRun) return { ...identity, samples: plan.samples.length, command, args };
@@ -216,16 +217,17 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
   const argv = process.argv.slice(2), opts = {};
   try {
     if (argv.length === 1 && argv[0] === "--help") {
-      console.log("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--dry-run]");
+      console.log("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--dry-run]");
       process.exit(0);
     }
     for (let i = 0; i < argv.length; i++) {
       const key = argv[i];
+      if (key === "--network") { opts.network = true; continue; }
       if (key === "--dry-run") { opts.dryRun = true; continue; }
       if (!["--run", "--workspace", "--host", "--effort", "--limit"].includes(key) || !argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error(`Invalid argument ${key}`);
       opts[key.slice(2)] = argv[++i];
     }
-    if (!opts.run || !opts.workspace || !opts.host) throw new Error("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--dry-run]");
+    if (!opts.run || !opts.workspace || !opts.host) throw new Error("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--dry-run]");
     if (opts.limit !== undefined) {
       opts.limit = Number(opts.limit);
       if (!Number.isSafeInteger(opts.limit) || opts.limit < 1) throw new Error("--limit must be a positive integer");

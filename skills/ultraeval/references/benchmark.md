@@ -128,3 +128,11 @@ establish task correctness. Unknown token counts stay visible in the comparison.
 
 The selected skill is copied beside the disposable repository, never inside it.
 Both arms therefore expose identical project files even to filesystem indexers.
+
+Codex shell network access defaults to disabled. For an authorized web-research
+benchmark whose engine must fetch pages, pass `--network` in both conditions;
+the setting is frozen in `HOST-EXECUTION.json`. Native web search can work even
+when shell DNS/fetch is blocked, so verify both capabilities before comparing
+retrieval workflows. Claude uses its host network policy and rejects this
+Codex-only flag. Stream logs are written incrementally, including before a host
+finishes; interrupted usage remains unknown until the host reports it.
