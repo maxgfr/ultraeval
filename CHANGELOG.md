@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.31.0](https://github.com/maxgfr/ultraeval/compare/v1.30.3...v1.31.0) (2026-09-09)
+
+
+### Bug Fixes
+
+* distinguish unsupported claims from implementation defects ([149116d](https://github.com/maxgfr/ultraeval/commit/149116d9f4310ea30211e6699cfebe17713dd7d4))
+* freeze explicit network access for web research benchmarks ([d9dcf93](https://github.com/maxgfr/ultraeval/commit/d9dcf93ede6042b45af448391a3055066858014a))
+* permit scoped Git metadata writes in build benchmarks ([96da376](https://github.com/maxgfr/ultraeval/commit/96da376bd38c992be7a16533006e969cc6c479b4))
+* route bounded claim checks without manufacturing audit defects ([e381293](https://github.com/maxgfr/ultraeval/commit/e38129376323275adc82a2708a171b1367abf485))
+
+
+### Features
+
+* run reproducible host benchmarks with isolated skills and measured usage ([ab019c0](https://github.com/maxgfr/ultraeval/commit/ab019c02d2226b2a20845fbcce36590e66e08ff1))
+
 ## [1.30.3](https://github.com/maxgfr/ultraeval/compare/v1.30.2...v1.30.3) (2026-09-09)
 
 
