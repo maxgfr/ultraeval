@@ -17,6 +17,13 @@ New to it? `references/worked-example.md` is a real five-minute run, including a
 
 ## When to use
 
+For a **single factual claim** (for example, "does this library guarantee crash-safe
+storage?"), inspect the source and relevant tests, then return supported,
+refuted or unproven with citations and scope limits. This route does not require
+an audit score, finding count or remediation card. An absent capability can make
+the claim unproven without being a defect in the actual product. Use the full
+loop below when the user requests a codebase evaluation or prioritized backlog.
+
 When the question is whether a skill actually helps versus not using it, follow
 [the paired benchmark protocol](references/benchmark.md). It prepares identical
 tasks/budgets, ingests real observations, and emits a blinded review packet before
