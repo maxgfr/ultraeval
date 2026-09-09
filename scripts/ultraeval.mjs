@@ -19952,7 +19952,13 @@ import { createHash as createHash5, randomInt, randomUUID } from "crypto";
 import { mkdirSync as mkdirSync4, readFileSync as readFileSync16, realpathSync as realpathSync5, statSync as statSync10, writeFileSync as writeFileSync5 } from "fs";
 import { dirname as dirname6, isAbsolute as isAbsolute5, join as join32, relative as relative4, resolve as resolve8 } from "path";
 var MAX_BYTES = 2 * 1024 * 1024;
+var MAX_INPUT_BYTES = 16 * 1024 * 1024;
 var digest = (value) => createHash5("sha256").update(value).digest("hex");
+function inputDigest(path) {
+  const stat = statSync10(path);
+  if (!stat.isFile() || stat.size > MAX_INPUT_BYTES) throw new Error(`Expected a regular input file <= ${MAX_INPUT_BYTES} bytes: ${path}`);
+  return digest(readFileSync16(path));
+}
 function read(path) {
   const stat = statSync10(path);
   if (!stat.isFile() || stat.size > MAX_BYTES) throw new Error(`Expected a regular file <= ${MAX_BYTES} bytes: ${path}`);
@@ -20025,7 +20031,8 @@ var writeJson2 = (path, data) => {
 };
 function prepareBenchmark(specPath, out2) {
   const spec = parseSpec(json(specPath), dirname6(resolve8(specPath)));
-  const files = [.../* @__PURE__ */ new Set([spec.skillFile, ...spec.inputs])].map((path) => ({ path, sha256: digest(read(path)) }));
+  read(spec.skillFile);
+  const files = [.../* @__PURE__ */ new Set([spec.skillFile, ...spec.inputs])].map((path) => ({ path, sha256: inputDigest(path) }));
   const samples = [];
   for (const task of spec.tasks)
     for (let repetition = 1; repetition <= spec.repetitions; repetition++) {
@@ -20073,7 +20080,7 @@ function loadPlan(run2) {
   const plan = json(join32(run2, "BENCHMARK.json"));
   const spec = parseSpec(plan.spec, run2);
   if (protocolHash(spec, plan.files, plan.samples) !== plan.protocolSha256) throw new Error("Protocol hash changed");
-  for (const file of plan.files) if (digest(read(file.path)) !== file.sha256) throw new Error(`Input/skill changed: ${file.path}`);
+  for (const file of plan.files) if (inputDigest(file.path) !== file.sha256) throw new Error(`Input/skill changed: ${file.path}`);
   const samples = array(plan.samples, "samples").map((s) => object2(s, "sample"));
   unique(
     samples.map((s) => text(s.id, "sample.id")),
@@ -20103,11 +20110,12 @@ function observations(run2, plan, value) {
     if (r.protocolSha256 !== plan.protocolSha256 || r.model !== plan.spec.model || r.environment !== plan.spec.environment)
       throw new Error("Incomparable model/environment/protocol hash");
     if (r.status !== "completed" && r.status !== "error" && r.status !== "budget-exceeded") throw new Error("Invalid execution status");
-    const inputTokens = number(r.inputTokens, "inputTokens"), outputTokens = number(r.outputTokens, "outputTokens"), elapsedMs = number(r.elapsedMs, "elapsedMs", 0, Number.MAX_SAFE_INTEGER, false);
+    const tokens = (v, label) => v === null && r.status !== "completed" ? null : number(v, label);
+    const inputTokens = tokens(r.inputTokens, "inputTokens"), outputTokens = tokens(r.outputTokens, "outputTokens"), elapsedMs = number(r.elapsedMs, "elapsedMs", 0, Number.MAX_SAFE_INTEGER, false);
     const costUsd = r.costUsd === null ? null : number(r.costUsd, "costUsd", 0, Number.MAX_SAFE_INTEGER, false);
     const output = text(r.output, "output"), body2 = read(outputFile(run2, output));
     if (!body2.trim()) throw new Error("Output evidence must not be empty (record the error log for failed executions)");
-    const exceeded = inputTokens + outputTokens > plan.spec.tokenBudget || elapsedMs > plan.spec.timeBudgetMs;
+    const exceeded = inputTokens !== null && outputTokens !== null && inputTokens + outputTokens > plan.spec.tokenBudget || elapsedMs > plan.spec.timeBudgetMs;
     return { sampleId, inputTokens, outputTokens, elapsedMs, costUsd, status: exceeded ? "budget-exceeded" : r.status, output, outputSha256: digest(body2) };
   }).map((row, _, all) => {
     if (expected.size || all.length !== plan.samples.length) throw new Error("Missing sample coverage");
@@ -20183,7 +20191,7 @@ function judgeBenchmark(run2, judgmentsPath) {
       passed: selected.filter(
         (r) => r.status === "completed" && passed.get(r.sampleId) === plan.spec.tasks.find((t) => t.id === plan.samples.find((s) => s.id === r.sampleId).taskId).criteria.length
       ).length,
-      tokens: selected.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0),
+      tokens: selected.some((r) => r.inputTokens === null || r.outputTokens === null) ? null : selected.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0),
       elapsedMs: selected.reduce((sum, r) => sum + r.elapsedMs, 0),
       costUsd: selected.some((r) => r.costUsd === null) ? null : selected.reduce((sum, r) => sum + (r.costUsd ?? 0), 0),
       budgetExceeded: selected.filter((r) => r.status === "budget-exceeded").length,
@@ -20228,7 +20236,7 @@ function judgeBenchmark(run2, judgmentsPath) {
     "| Condition | Fully passed | Tokens | Elapsed ms | Cost USD | Budget exceeded | Errors |",
     "| --- | --- | --- | --- | --- | --- | --- |",
     ...Object.entries(report.conditions).map(
-      ([name2, c2]) => `| ${name2} | ${c2.passed}/${c2.total} | ${c2.tokens} | ${c2.elapsedMs} | ${c2.costUsd ?? "unknown"} | ${c2.budgetExceeded} | ${c2.errors} |`
+      ([name2, c2]) => `| ${name2} | ${c2.passed}/${c2.total} | ${c2.tokens ?? "unknown"} | ${c2.elapsedMs} | ${c2.costUsd ?? "unknown"} | ${c2.budgetExceeded} | ${c2.errors} |`
     ),
     "",
     ...limitations.map((s) => `- ${s}`),

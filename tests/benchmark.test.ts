@@ -71,6 +71,15 @@ function judgments(f: ReturnType<typeof observed>) {
   return { packet, rows, path };
 }
 describe("paired skill utility benchmark", () => {
+  it("snapshots binary skill resources and detects their mutation", () => {
+    const f = setup({ inputs: ["grammar.wasm"] });
+    writeFileSync(join(f.dir, "grammar.wasm"), Buffer.from([0, 97, 115, 109, 255]));
+    const plan = prepareBenchmark(f.path, f.run);
+    expect(plan.files).toHaveLength(2);
+    writeFileSync(join(f.dir, "grammar.wasm"), Buffer.from([0, 97, 115, 109, 254]));
+    writeFileSync(join(f.run, "results.json"), '{"rows":[]}');
+    expect(() => ingestBenchmarkResults(f.run, join(f.run, "results.json"))).toThrow(/Input\/skill changed/);
+  });
   it("prepares identical tasks/budgets with both conditions and never executes them", () => {
     const f = setup(),
       plan = prepareBenchmark(f.path, f.run);

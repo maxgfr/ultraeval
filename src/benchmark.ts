@@ -24,7 +24,7 @@ export interface BenchmarkPlan {
   protocolSha256: string;
   samples: Sample[];
 }
-type Metrics = { inputTokens: number; outputTokens: number; elapsedMs: number; costUsd: number | null };
+type Metrics = { inputTokens: number | null; outputTokens: number | null; elapsedMs: number; costUsd: number | null };
 type Observation = Metrics & { sampleId: string; output: string; outputSha256: string; status: "completed" | "error" | "budget-exceeded" };
 export interface BlindPacket {
   protocolSha256: string;
@@ -34,7 +34,13 @@ export interface BlindPacket {
 }
 
 const MAX_BYTES = 2 * 1024 * 1024;
+const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
+function inputDigest(path: string): string {
+  const stat = statSync(path);
+  if (!stat.isFile() || stat.size > MAX_INPUT_BYTES) throw new Error(`Expected a regular input file <= ${MAX_INPUT_BYTES} bytes: ${path}`);
+  return digest(readFileSync(path));
+}
 function read(path: string): string {
   const stat = statSync(path);
   if (!stat.isFile() || stat.size > MAX_BYTES) throw new Error(`Expected a regular file <= ${MAX_BYTES} bytes: ${path}`);
@@ -109,7 +115,8 @@ const writeJson = (path: string, data: unknown) => {
 /** Prepare a protocol only. No subprocess, LLM, network call or personal skill change. */
 export function prepareBenchmark(specPath: string, out: string): BenchmarkPlan {
   const spec = parseSpec(json(specPath), dirname(resolve(specPath)));
-  const files = [...new Set([spec.skillFile, ...spec.inputs])].map((path) => ({ path, sha256: digest(read(path)) }));
+  read(spec.skillFile); // The entrypoint is text; resources may include WASM grammars or images.
+  const files = [...new Set([spec.skillFile, ...spec.inputs])].map((path) => ({ path, sha256: inputDigest(path) }));
   const samples: Sample[] = [];
   for (const task of spec.tasks)
     for (let repetition = 1; repetition <= spec.repetitions; repetition++) {
@@ -151,7 +158,7 @@ function loadPlan(run: string): BenchmarkPlan {
   const plan = json(join(run, "BENCHMARK.json")) as BenchmarkPlan;
   const spec = parseSpec(plan.spec, run);
   if (protocolHash(spec, plan.files, plan.samples) !== plan.protocolSha256) throw new Error("Protocol hash changed");
-  for (const file of plan.files) if (digest(read(file.path)) !== file.sha256) throw new Error(`Input/skill changed: ${file.path}`);
+  for (const file of plan.files) if (inputDigest(file.path) !== file.sha256) throw new Error(`Input/skill changed: ${file.path}`);
   const samples = array(plan.samples, "samples").map((s) => object(s, "sample"));
   unique(
     samples.map((s) => text(s.id, "sample.id")),
@@ -187,14 +194,18 @@ function observations(run: string, plan: BenchmarkPlan, value: unknown): Observa
       if (r.protocolSha256 !== plan.protocolSha256 || r.model !== plan.spec.model || r.environment !== plan.spec.environment)
         throw new Error("Incomparable model/environment/protocol hash");
       if (r.status !== "completed" && r.status !== "error" && r.status !== "budget-exceeded") throw new Error("Invalid execution status");
-      const inputTokens = number(r.inputTokens, "inputTokens"),
-        outputTokens = number(r.outputTokens, "outputTokens"),
+      // A killed or failed host may never emit usage. Preserve unknown rather
+      // than inventing zero tokens; successful observations still require it.
+      const tokens = (v: unknown, label: string) => (v === null && r.status !== "completed" ? null : number(v, label));
+      const inputTokens = tokens(r.inputTokens, "inputTokens"),
+        outputTokens = tokens(r.outputTokens, "outputTokens"),
         elapsedMs = number(r.elapsedMs, "elapsedMs", 0, Number.MAX_SAFE_INTEGER, false);
       const costUsd = r.costUsd === null ? null : number(r.costUsd, "costUsd", 0, Number.MAX_SAFE_INTEGER, false);
       const output = text(r.output, "output"),
         body = read(outputFile(run, output));
       if (!body.trim()) throw new Error("Output evidence must not be empty (record the error log for failed executions)");
-      const exceeded = inputTokens + outputTokens > plan.spec.tokenBudget || elapsedMs > plan.spec.timeBudgetMs;
+      const exceeded =
+        (inputTokens !== null && outputTokens !== null && inputTokens + outputTokens > plan.spec.tokenBudget) || elapsedMs > plan.spec.timeBudgetMs;
       return { sampleId, inputTokens, outputTokens, elapsedMs, costUsd, status: exceeded ? "budget-exceeded" : r.status, output, outputSha256: digest(body) };
     })
     .map((row, _, all) => {
@@ -285,7 +296,9 @@ export function judgeBenchmark(run: string, judgmentsPath: string) {
           r.status === "completed" &&
           passed.get(r.sampleId) === plan.spec.tasks.find((t) => t.id === plan.samples.find((s) => s.id === r.sampleId)!.taskId)!.criteria.length,
       ).length,
-      tokens: selected.reduce((sum, r) => sum + r.inputTokens + r.outputTokens, 0),
+      tokens: selected.some((r) => r.inputTokens === null || r.outputTokens === null)
+        ? null
+        : selected.reduce((sum, r) => sum + r.inputTokens! + r.outputTokens!, 0),
       elapsedMs: selected.reduce((sum, r) => sum + r.elapsedMs, 0),
       costUsd: selected.some((r) => r.costUsd === null) ? null : selected.reduce((sum, r) => sum + (r.costUsd ?? 0), 0),
       budgetExceeded: selected.filter((r) => r.status === "budget-exceeded").length,
@@ -332,7 +345,8 @@ export function judgeBenchmark(run: string, judgmentsPath: string) {
     "| Condition | Fully passed | Tokens | Elapsed ms | Cost USD | Budget exceeded | Errors |",
     "| --- | --- | --- | --- | --- | --- | --- |",
     ...Object.entries(report.conditions).map(
-      ([name, c]) => `| ${name} | ${c.passed}/${c.total} | ${c.tokens} | ${c.elapsedMs} | ${c.costUsd ?? "unknown"} | ${c.budgetExceeded} | ${c.errors} |`,
+      ([name, c]) =>
+        `| ${name} | ${c.passed}/${c.total} | ${c.tokens ?? "unknown"} | ${c.elapsedMs} | ${c.costUsd ?? "unknown"} | ${c.budgetExceeded} | ${c.errors} |`,
     ),
     "",
     ...limitations.map((s) => `- ${s}`),
