@@ -50,10 +50,10 @@ export function skillPaths(roots) {
   return [...new Set(paths)].sort();
 }
 
-export function hostCommand(host, model, effort, disabledSkills = [], network = false) {
+export function hostCommand(host, model, effort, disabledSkills = [], network = false, gitDirectory) {
   if (host === "codex") {
     const disable = "skills.config=[" + disabledSkills.map((p) => `{path=${JSON.stringify(p)},enabled=false}`).join(",") + "]";
-    return ["codex", ["exec", "--ignore-user-config", "--ephemeral", "--json", "--skip-git-repo-check", "--disable", "plugins", "--disable", "apps", "--disable", "hooks", "--disable", "multi_agent", "-c", "project_doc_max_bytes=0", "-c", "approval_policy=\"never\"", "-c", `model_reasoning_effort=${JSON.stringify(effort)}`, "-c", disable, "-c", `sandbox_workspace_write.network_access=${network}`, "--model", model, "--sandbox", "workspace-write", "-"]];
+    return ["codex", ["exec", "--ignore-user-config", "--ephemeral", "--json", "--skip-git-repo-check", "--disable", "plugins", "--disable", "apps", "--disable", "hooks", "--disable", "multi_agent", "-c", "project_doc_max_bytes=0", "-c", "approval_policy=\"never\"", "-c", `model_reasoning_effort=${JSON.stringify(effort)}`, "-c", disable, "-c", `sandbox_workspace_write.network_access=${network}`, ...(gitDirectory ? ["-c", `sandbox_workspace_write.writable_roots=[${JSON.stringify(gitDirectory)}]`] : []), "--model", model, "--sandbox", "workspace-write", "-"]];
   }
   if (host === "claude") {
     return ["claude", ["--print", "--verbose", "--output-format", "stream-json", "--no-session-persistence", "--safe-mode", "--model", model, "--effort", effort, "--permission-mode", "dontAsk", "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash,WebFetch,WebSearch", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}"]];
@@ -155,16 +155,17 @@ export function prepareWorkspace(plan, sample, fixtureRoot, destination) {
   return `${shared}${skill}\n${task.prompt}\n`;
 }
 
-export async function executeBenchmarks({ run, workspace, host, effort = "low", limit = Infinity, dryRun = false, network = false }) {
+export async function executeBenchmarks({ run, workspace, host, effort = "low", limit = Infinity, dryRun = false, network = false, gitWrite = false }) {
   run = realpathSync(run);
   workspace = realpathSync(workspace);
   const plan = verifyPlan(run);
   if (network && host !== "codex") throw new Error("--network configures Codex shell access only; Claude uses its host network policy");
+  if (gitWrite && host !== "codex") throw new Error("--git-write configures Codex fixture metadata access only");
   const disabledSkills = skillPaths([join(homedir(), ".agents", "skills"), join(process.env.CODEX_HOME || join(homedir(), ".codex"), "skills")]);
   const [command, args] = hostCommand(host, plan.spec.model, effort, disabledSkills, network);
   const version = spawnSync(command, ["--version"], { encoding: "utf8" });
   if (version.status !== 0) throw new Error(`${command} is unavailable: ${version.stderr || version.error?.message}`);
-  const identity = { protocolSha256: plan.protocolSha256, host, model: plan.spec.model, effort, hostVersion: version.stdout.trim(), networkAccess: host === "codex" ? network : "host-default", workspace, disabledSkills, runnerSha256: hash(readFileSync(fileURLToPath(import.meta.url))) };
+  const identity = { protocolSha256: plan.protocolSha256, host, model: plan.spec.model, effort, hostVersion: version.stdout.trim(), networkAccess: host === "codex" ? network : "host-default", gitMetadataWrites: gitWrite, workspace, disabledSkills, runnerSha256: hash(readFileSync(fileURLToPath(import.meta.url))) };
   const identityPath = join(run, "HOST-EXECUTION.json");
   if (existsSync(identityPath) && JSON.stringify(json(identityPath)) !== JSON.stringify(identity)) throw new Error("Execution settings changed; prepare a fresh benchmark run");
   if (dryRun) return { ...identity, samples: plan.samples.length, command, args };
@@ -188,7 +189,9 @@ export async function executeBenchmarks({ run, workspace, host, effort = "low", 
       if (seeded.status !== 0) throw new Error(`Fixture git initialization failed: ${seeded.stderr}`);
     }
     writeFileSync(join(dir, "prompt.txt"), prompt, { flag: "wx" });
-    const result = await runProcess(command, args, { cwd, prompt, timeoutMs: plan.spec.timeBudgetMs, tokenBudget: plan.spec.tokenBudget, host, stdoutPath: join(dir, "events.jsonl"), stderrPath: join(dir, "stderr.txt") });
+    const sampleArgs = gitWrite ? hostCommand(host, plan.spec.model, effort, disabledSkills, network, join(cwd, ".git"))[1] : args;
+    write(join(dir, "host-command.json"), { command, args: sampleArgs, cwd });
+    const result = await runProcess(command, sampleArgs, { cwd, prompt, timeoutMs: plan.spec.timeBudgetMs, tokenBudget: plan.spec.tokenBudget, host, stdoutPath: join(dir, "events.jsonl"), stderrPath: join(dir, "stderr.txt") });
     const parsed = parseEvents(host, result.stdout);
     const status = result.stopped === "timeout" || result.stopped === "tokens" ? "budget-exceeded" : result.code !== 0 || parsed.failed || !parsed.finished || parsed.inputTokens === null || parsed.outputTokens === null ? "error" : "completed";
     const output = relative(run, join(dir, "result.txt"));
@@ -217,17 +220,18 @@ if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(f
   const argv = process.argv.slice(2), opts = {};
   try {
     if (argv.length === 1 && argv[0] === "--help") {
-      console.log("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--dry-run]");
+      console.log("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--git-write] [--dry-run]");
       process.exit(0);
     }
     for (let i = 0; i < argv.length; i++) {
       const key = argv[i];
       if (key === "--network") { opts.network = true; continue; }
+      if (key === "--git-write") { opts.gitWrite = true; continue; }
       if (key === "--dry-run") { opts.dryRun = true; continue; }
       if (!["--run", "--workspace", "--host", "--effort", "--limit"].includes(key) || !argv[i + 1] || argv[i + 1].startsWith("--")) throw new Error(`Invalid argument ${key}`);
       opts[key.slice(2)] = argv[++i];
     }
-    if (!opts.run || !opts.workspace || !opts.host) throw new Error("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--dry-run]");
+    if (!opts.run || !opts.workspace || !opts.host) throw new Error("Usage: node scripts/run-host-benchmarks.mjs --run <benchmark> --workspace <fixture-root> --host codex|claude [--effort low] [--limit N] [--network] [--git-write] [--dry-run]");
     if (opts.limit !== undefined) {
       opts.limit = Number(opts.limit);
       if (!Number.isSafeInteger(opts.limit) || opts.limit < 1) throw new Error("--limit must be a positive integer");

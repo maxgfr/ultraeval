@@ -136,3 +136,11 @@ when shell DNS/fetch is blocked, so verify both capabilities before comparing
 retrieval workflows. Claude uses its host network policy and rejects this
 Codex-only flag. Stream logs are written incrementally, including before a host
 finishes; interrupted usage remains unknown until the host reports it.
+
+Git branches, commits and worktrees need writes to repository metadata, which
+Codex protects even in a writable workspace. For authorized build benchmarks,
+pass `--git-write` in both arms. It permits only each disposable fixture's own
+`.git` directory, retains workspace sandboxing, and records the policy plus the
+actual per-sample command. It does not grant access to the original repository.
+Probe required host capabilities before counting a blocked workflow as a skill
+failure; retain restricted runs as diagnostics and replay in a fresh protocol.

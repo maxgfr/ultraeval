@@ -55,6 +55,8 @@ describe("real host benchmark adapter", () => {
     expect(args).toContain("--ignore-user-config");
     expect(args).toContain("sandbox_workspace_write.network_access=false");
     expect(hostCommand("codex", "cheap", "low", [], true)[1]).toContain("sandbox_workspace_write.network_access=true");
+    expect(args.some((a) => a.includes("writable_roots"))).toBe(false);
+    expect(hostCommand("codex", "cheap", "low", [], false, "/fixture path/.git")[1]).toContain('sandbox_workspace_write.writable_roots=["/fixture path/.git"]');
     expect(args).toContain('skills.config=[{path="/some path/SKILL.md",enabled=false}]');
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(() => hostCommand("unknown", "cheap", "low")).toThrow();
