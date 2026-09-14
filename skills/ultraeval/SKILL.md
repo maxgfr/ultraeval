@@ -4,7 +4,7 @@ description: Evaluate a skill or codebase against grounded criteria and produce 
 disable-model-invocation: true
 license: MIT
 metadata:
-  version: 1.31.3
+  version: 1.31.4
   opencode/autoinvoke: 'false'
 ---
 
