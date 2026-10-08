@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.32.0](https://github.com/maxgfr/ultraeval/compare/v1.31.11...v1.32.0) (2026-10-08)
+
+
+### Features
+
+* **skill:** let the agent invoke ultraeval on request ([74fd2c3](https://github.com/maxgfr/ultraeval/commit/74fd2c3f6fb8da05dd9572aaf5792986b7def0af))
+
 ## [1.31.11](https://github.com/maxgfr/ultraeval/compare/v1.31.10...v1.31.11) (2026-10-05)
 
 
