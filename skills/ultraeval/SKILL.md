@@ -3,7 +3,7 @@ name: ultraeval
 description: Evaluate a skill or codebase against grounded criteria and produce a prioritized, test-driven remediation backlog. Use only when the user explicitly asks for ultraeval or an evaluation of a skill or codebase.
 license: MIT
 metadata:
-  version: 1.32.0
+  version: 1.32.1
   opencode/autoinvoke: 'true'
 ---
 
