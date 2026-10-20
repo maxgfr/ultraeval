@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+# [1.33.0](https://github.com/maxgfr/ultraeval/compare/v1.32.4...v1.33.0) (2026-10-20)
+
+
+### Features
+
+* make the skill agent-neutral ([#23](https://github.com/maxgfr/ultraeval/issues/23)) ([4e2e129](https://github.com/maxgfr/ultraeval/commit/4e2e12959bd838d1e9c3260d6387fd6b800dc476))
+
 ## [1.32.4](https://github.com/maxgfr/ultraeval/compare/v1.32.3...v1.32.4) (2026-10-19)
 
 
