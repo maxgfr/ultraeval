@@ -8,3 +8,7 @@ coverage/
 .ultraeval/
 *.tgz
 .claude/
+
+# agent skill installs (produced by `npx skills add .`, never committed)
+.agents/skills/
+skills-lock.json

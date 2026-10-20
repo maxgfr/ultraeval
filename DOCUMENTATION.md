@@ -12,9 +12,10 @@ init → plan → run(research → test-plan → execute → findings)
      → judge → score(+history) → backlog(TDD) → render → fix → verify-fix
 ```
 
-`plan` emits a ready-to-launch multi-agent Workflow (`eval.workflow.mjs`) plus `agents/*.md` dispatch
-contracts, with the absolute engine/target paths baked in. Launch it with a Workflow harness, or run the
-stages by hand from the contracts. Either way the same engine commands enforce the guarantees below.
+`plan` emits `agents/*.md` dispatch contracts — dispatch them with any host's subagents (passing the absolute
+engine/target/run paths `plan` bakes into `eval.workflow.mjs`), or run `plan --eco` and follow `RUNBOOK.md`
+with a single agent — plus an optional Claude Code launcher, `eval.workflow.mjs`, for the Workflow tool.
+Either way the same engine commands enforce the guarantees below.
 
 `status --run <run>` reports where a run sits in this pipeline (which artifacts exist) and the exact next
 command to run; `clean --run <run>` removes derived gate/render artifacts (keeping the deliverables), or
@@ -198,10 +199,11 @@ false-positive catalogue, and the `findings` contract embeds its pre-filing chec
 
 ## Troubleshooting
 
-- **`eval.workflow.mjs` throws a `SyntaxError`, or nothing happens, under `node`.** It is a Workflow-harness
-  script — `agent()`/`phase()`/`parallel()`/`log()` are globals the harness injects, not Node builtins.
-  Launch it with your Workflow tool (`Workflow({ scriptPath: "<run>/eval.workflow.mjs" })`) or run the
-  stages by hand from `agents/*.md`. Run under plain `node` it now prints that guidance and exits 2.
+- **`eval.workflow.mjs` throws a `SyntaxError`, or nothing happens, under `node`.** It is an optional Claude
+  Code Workflow script — `agent()`/`phase()`/`parallel()`/`log()` are globals that harness injects, not Node
+  builtins. On any host, dispatch the `agents/*.md` contracts with its subagents (or `plan --eco` →
+  `RUNBOOK.md` with a single agent); in Claude Code you can instead launch it with the Workflow tool
+  (`Workflow({ scriptPath: "<run>/eval.workflow.mjs" })`). Run under plain `node` it prints that guidance and exits 2.
 
 - **`score` errored instead of printing a number / `judges.jsonl` is missing.** `score` no longer emits a
   plausible `0/100` from an empty panel: with no `judges.jsonl` (or an empty one) it throws ("no judge
