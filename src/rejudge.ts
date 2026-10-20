@@ -32,7 +32,7 @@ export function rejudgeRun(runDir: string, outDir: string, engineAbs: string): s
   return copied;
 }
 
-// Minimal Workflow script: judge panel + score/compare. Deliberately no
+// Minimal, optional Claude Code Workflow script: judge panel + score/compare. Deliberately no
 // top-level `return` so it is also dynamically importable with stubbed globals.
 function rejudgeWorkflow(cfg: EvalConfig, outAbs: string, engineAbs: string, baseAbs: string): string {
   const meta = {
@@ -51,9 +51,9 @@ function rejudgeWorkflow(cfg: EvalConfig, outAbs: string, engineAbs: string, bas
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
-    `  console.error('rejudge.workflow.mjs is a Workflow-harness script, not a plain Node script — agent()/phase()/parallel()/log() come from the harness.')`,
-    `  console.error('Launch it with: Workflow({ scriptPath: ' + JSON.stringify(RUN + '/rejudge.workflow.mjs') + ' })')`,
-    `  console.error('No Workflow tool? Run the stages by hand: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md).')`,
+    `  console.error('rejudge.workflow.mjs is an optional Claude Code Workflow script, not a plain Node script — agent()/phase()/parallel()/log() come from the harness.')`,
+    `  console.error('Any host: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md), then score and compare.')`,
+    `  console.error('Optional — Claude Code: launch it with Workflow({ scriptPath: ' + JSON.stringify(RUN + '/rejudge.workflow.mjs') + ' })')`,
     `  process.exit(2)`,
     `}`,
     ``,

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 //
 // A tool list hands a client the ENGINE. It does not hand it the method: the
 // rule that you answer only from retrieved evidence, the citation format, the
-// rubric a good answer is held to. Inside Claude Code that method arrives as
+// rubric a good answer is held to. Inside a skills-aware agent that method arrives as
 // SKILL.md. Everywhere else — Cursor, Zed, Claude Desktop — nothing carries it,
 // and a model driving these tools from cold reinvents a worse protocol.
 //

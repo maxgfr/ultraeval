@@ -1,14 +1,14 @@
 # Orchestration — the generated workflow & subagent contracts
 
-`plan` emits `<RUN>/eval.workflow.mjs` and `<RUN>/agents/*.md`. The workflow is the map; the contracts are the per-role instructions.
+`plan` emits `<RUN>/agents/*.md` and `<RUN>/eval.workflow.mjs`. The contracts are the per-role instructions any host's subagents can follow; the pipeline below is the map. `eval.workflow.mjs` is an optional Claude Code launcher (run it with the Workflow tool) that encodes the same pipeline; `plan --eco` writes `RUNBOOK.md` for a single agent instead.
 
 ## Portability contract
 
 Every step is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Parallel subagents are an **optimization, not a requirement** — the same eval runs as a sequential loop. Write nothing that depends on a specific runtime.
 
-**The absolute-path invariant.** A subagent runs in its **own context**: it sees none of this conversation, has its own cwd, and no notion of a "run dir" or "skill dir". So the parent MUST substitute the **absolute** path to `scripts/ultraeval.mjs` and the absolute `RUN`/`TARGET` into every subagent prompt. `plan` already bakes these into `eval.workflow.mjs` (it injects `ENGINE`, `TARGET`, `RUN` as constants and hands each agent its contract path), so the generated workflow is portable as-is.
+**The absolute-path invariant.** A subagent runs in its **own context**: it sees none of this conversation, has its own cwd, and no notion of a "run dir" or "skill dir". So the parent MUST substitute the **absolute** path to `scripts/ultraeval.mjs` and the absolute `RUN`/`TARGET` into every subagent prompt. `plan` already bakes these into the contracts and into `eval.workflow.mjs` (it injects `ENGINE`, `TARGET`, `RUN` as constants and hands each agent its contract path), so the generated artifacts are portable as-is.
 
-## The pipeline (what eval.workflow.mjs runs)
+## The pipeline (the stage order every route runs)
 
 ```
 stage       contract file             agents                              produces

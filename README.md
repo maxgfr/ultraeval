@@ -36,6 +36,8 @@ npx skills add maxgfr/ultraeval        # into the current project (committed, te
 npx skills add -g maxgfr/ultraeval     # globally
 ```
 
+Works with any skills-compatible agent; add `-a <agent>` (e.g. `-a codex`, `-a opencode`) to target one explicitly.
+
 No `npm install`, no API keys — the engine is a single committed `.mjs` bundle.
 
 ## What it does
@@ -46,7 +48,7 @@ init → plan → run(research → test-plan → execute → findings)
      → judge → score(+history) → backlog(TDD) → render → fix → verify-fix
 ```
 
-- **`plan`** generates `eval.workflow.mjs` — a ready-to-launch multi-agent Workflow parameterized to your target — plus `agents/*.md` dispatch contracts. This is the "generate the workflow and subagents" part.
+- **`plan`** generates `agents/*.md` dispatch contracts parameterized to your target — run them with any host's subagents, or `--eco` for a sequential `RUNBOOK.md` with one agent — plus an optional Claude Code `eval.workflow.mjs` (launch it with the Workflow tool). This is the "generate the workflow and subagents" part.
 - Every finding must resolve to a real `file:line` in the target (or a produced run-log line). **`check` rejects a hallucinated or stale citation**; **`verify`** adversarially confirms the cited content actually supports the claim.
 - **`backlog --tdd`** turns confirmed findings into `BACKLOG.json` (machine-readable, priority-ordered) and one `fixes/FIX-*.md` **TDD card** per finding (RED failing-test-first → GREEN change → VERIFY).
 - **The process is normed.** Every rubric dimension anchors to an external referential (ISO/IEC 25010:2023 for code, an ISO 25010/25059 composite for skills, 29148/WCAG/OWASP per category), P0/P1/P2 severities are codified (CVSS-aligned bands), and every run records **provenance** (engine/protocol/rubric versions, target git SHA) under a versioned protocol — `compare` refuses to read a delta across incompatible runs. Normative text: [`references/protocol.md`](./skills/ultraeval/references/protocol.md).
@@ -56,8 +58,8 @@ init → plan → run(research → test-plan → execute → findings)
 ```
 <run>/
   eval.config.json         # target, kind, category, scored dimensions
-  eval.workflow.mjs        # the generated multi-agent Workflow
-  agents/*.md              # subagent dispatch contracts
+  agents/*.md              # subagent dispatch contracts (any host)
+  eval.workflow.mjs        # optional Claude Code Workflow launcher (RUNBOOK.md with --eco)
   research/<dim>.md        # cited methodology per dimension
   TEST-PLAN.md             # every functionality + gate to test
   runs/core.md, live.md    # deterministic + live evidence (cited by findings)
@@ -127,17 +129,24 @@ The skill shells out to the CLI and parses its output. An MCP server skips both:
 your agent calls ultraeval as typed tools, with JSON schemas in and structured
 results out. Same engine, same run directory, no wrapper.
 
-```bash
-# stdio — the default, and what Claude Code / Claude Desktop / Cursor expect
-claude mcp add ultraeval -- node /abs/path/to/scripts/ultraeval.mjs mcp
+Any MCP client works. The server is `node /abs/path/to/scripts/ultraeval.mjs mcp`
+over stdio (the default), or a streamable HTTP URL with `--transport http`:
 
-# or over HTTP, on loopback
+```bash
+# stdio — register the command with your agent
+claude mcp add ultraeval -- node /abs/path/to/scripts/ultraeval.mjs mcp     # Claude Code
+codex mcp add ultraeval -- node /abs/path/to/scripts/ultraeval.mjs mcp      # Codex
+opencode mcp add ultraeval -- node /abs/path/to/scripts/ultraeval.mjs mcp   # OpenCode
+
+# or over HTTP, on loopback — then point your client at the URL
 node scripts/ultraeval.mjs mcp --transport http --port 7344
-claude mcp add --transport http ultraeval http://127.0.0.1:7344/mcp
+claude mcp add --transport http ultraeval http://127.0.0.1:7344/mcp         # Claude Code
+codex mcp add ultraeval --url http://127.0.0.1:7344/mcp                     # Codex
+opencode mcp add ultraeval --url http://127.0.0.1:7344/mcp                  # OpenCode
 ```
 
 ```jsonc
-// Claude Desktop takes stdio servers only — a remote URL here will not work.
+// JSON-config clients. Claude Desktop takes stdio servers only — a remote URL here will not work.
 { "mcpServers": { "ultraeval": { "command": "node", "args": ["/abs/path/to/scripts/ultraeval.mjs", "mcp"] } } }
 // Cursor, HTTP:
 { "mcpServers": { "ultraeval": { "url": "http://127.0.0.1:7344/mcp" } } }

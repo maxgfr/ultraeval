@@ -30338,7 +30338,8 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
   const head = [
     `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: ${JSON.stringify(phases)} }`,
     ``,
-    `// NOT a plain Node script: launch via the Workflow tool \u2014 Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
+    `// Optional Claude Code launcher, NOT a plain Node script. Any host: dispatch agents/*.md with its subagents (or plan --eco -> RUNBOOK.md).`,
+    `// Claude Code: Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
     `// agent()/phase()/parallel()/log() only exist inside that harness; plain \`node\` prints guidance and exits 2.`,
     ``,
     `// Constants for THIS eval run (injected by \`ultraeval plan\`).`,
@@ -30353,9 +30354,9 @@ function workflowScript(cfg, runDirAbs, engineAbs) {
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
-    `  console.error('eval.workflow.mjs is a Workflow-harness script, not a plain Node script \u2014 agent()/phase()/parallel()/log() come from the harness.')`,
-    `  console.error('Launch it with: Workflow({ scriptPath: ' + JSON.stringify(RUN + '/eval.workflow.mjs') + ' })')`,
-    `  console.error('No Workflow tool? Run the stages by hand: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md step 3).')`,
+    `  console.error('eval.workflow.mjs is an optional Claude Code Workflow script, not a plain Node script \u2014 agent()/phase()/parallel()/log() come from the harness.')`,
+    `  console.error('Any host: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md step 3), or run plan --eco and follow RUNBOOK.md with a single agent.')`,
+    `  console.error('Optional \u2014 Claude Code: launch it with Workflow({ scriptPath: ' + JSON.stringify(RUN + '/eval.workflow.mjs') + ' })')`,
     `  process.exit(2)`,
     `}`,
     ``,
@@ -30446,7 +30447,7 @@ You establish *how to evaluate* one DIMENSION of a ${cfg.kind} (category: ${cfg.
 
 **Step 1 \u2014 read the pack FIRST.** \`${skillRefPath(engineAbs, "methodology-library.md")}\` has a block for your dimension: the metric that actually measures it, how to obtain that metric on a real target, 0\u20135 anchors, and the failure modes that fool it. That block is your baseline rubric. The methodology for a category does not change between targets, so do NOT rediscover it from scratch.
 
-**Step 2 \u2014 web-search only to close a gap.** Use WebSearch + WebFetch (if not loaded: ToolSearch \`select:WebSearch,WebFetch\`) ONLY when the pack leaves a gap, when a figure could have moved (a benchmark version, a standard's revision), or when no block covers this category. A search that merely re-confirms the pack is wasted budget.
+**Step 2 \u2014 web-search only to close a gap.** Use your host's web search + fetch tools (e.g. WebSearch + WebFetch; load them first if your host defers tools) ONLY when the pack leaves a gap, when a figure could have moved (a benchmark version, a standard's revision), or when no block covers this category. A search that merely re-confirms the pack is wasted budget.
 
 **No network is not a blocker.** If search or fetch fails or is unavailable, derive the rubric from the pack, note "no network \u2014 baseline rubric from methodology-library.md, unrefined" in the note, and continue. Never stall the pipeline on a search, and never invent a citation to paper over a failed fetch.
 
@@ -30884,9 +30885,9 @@ function fixWorkflow(tasks, runDir, engineAbs) {
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
-    `  console.error('fix.workflow.mjs is a Workflow-harness script, not a plain Node script \u2014 agent()/phase()/log() come from the harness.')`,
-    `  console.error('Launch it with: Workflow({ scriptPath: ' + JSON.stringify(RUN + '/fix.workflow.mjs') + ' })')`,
-    `  console.error('No Workflow tool? Dispatch a subagent per fix contract under ' + RUN + '/fixes/agents/*.agent.md (see SKILL.md step 6).')`,
+    `  console.error('fix.workflow.mjs is an optional Claude Code Workflow script, not a plain Node script \u2014 agent()/phase()/log() come from the harness.')`,
+    `  console.error('Any host: dispatch a subagent per fix contract under ' + RUN + '/fixes/agents/*.agent.md (see SKILL.md step 6).')`,
+    `  console.error('Optional \u2014 Claude Code: launch it with Workflow({ scriptPath: ' + JSON.stringify(RUN + '/fix.workflow.mjs') + ' })')`,
     `  process.exit(2)`,
     `}`,
     ``,
@@ -30982,9 +30983,9 @@ function rejudgeWorkflow(cfg, outAbs, engineAbs, baseAbs) {
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
-    `  console.error('rejudge.workflow.mjs is a Workflow-harness script, not a plain Node script \u2014 agent()/phase()/parallel()/log() come from the harness.')`,
-    `  console.error('Launch it with: Workflow({ scriptPath: ' + JSON.stringify(RUN + '/rejudge.workflow.mjs') + ' })')`,
-    `  console.error('No Workflow tool? Run the stages by hand: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md).')`,
+    `  console.error('rejudge.workflow.mjs is an optional Claude Code Workflow script, not a plain Node script \u2014 agent()/phase()/parallel()/log() come from the harness.')`,
+    `  console.error('Any host: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md), then score and compare.')`,
+    `  console.error('Optional \u2014 Claude Code: launch it with Workflow({ scriptPath: ' + JSON.stringify(RUN + '/rejudge.workflow.mjs') + ' })')`,
     `  process.exit(2)`,
     `}`,
     ``,
@@ -31401,7 +31402,7 @@ function nextHint(steps, runDir) {
   if (missing("init")) return `init --target <target> --out ${runDir}`;
   if (missing("plan")) return `plan --run ${runDir}`;
   if (missing("testplan") || missing("findings"))
-    return `launch the generated workflow \u2014 Workflow({ scriptPath: "${runDir}/eval.workflow.mjs" }) \u2014 or run the stages by hand via agents/*.md`;
+    return `dispatch the agents/*.md contracts with your host's subagents (or plan --run ${runDir} --eco and follow RUNBOOK.md) \u2014 optional, Claude Code: Workflow({ scriptPath: "${runDir}/eval.workflow.mjs" })`;
   if (missing("verify"))
     return `check --run ${runDir} && verify --run ${runDir} --honeypots 3, fill verdicts, then verify --apply and check --semantic --require-verify`;
   if (missing("judge")) return `dispatch the judge panel (agents/judge.md) to append judges.jsonl`;
@@ -32685,8 +32686,8 @@ Commands:
              The structural check gate still applies; the result is indicative, never a normed verdict.
              The full pipeline stays the default \u2014 plan --run <run> upgrades a oneshot run in place.
   plan     --run <run> [--eco]        (alias: orchestrate \u2014 the family verb)
-             Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
-             --eco skips the workflow and writes RUNBOOK.md instead \u2014 the sequential low-token
+             Generate agents/*.md contracts (dispatch with any host's subagents) + templates, plus an optional
+             Claude Code eval.workflow.mjs. --eco skips the workflow and writes RUNBOOK.md instead \u2014 the sequential low-token
              path: same stages, same contracts (played as self-pass checklists), same gates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
@@ -32710,7 +32711,7 @@ Commands:
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
-             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
+             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs (optional, Claude Code).
   verify-fix --run <run> --task FIX-XXX [--timeout <ms>]
              Replay the task's verify command (timeboxed, default 600000 ms) + gate test-first via
              red.expectedNew; stamps status done + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
@@ -32727,15 +32728,15 @@ Commands:
              Ledger resolution: an explicit <path>/--file, else the --run target-anchored default; --json emits the raw array.
   rejudge  --run <run> --out <run2>
              Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
-             Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
+             Dispatch <run2>/agents/judge.md (optional, Claude Code: rejudge.workflow.mjs), then score --run <run2> and compare --run <run2> --base <run>.
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
   mcp      [--transport stdio|http] [--run <run>] [--allow-write] [--port <n>] [--bind <addr>]
            [--allow-origin <o,...>] [--allow-remote] [--max-response-bytes <n>]
-           Serve the evaluation over the Model Context Protocol, so a non-Claude-Code
-           host (Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
+           Serve the evaluation over the Model Context Protocol, so any MCP host
+           (Claude Code, Codex, OpenCode, Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
            and SKILL.md + references/ as resources. Read-only unless --allow-write.
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
@@ -32823,8 +32824,13 @@ function cmdPlan(args2, cmd) {
 ${written.map((w) => `  ${w}`).join("\n")}`);
   if (eco) console.log(`
 Sequential eco path: follow ${run2}/RUNBOOK.md, playing each agents/*.md contract yourself.`);
-  else console.log(`
-Launch the eval: Workflow({ scriptPath: "${run2}/eval.workflow.mjs" })  \u2014 or run the stages by hand via agents/*.md`);
+  else {
+    console.log(
+      `
+Launch the eval: dispatch ${run2}/agents/*.md with your host's subagents (any agent), or re-run with --eco and follow RUNBOOK.md with a single agent.`
+    );
+    console.log(`Optional \u2014 Claude Code: launch ${run2}/eval.workflow.mjs with the Workflow tool: Workflow({ scriptPath: "${run2}/eval.workflow.mjs" })`);
+  }
 }
 function cmdAnalyze(args2) {
   const run2 = str2(args2.run);
@@ -32989,7 +32995,9 @@ function cmdRejudge(args2) {
   const engine = fileURLToPath4(import.meta.url);
   const copied = rejudgeRun(run2, out2, engine);
   console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out2}`);
-  console.log(`  launch ${out2}/rejudge.workflow.mjs, then: score --run ${out2} && compare --run ${out2} --base ${run2}`);
+  console.log(
+    `  dispatch ${out2}/agents/judge.md with your host's subagents (optional \u2014 Claude Code: launch ${out2}/rejudge.workflow.mjs with the Workflow tool), then: score --run ${out2} && compare --run ${out2} --base ${run2}`
+  );
 }
 function cmdRender(args2) {
   const run2 = str2(args2.run);
@@ -33023,7 +33031,10 @@ function cmdMcp(args2) {
   mcpServing = startHttpServer({ ...options, port, bind: str2(args2.bind), allowOrigin, allowRemote: !!args2["allow-remote"] }).then(
     (running) => {
       console.error(`ultraeval: MCP server listening on ${running.url}`);
-      console.error(`  client: claude mcp add --transport http ultraeval ${running.url}`);
+      console.error(`  connect any MCP client to ${running.url} (streamable HTTP), e.g.:`);
+      console.error(`    Claude Code: claude mcp add --transport http ultraeval ${running.url}`);
+      console.error(`    Codex:       codex mcp add ultraeval --url ${running.url}`);
+      console.error(`    OpenCode:    opencode mcp add ultraeval --url ${running.url}`);
       for (const sig of ["SIGINT", "SIGTERM"]) {
         process.once(sig, () => {
           void running.close().then(() => process.exit(0));

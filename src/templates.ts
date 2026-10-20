@@ -129,12 +129,12 @@ const liveScenarioBlock = (cfg: EvalConfig): string =>
 
 // ---------------------------------------------------------------------------
 // The generator. `plan` calls these to emit, into an eval run dir:
-//   - eval.workflow.mjs   a ready-to-launch multi-agent Workflow script
-//   - agents/*.md         the subagent dispatch contracts it references
+//   - agents/*.md         the subagent dispatch contracts (any host's subagents)
+//   - eval.workflow.mjs   an optional Claude Code Workflow script over those contracts
 //   - TEST-PLAN.template.md, dimensions.json, findings.schema.json
 // The workflow is built by string concatenation with the run's constants
 // injected as JSON literals — so it needs no interpolation-escaping and runs
-// as-is under the Workflow tool.
+// as-is under Claude Code's Workflow tool.
 // ---------------------------------------------------------------------------
 
 export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: string): string {
@@ -153,7 +153,8 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
   const head = [
     `export const meta = { name: ${JSON.stringify(meta.name)}, description: ${JSON.stringify(meta.description)}, phases: ${JSON.stringify(phases)} }`,
     ``,
-    `// NOT a plain Node script: launch via the Workflow tool — Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
+    `// Optional Claude Code launcher, NOT a plain Node script. Any host: dispatch agents/*.md with its subagents (or plan --eco -> RUNBOOK.md).`,
+    `// Claude Code: Workflow({ scriptPath: ${JSON.stringify(`${runDirAbs}/eval.workflow.mjs`)} }).`,
     `// agent()/phase()/parallel()/log() only exist inside that harness; plain \`node\` prints guidance and exits 2.`,
     ``,
     `// Constants for THIS eval run (injected by \`ultraeval plan\`).`,
@@ -168,9 +169,9 @@ export function workflowScript(cfg: EvalConfig, runDirAbs: string, engineAbs: st
     ``,
     `// Parse-safe guard: under plain \`node\` the Workflow-harness globals are absent.`,
     `if (typeof phase === 'undefined') {`,
-    `  console.error('eval.workflow.mjs is a Workflow-harness script, not a plain Node script — agent()/phase()/parallel()/log() come from the harness.')`,
-    `  console.error('Launch it with: Workflow({ scriptPath: ' + JSON.stringify(RUN + '/eval.workflow.mjs') + ' })')`,
-    `  console.error('No Workflow tool? Run the stages by hand: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md step 3).')`,
+    `  console.error('eval.workflow.mjs is an optional Claude Code Workflow script, not a plain Node script — agent()/phase()/parallel()/log() come from the harness.')`,
+    `  console.error('Any host: dispatch a subagent per contract under ' + AGENTS + '/*.md (see SKILL.md step 3), or run plan --eco and follow RUNBOOK.md with a single agent.')`,
+    `  console.error('Optional — Claude Code: launch it with Workflow({ scriptPath: ' + JSON.stringify(RUN + '/eval.workflow.mjs') + ' })')`,
     `  process.exit(2)`,
     `}`,
     ``,
@@ -268,7 +269,7 @@ You establish *how to evaluate* one DIMENSION of a ${cfg.kind} (category: ${cfg.
 
 **Step 1 — read the pack FIRST.** \`${skillRefPath(engineAbs, "methodology-library.md")}\` has a block for your dimension: the metric that actually measures it, how to obtain that metric on a real target, 0–5 anchors, and the failure modes that fool it. That block is your baseline rubric. The methodology for a category does not change between targets, so do NOT rediscover it from scratch.
 
-**Step 2 — web-search only to close a gap.** Use WebSearch + WebFetch (if not loaded: ToolSearch \`select:WebSearch,WebFetch\`) ONLY when the pack leaves a gap, when a figure could have moved (a benchmark version, a standard's revision), or when no block covers this category. A search that merely re-confirms the pack is wasted budget.
+**Step 2 — web-search only to close a gap.** Use your host's web search + fetch tools (e.g. WebSearch + WebFetch; load them first if your host defers tools) ONLY when the pack leaves a gap, when a figure could have moved (a benchmark version, a standard's revision), or when no block covers this category. A search that merely re-confirms the pack is wasted budget.
 
 **No network is not a blocker.** If search or fetch fails or is unavailable, derive the rubric from the pack, note "no network — baseline rubric from methodology-library.md, unrefined" in the note, and continue. Never stall the pipeline on a search, and never invent a citation to paper over a failed fetch.
 

@@ -65,7 +65,7 @@ function nextHint(steps: StatusStep[], runDir: string): string {
   if (missing("init")) return `init --target <target> --out ${runDir}`;
   if (missing("plan")) return `plan --run ${runDir}`;
   if (missing("testplan") || missing("findings"))
-    return `launch the generated workflow — Workflow({ scriptPath: "${runDir}/eval.workflow.mjs" }) — or run the stages by hand via agents/*.md`;
+    return `dispatch the agents/*.md contracts with your host's subagents (or plan --run ${runDir} --eco and follow RUNBOOK.md) — optional, Claude Code: Workflow({ scriptPath: "${runDir}/eval.workflow.mjs" })`;
   if (missing("verify"))
     return `check --run ${runDir} && verify --run ${runDir} --honeypots 3, fill verdicts, then verify --apply and check --semantic --require-verify`;
   if (missing("judge")) return `dispatch the judge panel (agents/judge.md) to append judges.jsonl`;
