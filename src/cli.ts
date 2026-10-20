@@ -47,8 +47,8 @@ Commands:
              The structural check gate still applies; the result is indicative, never a normed verdict.
              The full pipeline stays the default — plan --run <run> upgrades a oneshot run in place.
   plan     --run <run> [--eco]        (alias: orchestrate — the family verb)
-             Generate eval.workflow.mjs (a multi-agent Workflow) + agents/*.md contracts + templates.
-             --eco skips the workflow and writes RUNBOOK.md instead — the sequential low-token
+             Generate agents/*.md contracts (dispatch with any host's subagents) + templates, plus an optional
+             Claude Code eval.workflow.mjs. --eco skips the workflow and writes RUNBOOK.md instead — the sequential low-token
              path: same stages, same contracts (played as self-pass checklists), same gates.
   analyze  --run <run> [--since <ref>] [--json]   (or --target <dir> --out <dir>)
              Deterministic repo analysis -> analysis.json + ANALYSIS.md (hotspots, deps, churn, test/doc gaps).
@@ -72,7 +72,7 @@ Commands:
              Emit BACKLOG.json + REMEDIATION.md from confirmed findings; --tdd also writes fixes/FIX-*.md cards.
   fix      --run <run> [--task FIX-XXX] [--workflow]
              Emit one autonomous fix-agent contract per backlog task (fixes/agents/FIX-*.agent.md, absolute
-             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs.
+             paths + target invariants + no-gate-weakening rule); --workflow also emits fix.workflow.mjs (optional, Claude Code).
   verify-fix --run <run> --task FIX-XXX [--timeout <ms>]
              Replay the task's verify command (timeboxed, default 600000 ms) + gate test-first via
              red.expectedNew; stamps status done + verifiedAt in BACKLOG.json on success, exit 1 otherwise.
@@ -89,15 +89,15 @@ Commands:
              Ledger resolution: an explicit <path>/--file, else the --run target-anchored default; --json emits the raw array.
   rejudge  --run <run> --out <run2>
              Reuse a completed run's artifacts with a FRESH judge panel (test-retest verdict stability).
-             Launch <run2>/rejudge.workflow.mjs, then score --run <run2> and compare --run <run2> --base <run>.
+             Dispatch <run2>/agents/judge.md (optional, Claude Code: rejudge.workflow.mjs), then score --run <run2> and compare --run <run2> --base <run>.
   render   --run <run> [--out <dir>] [--no-html] [--no-md] [--sarif]
              Self-contained dashboard (index.html + index.md), including the verdict when scorecard.json exists.
              --sarif also writes eval.sarif (SARIF 2.1.0) for code-scanning ingestion.
   clean    --run <run> [--all]
   mcp      [--transport stdio|http] [--run <run>] [--allow-write] [--port <n>] [--bind <addr>]
            [--allow-origin <o,...>] [--allow-remote] [--max-response-bytes <n>]
-           Serve the evaluation over the Model Context Protocol, so a non-Claude-Code
-           host (Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
+           Serve the evaluation over the Model Context Protocol, so any MCP host
+           (Claude Code, Codex, OpenCode, Cursor, Zed, Claude Desktop) gets the tools, the workflows as prompts,
            and SKILL.md + references/ as resources. Read-only unless --allow-write.
              Remove derived gate/render artifacts (keeps deliverables); --all removes the whole run.
 
@@ -210,7 +210,12 @@ function cmdPlan(args: Args, cmd: string): void {
   const written = planRun(run, engine, { eco });
   console.log(`ultraeval ${cmd}: generated\n${written.map((w) => `  ${w}`).join("\n")}`);
   if (eco) console.log(`\nSequential eco path: follow ${run}/RUNBOOK.md, playing each agents/*.md contract yourself.`);
-  else console.log(`\nLaunch the eval: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })  — or run the stages by hand via agents/*.md`);
+  else {
+    console.log(
+      `\nLaunch the eval: dispatch ${run}/agents/*.md with your host's subagents (any agent), or re-run with --eco and follow RUNBOOK.md with a single agent.`,
+    );
+    console.log(`Optional — Claude Code: launch ${run}/eval.workflow.mjs with the Workflow tool: Workflow({ scriptPath: "${run}/eval.workflow.mjs" })`);
+  }
 }
 
 function cmdAnalyze(args: Args): void {
@@ -403,7 +408,9 @@ function cmdRejudge(args: Args): void {
   const engine = fileURLToPath(import.meta.url);
   const copied = rejudgeRun(run, out, engine);
   console.log(`ultraeval rejudge: ${copied.length} artifact(s) reused, fresh judges.jsonl -> ${out}`);
-  console.log(`  launch ${out}/rejudge.workflow.mjs, then: score --run ${out} && compare --run ${out} --base ${run}`);
+  console.log(
+    `  dispatch ${out}/agents/judge.md with your host's subagents (optional — Claude Code: launch ${out}/rejudge.workflow.mjs with the Workflow tool), then: score --run ${out} && compare --run ${out} --base ${run}`,
+  );
 }
 
 function cmdRender(args: Args): void {
@@ -454,7 +461,10 @@ function cmdMcp(args: Args): void {
       // keeping the two transports identical here means no one has to remember
       // which is which.
       console.error(`ultraeval: MCP server listening on ${running.url}`);
-      console.error(`  client: claude mcp add --transport http ultraeval ${running.url}`);
+      console.error(`  connect any MCP client to ${running.url} (streamable HTTP), e.g.:`);
+      console.error(`    Claude Code: claude mcp add --transport http ultraeval ${running.url}`);
+      console.error(`    Codex:       codex mcp add ultraeval --url ${running.url}`);
+      console.error(`    OpenCode:    opencode mcp add ultraeval --url ${running.url}`);
       for (const sig of ["SIGINT", "SIGTERM"] as const) {
         process.once(sig, () => {
           void running.close().then(() => process.exit(0));

@@ -40,7 +40,10 @@ describe("orchestrate — the family alias for plan", () => {
     expect(r.status).toBe(0);
     expect(existsSync(join(out, "eval.workflow.mjs"))).toBe(true);
     expect(existsSync(join(out, "agents", "researcher.md"))).toBe(true);
-    expect(r.out).toContain("Workflow({ scriptPath");
+    // Generic route first (any host's subagents / --eco), the Claude Code Workflow launcher only as an option.
+    expect(r.out).toContain("agents/*.md with your host's subagents");
+    expect(r.out).toContain("Optional — Claude Code");
+    expect(r.out.indexOf("agents/*.md with your host's subagents")).toBeLessThan(r.out.indexOf("Workflow({ scriptPath"));
   });
 
   it("`plan` keeps working unchanged (back-compat)", () => {

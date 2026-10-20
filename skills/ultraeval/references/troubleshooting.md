@@ -10,9 +10,9 @@ Mid-run recovery. Start with `status --run <RUN>`: it prints which artifacts exi
 `status --run <RUN>` (add `--json` for a machine-readable checklist). Every stage is idempotent from its inputs: re-running `plan`, `check`, `verify`, `backlog`, `score` or `render` on an existing run is safe. Only `clean --all` and `verify --apply` change history.
 
 **`eval.workflow.mjs` throws a `SyntaxError`, or nothing happens, under `node`.**
-It is a Workflow-harness script — `agent()`, `phase()`, `parallel()`, `log()` are globals the harness injects, not Node builtins. Launch it with your Workflow tool (`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`), or run the stages by hand from `agents/*.md`. Run under plain `node` it prints that guidance and exits 2.
+It is an optional Claude Code Workflow script — `agent()`, `phase()`, `parallel()`, `log()` are globals that harness injects, not Node builtins. On any host, dispatch the `agents/*.md` contracts with its subagents (or `plan --eco` → `RUNBOOK.md` with a single agent). In Claude Code, you can instead launch it with the Workflow tool (`Workflow({ scriptPath: "<RUN>/eval.workflow.mjs" })`). Run under plain `node` it prints that guidance and exits 2.
 
-**I have no Workflow harness at all.**
+**My host has no subagents.**
 `plan --run <RUN> --eco` writes `RUNBOOK.md` instead: the same stages, the same contracts, played sequentially as self-pass checklists. Correctness-identical; only wall-clock differs. Note that `--eco` **deletes** `eval.workflow.mjs` and vice versa — the two entry points never coexist.
 
 **A stage subagent came back with nothing, or with prose instead of artifacts.**
