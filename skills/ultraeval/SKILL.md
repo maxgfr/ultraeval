@@ -4,7 +4,6 @@ description: Evaluate a skill or codebase against grounded criteria and produce 
 license: MIT
 metadata:
   version: 1.32.4
-  opencode/autoinvoke: 'true'
 ---
 
 # ultraeval: evaluate a skill or codebase → grounded, AI-exploitable fix docs
