@@ -178,6 +178,30 @@ describe("paired skill utility benchmark", () => {
     expect(report.conditions["with-skill"].passed).toBe(0);
     expect(report.conditions["with-skill"].budgetExceeded).toBe(2);
   });
+  it("retains failed trials with unknown usage without reporting free execution", () => {
+    const f = observed();
+    for (const r of f.rows as Array<Record<string, unknown>>) {
+      writeFileSync(join(f.run, r.output as string), "Host stopped before usage was returned.");
+      Object.assign(r, { status: "error", inputTokens: null, outputTokens: null, costUsd: null });
+    }
+    writeFileSync(f.results, JSON.stringify({ rows: f.rows }));
+    const packet = ingestBenchmarkResults(f.run, f.results);
+    const rows = packet.samples.flatMap((s) =>
+      s.criteria.map((c) => ({
+        sampleId: s.id,
+        criterionId: c.id,
+        outputSha256: s.outputSha256,
+        reviewSha256: packet.reviewSha256,
+        status: "failed",
+        note: "No answer was produced.",
+      })),
+    );
+    const path = join(f.run, "judgments.json");
+    writeFileSync(path, JSON.stringify({ rows }));
+    const report = judgeBenchmark(f.run, path);
+    expect(report.conditions["with-skill"]).toMatchObject({ tokens: null, errors: 2, passed: 0 });
+    expect(readFileSync(join(f.run, "BENCHMARK-REPORT.md"), "utf8")).toContain("unknown");
+  });
   it.each([
     { tasks: [] },
     { repetitions: 0 },
