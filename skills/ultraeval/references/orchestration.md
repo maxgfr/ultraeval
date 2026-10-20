@@ -6,7 +6,7 @@
 
 Every step is a plain `node <skill-dir>/scripts/ultraeval.mjs <cmd>` call. Parallel subagents are an **optimization, not a requirement** — the same eval runs as a sequential loop. Write nothing that depends on a specific runtime.
 
-**The absolute-path invariant.** A subagent runs in its **own context**: it sees none of this conversation, has its own cwd, and no notion of a "run dir" or "skill dir". So the parent MUST substitute the **absolute** path to `scripts/ultraeval.mjs` and the absolute `RUN`/`TARGET` into every subagent prompt. `plan` already bakes these into the contracts and into `eval.workflow.mjs` (it injects `ENGINE`, `TARGET`, `RUN` as constants and hands each agent its contract path), so the generated artifacts are portable as-is.
+**The absolute-path invariant.** A subagent runs in its **own context**: it sees none of this conversation, has its own cwd, and no notion of a "run dir" or "skill dir". So the parent MUST substitute the **absolute** path to `scripts/ultraeval.mjs` and the absolute `RUN`/`TARGET` into every subagent prompt. `plan` bakes these into `eval.workflow.mjs` (it injects `ENGINE`, `TARGET`, `RUN` as constants and hands each agent its contract path) and into the head of `RUNBOOK.md`. The contracts carry the run's paths, but not every contract names the engine or the target — so a host dispatching `agents/*.md` with its own subagents passes the three constants in each prompt.
 
 ## The pipeline (the stage order every route runs)
 
