@@ -236,18 +236,16 @@ See [shared engine maintenance](ENGINE-MAINTENANCE.md) for pins, source adoption
 way. Its description restricts it to explicit requests:
 "Use only when the user explicitly asks for ultraeval or an evaluation of a skill or codebase."
 The agent calls it when you ask, not on its own. Use `$ultraeval` in Codex,
-`/ultraeval` in Claude Code or OpenCode, prefixing the plugin namespace when it is
-installed as a Claude plugin, or ask the agent for an evaluation of a skill or codebase in plain words.
+`/ultraeval` in Claude Code or OpenCode, or ask the agent for an evaluation of a skill or codebase in plain words.
 
-Making it explicit-only, so that only the command starts it, is one setting per
-host, applied to the **installed** copy of the skill:
+Making it explicit-only again is one setting, read by Claude Code and OpenCode,
+applied to the **installed** copy of the skill:
 
 | Host | Shipped, on request | Explicit-only |
 | --- | --- | --- |
-| Claude Code | no `disable-model-invocation` in `SKILL.md` | add `disable-model-invocation: true` |
+| Claude Code, OpenCode | no `disable-model-invocation` in `SKILL.md` | add `disable-model-invocation: true` |
 
 Claude Code can do it without touching the file:
 `"skillOverrides": { "ultraeval": "user-invocable-only" }` in `settings.json`
-leaves `/ultraeval` working while hiding the skill from the model. Plugin installs
-ignore `skillOverrides`, so edit the frontmatter there. Updating or reinstalling
-the skill restores the shipped default, so reapply the change afterwards.
+leaves `/ultraeval` working while hiding the skill from the model.
+Updating or reinstalling the skill restores the shipped default, so reapply the change afterwards.
