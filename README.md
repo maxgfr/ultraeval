@@ -20,7 +20,7 @@ improved performance.
 `/ultraeval` in Claude Code or OpenCode, or simply asking the agent for an
 evaluation of a skill or codebase. Its description restricts it to explicit
 requests, so the agent calls it when you ask, not on its own, and CLI commands
-are unchanged. One setting per host makes
+are unchanged. One setting makes
 it explicit-only — see [On request or explicit-only](#on-request-or-explicit-only).
 
 [![CI](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml/badge.svg)](https://github.com/maxgfr/ultraeval/actions/workflows/ci.yml)
