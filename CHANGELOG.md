@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here, generated automatically from the [Conventional Commits](https://www.conventionalcommits.org/) by [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.33.6](https://github.com/maxgfr/ultraeval/compare/v1.33.5...v1.33.6) (2026-11-08)
+
+
+### Bug Fixes
+
+* **engine:** update shared engines and maintenance tool ([ce2b5c3](https://github.com/maxgfr/ultraeval/commit/ce2b5c32ec8e13d72294112421105b0416bf8efb))
+
 ## [1.33.5](https://github.com/maxgfr/ultraeval/compare/v1.33.4...v1.33.5) (2026-10-31)
 
 
