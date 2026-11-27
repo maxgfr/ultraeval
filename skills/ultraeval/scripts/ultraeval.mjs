@@ -29743,7 +29743,7 @@ import { readdirSync as readdirSync4 } from "fs";
 import { join as join32, relative as relative11 } from "path";
 
 // src/types.ts
-var VERSION = "1.33.16";
+var VERSION = "1.33.17";
 var CAPS = {
   maxVerify: 60,
   // claim<->evidence pairs a single verify worklist emits
